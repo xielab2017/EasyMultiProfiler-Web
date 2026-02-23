@@ -1,366 +1,168 @@
 #!/usr/bin/env python3
 """
-EasyMultiProfiler Web Application - 双语版
-支持中英文切换
+EasyMultiProfiler Web Application - 完整整合版
+包含：原R包功能 + 新增功能
 """
 
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template, request, jsonify
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from processors import ChipSeqProcessor, SingleCellProcessor, MultiOmicsProcessor
+from processors import (
+    ChipSeqProcessor, 
+    SingleCellProcessor, 
+    MultiOmicsProcessor,
+    MicrobiomeProcessor,
+    VisualizationProcessor
+)
 
 app = Flask(__name__)
 
 # 双语文本
 TEXT = {
     "zh": {
-        "title": "🧬 EasyMultiProfiler 网页版",
-        "subtitle": "零门槛多组学分析平台",
+        "title": "🧬 EasyMultiProfiler",
+        "subtitle": "完整版多组学分析平台",
+        "intro": "整合原R包全部功能 + 新增ChIP-seq/单细胞/多组学",
         "features": {
-            "chipseq": {"title": "🧬 ChIP-seq", "desc": "Peak calling, Motif分析"},
+            "microbiome": {"title": "🦠 微生物组", "desc": "α/β多样性, 差异, 网络, WGCNA"},
+            "chipseq": {"title": "🧬 ChIP-seq", "desc": "MACS2, 注释, GO/KEGG, Motif"},
             "singlecell": {"title": "🦠 单细胞", "desc": "降维, 聚类, 标记基因"},
-            "multiomics": {"title": "🧪 多组学", "desc": "RNA-seq + 微生物组整合"}
+            "multiomics": {"title": "🧪 多组学", "desc": "整合分析, 相关性"},
+            "visualization": {"title": "📊 可视化", "desc": "热图, 火山图, 网络图"}
         },
         "tabs": {
+            "microbiome": "🦠 微生物组",
             "chipseq": "🧬 ChIP-seq",
-            "singlecell": "🦠 单细胞", 
-            "multiomics": "🧪 多组学"
+            "singlecell": "🦠 单细胞",
+            "multiomics": "🧪 多组学",
+            "visualization": "📊 可视化"
         },
         "labels": {
-            "analysis_type": "分析类型",
-            "input_file": "输入文件",
+            "analysis": "分析类型",
+            "input": "输入文件",
             "run": "🚀 开始分析",
-            "result": "结果"
+            "download": "📥 下载结果",
+            "select": "请选择..."
         },
-        "chipseq_options": {
-            "macs2": "MACS2 Peak Calling",
-            "annotation": "Peak注释",
-            "go": "GO富集",
-            "kegg": "KEGG通路",
-            "motif": "Motif分析",
-            "differential": "差异分析",
-            "visualization": "可视化"
+        "options": {
+            "microbiome": {
+                "alpha": "Alpha多样性",
+                "beta": "Beta多样性",
+                "diff": "差异分析",
+                "network": "网络分析",
+                "cluster": "聚类分析",
+                "wgcna": "WGCNA分析",
+                "marker": "标记物分析",
+                "enrich": "富集分析",
+                "complete": "完整流程"
+            },
+            "chipseq": {
+                "macs2": "MACS2 Peak Calling",
+                "annotation": "Peak注释",
+                "go": "GO富集",
+                "kegg": "KEGG通路",
+                "motif": "Motif分析",
+                "diff": "差异分析",
+                "viz": "可视化"
+            },
+            "singlecell": {
+                "dimred": "降维(UMAP/tSNE)",
+                "cluster": "聚类",
+                "markers": "标记基因",
+                "trajectory": "轨迹分析"
+            },
+            "multiomics": {
+                "correlation": "相关性分析",
+                "network": "网络整合",
+                "joint": "联合分析"
+            },
+            "visualization": {
+                "heatmap": "热图",
+                "volcano": "火山图",
+                "pca": "PCA图",
+                "network": "网络图",
+                "barplot": "柱状图",
+                "boxplot": "箱线图"
+            }
         },
-        "sc_options": {
-            "dimred": "降维 (UMAP/tSNE)",
-            "cluster": "聚类分析",
-            "markers": "标记基因",
-            "trajectory": "轨迹分析"
-        },
-        "mo_options": {
-            "correlation": "相关性分析",
-            "network": "网络整合",
-            "joint": "联合分析"
-        },
-        "loading": "分析中...",
-        "download": "📥 下载结果"
+        "loading": "分析中，请稍候...",
+        "success": "分析完成!",
+        "version": "完整版 v2.0"
     },
     "en": {
-        "title": "🧬 EasyMultiProfiler Web",
-        "subtitle": "Zero-threshold Multi-omics Analysis Platform",
+        "title": "🧬 EasyMultiProfiler",
+        "subtitle": "Full Multi-omics Analysis Platform",
+        "intro": "Integrates all R package functions + ChIP-seq/Single-cell/Multi-omics",
         "features": {
-            "chipseq": {"title": "🧬 ChIP-seq", "desc": "Peak calling, Motif analysis"},
+            "microbiome": {"title": "🦠 Microbiome", "desc": "α/β Diversity, Diff, Network, WGCNA"},
+            "chipseq": {"title": "🧬 ChIP-seq", "desc": "MACS2, Annotation, GO/KEGG, Motif"},
             "singlecell": {"title": "🦠 Single Cell", "desc": "DimRed, Clustering, Markers"},
-            "multiomics": {"title": "🧪 Multi-omics", "desc": "RNA-seq + Microbiome integration"}
+            "multiomics": {"title": "🧪 Multi-omics", "desc": "Integration, Correlation"},
+            "visualization": {"title": "📊 Visualization", "desc": "Heatmap, Volcano, Network"}
         },
         "tabs": {
+            "microbiome": "🦠 Microbiome",
             "chipseq": "🧬 ChIP-seq",
             "singlecell": "🦠 Single Cell",
-            "multiomics": "🧪 Multi-omics"
+            "multiomics": "🧪 Multi-omics",
+            "visualization": "📊 Visualization"
         },
         "labels": {
-            "analysis_type": "Analysis Type",
-            "input_file": "Input File",
+            "analysis": "Analysis Type",
+            "input": "Input File",
             "run": "🚀 Run",
-            "result": "Result"
+            "download": "📥 Download",
+            "select": "Select..."
         },
-        "chipseq_options": {
-            "macs2": "MACS2 Peak Calling",
-            "annotation": "Peak Annotation",
-            "go": "GO Enrichment",
-            "kegg": "KEGG Pathway",
-            "motif": "Motif Analysis",
-            "differential": "Differential Analysis",
-            "visualization": "Visualization"
+        "options": {
+            "microbiome": {
+                "alpha": "Alpha Diversity",
+                "beta": "Beta Diversity",
+                "diff": "Differential Analysis",
+                "network": "Network Analysis",
+                "cluster": "Clustering",
+                "wgcna": "WGCNA",
+                "marker": "Marker Analysis",
+                "enrich": "Enrichment",
+                "complete": "Complete Pipeline"
+            },
+            "chipseq": {
+                "macs2": "MACS2 Peak Calling",
+                "annotation": "Peak Annotation",
+                "go": "GO Enrichment",
+                "kegg": "KEGG Pathway",
+                "motif": "Motif Analysis",
+                "diff": "Differential",
+                "viz": "Visualization"
+            },
+            "singlecell": {
+                "dimred": "DimRed (UMAP/tSNE)",
+                "cluster": "Clustering",
+                "markers": "Marker Genes",
+                "trajectory": "Trajectory"
+            },
+            "multiomics": {
+                "correlation": "Correlation",
+                "network": "Network Integration",
+                "joint": "Joint Analysis"
+            },
+            "visualization": {
+                "heatmap": "Heatmap",
+                "volcano": "Volcano Plot",
+                "pca": "PCA Plot",
+                "network": "Network",
+                "barplot": "Bar Plot",
+                "boxplot": "Box Plot"
+            }
         },
-        "sc_options": {
-            "dimred": "Dimensionality Reduction (UMAP/tSNE)",
-            "cluster": "Clustering",
-            "markers": "Marker Genes",
-            "trajectory": "Trajectory Analysis"
-        },
-        "mo_options": {
-            "correlation": "Correlation Analysis",
-            "network": "Network Integration",
-            "joint": "Joint Analysis"
-        },
-        "loading": "Running...",
-        "download": "📥 Download Results"
+        "loading": "Running analysis...",
+        "success": "Analysis complete!",
+        "version": "Full Version v2.0"
     }
 }
-
-# HTML模板
-HTML_TEMPLATE = '''
-<!DOCTYPE html>
-<html lang="{{lang}}">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EasyMultiProfiler</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding:0; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container { max-width: 900px; margin: 0 auto; }
-        .card {
-            background: white;
-            border-radius: 16px;
-            padding: 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-        }
-        h1 { color: #1a1a2e; text-align: center; margin-bottom: 10px; }
-        .subtitle { text-align: center; color: #666; margin-bottom: 30px; }
-        
-        .lang-switch {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 100;
-        }
-        .lang-btn {
-            padding: 8px 16px;
-            background: white;
-            border: 2px solid #667eea;
-            border-radius: 20px;
-            cursor: pointer;
-            font-weight: bold;
-            color: #667eea;
-        }
-        .lang-btn:hover { background: #667eea; color: white; }
-        
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        .feature-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 25px;
-            border-radius: 12px;
-            text-align: center;
-        }
-        .feature-card h3 { margin-bottom: 10px; }
-        
-        .tab-nav { display: flex; gap: 10px; margin-bottom: 20px; }
-        .tab-btn {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            background: #f0f0f0;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        .tab-btn.active { background: #667eea; color: white; }
-        
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; color: #333; }
-        input, select { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; }
-        
-        .btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        
-        .result { background: #f8f9fa; border-radius: 8px; padding: 20px; margin-top: 20px; display: none; }
-        .result.show { display: block; }
-        .loading { text-align: center; padding: 20px; color: #666; }
-        pre { overflow-x: auto; }
-    </style>
-</head>
-<body>
-    <div class="lang-switch">
-        <button class="lang-btn" onclick="switchLang()">{{lang == 'zh' ? 'EN' : '中文'}}</button>
-    </div>
-    
-    <div class="container">
-        <div class="card">
-            <h1>{{title}}</h1>
-            <p class="subtitle">{{subtitle}}</p>
-            
-            <div class="features">
-                <div class="feature-card">
-                    <h3>{{features.chipseq.title}}</h3>
-                    <p>{{features.chipseq.desc}}</p>
-                </div>
-                <div class="feature-card">
-                    <h3>{{features.singlecell.title}}</h3>
-                    <p>{{features.singlecell.desc}}</p>
-                </div>
-                <div class="feature-card">
-                    <h3>{{features.multiomics.title}}</h3>
-                    <p>{{features.multiomics.desc}}</p>
-                </div>
-            </div>
-            
-            <div class="tab-nav">
-                <button class="tab-btn active" onclick="switchTab('chipseq')">{{tabs.chipseq}}</button>
-                <button class="tab-btn" onclick="switchTab('singlecell')">{{tabs.singlecell}}</button>
-                <button class="tab-btn" onclick="switchTab('multiomics')">{{tabs.multiomics}}</button>
-            </div>
-            
-            <!-- ChIP-seq -->
-            <div id="chipseq-tab">
-                <div class="form-group">
-                    <label>{{labels.analysis_type}}</label>
-                    <select id="chipseq-analysis">
-                        <option value="macs2">{{chipseq_options.macs2}}</option>
-                        <option value="annotation">{{chipseq_options.annotation}}</option>
-                        <option value="go">{{chipseq_options.go}}</option>
-                        <option value="kegg">{{chipseq_options.kegg}}</option>
-                        <option value="motif">{{chipseq_options.motif}}</option>
-                        <option value="visualization">{{chipseq_options.visualization}}</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>{{labels.input_file}}</label>
-                    <input type="file" id="chipseq-input">
-                </div>
-                <button class="btn" onclick="runChipSeq()">{{labels.run}}</button>
-                <div id="chipseq-result" class="result"></div>
-            </div>
-            
-            <!-- Single Cell -->
-            <div id="singlecell-tab" style="display:none;">
-                <div class="form-group">
-                    <label>{{labels.analysis_type}}</label>
-                    <select id="sc-analysis">
-                        <option value="dimred">{{sc_options.dimred}}</option>
-                        <option value="cluster">{{sc_options.cluster}}</option>
-                        <option value="markers">{{sc_options.markers}}</option>
-                    </select>
-                </div>
-                <button class="btn" onclick="runSingleCell()">{{labels.run}}</button>
-                <div id="singlecell-result" class="result"></div>
-            </div>
-            
-            <!-- Multi-omics -->
-            <div id="multiomics-tab" style="display:none;">
-                <div class="form-group">
-                    <label>{{labels.analysis_type}}</label>
-                    <select id="mo-analysis">
-                        <option value="correlation">{{mo_options.correlation}}</option>
-                        <option value="network">{{mo_options.network}}</option>
-                        <option value="joint">{{mo_options.joint}}</option>
-                    </select>
-                </div>
-                <button class="btn" onclick="runMultiOmics()">{{labels.run}}</button>
-                <div id="multiomics-result" class="result"></div>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        const text = {{text_json | safe}};
-        let currentLang = '{{lang}}';
-        
-        function switchLang() {
-            currentLang = currentLang === 'zh' ? 'en' : 'zh';
-            location.reload();
-        }
-        
-        function switchTab(tab) {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById('chipseq-tab').style.display = tab === 'chipseq' ? 'block' : 'none';
-            document.getElementById('singlecell-tab').style.display = tab === 'singlecell' ? 'block' : 'none';
-            document.getElementById('multiomics-tab').style.display = tab === 'multiomics' ? 'block' : 'none';
-        }
-        
-        function getText() { return text[currentLang]; }
-        
-        async function runChipSeq() {
-            const t = getText();
-            const resultDiv = document.getElementById('chipseq-result');
-            resultDiv.classList.add('show');
-            resultDiv.innerHTML = '<div class="loading">' + t.loading + '</div>';
-            
-            const analysis = document.getElementById('chipseq-analysis').value;
-            
-            try {
-                const response = await fetch('/api/chipseq', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({analysis})
-                });
-                const result = await response.json();
-                resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
-            } catch(e) {
-                resultDiv.innerHTML = '<div style="color:red;">Error: ' + e.message + '</div>';
-            }
-        }
-        
-        async function runSingleCell() {
-            const t = getText();
-            const resultDiv = document.getElementById('singlecell-result');
-            resultDiv.classList.add('show');
-            resultDiv.innerHTML = '<div class="loading">' + t.loading + '</div>';
-            
-            const analysis = document.getElementById('sc-analysis').value;
-            
-            try {
-                const response = await fetch('/api/singlecell', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({analysis})
-                });
-                const result = await response.json();
-                resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
-            } catch(e) {
-                resultDiv.innerHTML = '<div style="color:red;">Error: ' + e.message + '</div>';
-            }
-        }
-        
-        async function runMultiOmics() {
-            const t = getText();
-            const resultDiv = document.getElementById('multiomics-result');
-            resultDiv.classList.add('show');
-            resultDiv.innerHTML = '<div class="loading">' + t.loading + '</div>';
-            
-            const analysis = document.getElementById('mo-analysis').value;
-            
-            try {
-                const response = await fetch('/api/multiomics', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({analysis})
-                });
-                const result = await response.json();
-                resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
-            } catch(e) {
-                resultDiv.innerHTML = '<div style="color:red;">Error: ' + e.message + '</div>';
-            }
-        }
-    </script>
-</body>
-</html>
-'''
 
 @app.route('/')
 def index():
@@ -368,76 +170,156 @@ def index():
     if lang not in ['zh', 'en']:
         lang = 'zh'
     
-    return render_template_string(
-        HTML_TEMPLATE,
-        lang=lang,
-        title=TEXT[lang]['title'],
-        subtitle=TEXT[lang]['subtitle'],
-        features=TEXT[lang]['features'],
-        tabs=TEXT[lang]['tabs'],
-        labels=TEXT[lang]['labels'],
-        chipseq_options=TEXT[lang]['chipseq_options'],
-        sc_options=TEXT[lang]['sc_options'],
-        mo_options=TEXT[lang]['mo_options'],
-        text_json=TEXT
-    )
+    return render_template('index.html', lang=lang, **TEXT[lang])
 
-@app.route('/api/chipseq', methods=['POST'])
-def api_chipseq():
-    data = request.json
-    processor = ChipSeqProcessor()
-    
-    if data['analysis'] == 'macs2':
-        result = processor.macs2_call_bam(data.get('input', 'demo.bam'))
-    elif data['analysis'] == 'annotation':
-        result = processor.annotate_peaks(data.get('input', 'demo.peaks'))
-    elif data['analysis'] == 'go':
-        result = processor.go_enrichment(data.get('input', 'demo.peaks'))
-    elif data['analysis'] == 'kegg':
-        result = processor.kegg_enrichment(data.get('input', 'demo.peaks'))
-    elif data['analysis'] == 'motif':
-        result = processor.motif_analysis(data.get('input', 'demo.peaks'))
-    else:
-        result = processor.generate_plots()
-    
+# ==================== 微生物组 API ====================
+
+@app.route('/api/microbiome/alpha', methods=['POST'])
+def microbiome_alpha():
+    proc = MicrobiomeProcessor()
+    data = request.json or {}
+    result = proc.alpha_diversity(data)
     return jsonify(result)
 
-@app.route('/api/singlecell', methods=['POST'])
-def api_singlecell():
-    data = request.json
-    processor = SingleCellProcessor()
-    
-    if data['analysis'] == 'dimred':
-        result = processor.dimensionality_reduction({}, 'UMAP')
-    elif data['analysis'] == 'cluster':
-        result = processor.clustering({}, 'Louvain')
-    elif data['analysis'] == 'markers':
-        result = processor.marker_detection({}, [0,1,2])
-    else:
-        result = processor.trajectory_analysis({})
-    
+@app.route('/api/microbiome/beta', methods=['POST'])
+def microbiome_beta():
+    proc = MicrobiomeProcessor()
+    data = request.json or {}
+    result = proc.beta_diversity(data)
     return jsonify(result)
 
-@app.route('/api/multiomics', methods=['POST'])
-def api_multiomics():
-    data = request.json
-    processor = MultiOmicsProcessor()
-    
-    if data['analysis'] == 'correlation':
-        result = processor.correlation_analysis({}, {})
-    elif data['analysis'] == 'network':
-        result = processor.network_integration({}, {}, {})
-    else:
-        result = processor.joint_analysis({}, {}, {})
-    
+@app.route('/api/microbiome/diff', methods=['POST'])
+def microbiome_diff():
+    proc = MicrobiomeProcessor()
+    data = request.json or {}
+    result = proc.differential_analysis(data, data.get('group', []))
+    return jsonify(result)
+
+@app.route('/api/microbiome/network', methods=['POST'])
+def microbiome_network():
+    proc = MicrobiomeProcessor()
+    data = request.json or {}
+    result = proc.network_analysis(data)
+    return jsonify(result)
+
+@app.route('/api/microbiome/wgcna', methods=['POST'])
+def microbiome_wgcna():
+    proc = MicrobiomeProcessor()
+    data = request.json or {}
+    result = proc.wgcna(data)
+    return jsonify(result)
+
+# ==================== ChIP-seq API ====================
+
+@app.route('/api/chipseq/macs2', methods=['POST'])
+def chipseq_macs2():
+    proc = ChipSeqProcessor()
+    data = request.json or {}
+    result = proc.macs2_call_bam(data.get('input', 'demo.bam'))
+    return jsonify(result)
+
+@app.route('/api/chipseq/annotation', methods=['POST'])
+def chipseq_annotation():
+    proc = ChipSeqProcessor()
+    data = request.json or {}
+    result = proc.annotate_peaks(data.get('input', 'demo.peaks'))
+    return jsonify(result)
+
+@app.route('/api/chipseq/go', methods=['POST'])
+def chipseq_go():
+    proc = ChipSeqProcessor()
+    data = request.json or {}
+    result = proc.go_enrichment(data.get('input', 'demo.peaks'))
+    return jsonify(result)
+
+@app.route('/api/chipseq/kegg', methods=['POST'])
+def chipseq_kegg():
+    proc = ChipSeqProcessor()
+    data = request.json or {}
+    result = proc.kegg_enrichment(data.get('input', 'demo.peaks'))
+    return jsonify(result)
+
+@app.route('/api/chipseq/motif', methods=['POST'])
+def chipseq_motif():
+    proc = ChipSeqProcessor()
+    data = request.json or {}
+    result = proc.motif_analysis(data.get('input', 'demo.peaks'))
+    return jsonify(result)
+
+# ==================== 单细胞 API ====================
+
+@app.route('/api/singlecell/dimred', methods=['POST'])
+def singlecell_dimred():
+    proc = SingleCellProcessor()
+    data = request.json or {}
+    result = proc.dimensionality_reduction(data, 'UMAP')
+    return jsonify(result)
+
+@app.route('/api/singlecell/cluster', methods=['POST'])
+def singlecell_cluster():
+    proc = SingleCellProcessor()
+    data = request.json or {}
+    result = proc.clustering(data)
+    return jsonify(result)
+
+@app.route('/api/singlecell/markers', methods=['POST'])
+def singlecell_markers():
+    proc = SingleCellProcessor()
+    data = request.json or {}
+    result = proc.marker_detection(data, [0,1,2])
+    return jsonify(result)
+
+# ==================== 多组学 API ====================
+
+@app.route('/api/multiomics/correlation', methods=['POST'])
+def multiomics_correlation():
+    proc = MultiOmicsProcessor()
+    data = request.json or {}
+    result = proc.correlation_analysis({}, {})
+    return jsonify(result)
+
+@app.route('/api/multiomics/joint', methods=['POST'])
+def multiomics_joint():
+    proc = MultiOmicsProcessor()
+    result = proc.joint_analysis({}, {}, {})
+    return jsonify(result)
+
+# ==================== 可视化 API ====================
+
+@app.route('/api/viz/heatmap', methods=['POST'])
+def viz_heatmap():
+    proc = VisualizationProcessor()
+    data = request.json or {}
+    result = proc.heatmap(data)
+    return jsonify(result)
+
+@app.route('/api/viz/volcano', methods=['POST'])
+def viz_volcano():
+    proc = VisualizationProcessor()
+    data = request.json or {}
+    result = proc.volcano(data)
+    return jsonify(result)
+
+@app.route('/api/viz/pca', methods=['POST'])
+def viz_pca():
+    proc = VisualizationProcessor()
+    data = request.json or {}
+    result = proc.pca_plot(data)
     return jsonify(result)
 
 if __name__ == '__main__':
     print("""
-🧬 EasyMultiProfiler Web (Bilingual)
+🧬 EasyMultiProfiler Web - 完整版 v2.0
    
    中文: http://localhost:5000
    English: http://localhost:5000?lang=en
+   
+   功能模块:
+   - 微生物组 (原R包功能)
+   - ChIP-seq (新增)
+   - 单细胞 (新增)
+   - 多组学 (新增)
+   - 可视化 (原R包功能)
    
    按 Ctrl+C 停止
     """)

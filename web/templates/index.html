@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="{{lang}}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EasyMultiProfiler - {{title}}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 { color: #1a1a2e; text-align: center; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #667eea; margin-bottom: 10px; font-weight: bold; }
+        .intro { text-align: center; color: #666; margin-bottom: 20px; font-size: 14px; }
+        
+        .lang-switch { position: fixed; top: 20px; right: 20px; z-index: 100; }
+        .lang-btn { padding: 8px 16px; background: white; border: 2px solid #667eea; border-radius: 20px; cursor: pointer; font-weight: bold; color: #667eea; }
+        .lang-btn:hover { background: #667eea; color: white; }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .feature-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .feature-card:hover { transform: translateY(-3px); }
+        .feature-card h3 { margin-bottom: 5px; font-size: 16px; }
+        .feature-card p { font-size: 12px; opacity: 0.9; }
+        
+        .tab-nav { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+        .tab-btn { flex: 1; min-width: 100px; padding: 10px; border: none; background: #f0f0f0; border-radius: 8px; cursor: pointer; font-size: 14px; }
+        .tab-btn.active { background: #667eea; color: white; }
+        
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; color: #333; font-weight: 500; font-size: 14px; }
+        input, select { width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; }
+        
+        .btn { width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
+        
+        .result { background: #f8f9fa; border-radius: 8px; padding: 15px; margin-top: 15px; display: none; max-height: 400px; overflow-y: auto; }
+        .result.show { display: block; }
+        .loading { text-align: center; padding: 20px; color: #666; }
+        pre { font-size: 12px; white-space: pre-wrap; }
+        
+        .version { text-align: center; color: #999; font-size: 12px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="lang-switch">
+        <button class="lang-btn" onclick="switchLang()">{{'EN' if lang == 'zh' else '中文'}}</button>
+    </div>
+    
+    <div class="container">
+        <div class="card">
+            <h1>{{title}}</h1>
+            <p class="subtitle">{{subtitle}}</p>
+            <p class="intro">{{intro}}</p>
+            
+            <div class="features">
+                <div class="feature-card" onclick="switchTab('microbiome')">
+                    <h3>{{features.microbiome.title}}</h3>
+                    <p>{{features.microbiome.desc}}</p>
+                </div>
+                <div class="feature-card" onclick="switchTab('chipseq')">
+                    <h3>{{features.chipseq.title}}</h3>
+                    <p>{{features.chipseq.desc}}</p>
+                </div>
+                <div class="feature-card" onclick="switchTab('singlecell')">
+                    <h3>{{features.singlecell.title}}</h3>
+                    <p>{{features.singlecell.desc}}</p>
+                </div>
+                <div class="feature-card" onclick="switchTab('multiomics')">
+                    <h3>{{features.multiomics.title}}</h3>
+                    <p>{{features.multiomics.desc}}</p>
+                </div>
+                <div class="feature-card" onclick="switchTab('visualization')">
+                    <h3>{{features.visualization.title}}</h3>
+                    <p>{{features.visualization.desc}}</p>
+                </div>
+            </div>
+            
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchTab('microbiome')">{{tabs.microbiome}}</button>
+                <button class="tab-btn" onclick="switchTab('chipseq')">{{tabs.chipseq}}</button>
+                <button class="tab-btn" onclick="switchTab('singlecell')">{{tabs.singlecell}}</button>
+                <button class="tab-btn" onclick="switchTab('multiomics')">{{tabs.multiomics}}</button>
+                <button class="tab-btn" onclick="switchTab('visualization')">{{tabs.visualization}}</button>
+            </div>
+            
+            <!-- 微生物组 -->
+            <div id="microbiome-tab">
+                <div class="form-group">
+                    <label>{{labels.analysis}}</label>
+                    <select id="microbiome-analysis">
+                        <option value="alpha">{{options.microbiome.alpha}}</option>
+                        <option value="beta">{{options.microbiome.beta}}</option>
+                        <option value="diff">{{options.microbiome.diff}}</option>
+                        <option value="network">{{options.microbiome.network}}</option>
+                        <option value="wgcna">{{options.microbiome.wgcna}}</option>
+                        <option value="marker">{{options.microbiome.marker}}</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="runAnalysis('microbiome')">{{labels.run}}</button>
+                <div id="microbiome-result" class="result"></div>
+            </div>
+            
+            <!-- ChIP-seq -->
+            <div id="chipseq-tab" style="display:none;">
+                <div class="form-group">
+                    <label>{{labels.analysis}}</label>
+                    <select id="chipseq-analysis">
+                        <option value="macs2">{{options.chipseq.macs2}}</option>
+                        <option value="annotation">{{options.chipseq.annotation}}</option>
+                        <option value="go">{{options.chipseq.go}}</option>
+                        <option value="kegg">{{options.chipseq.kegg}}</option>
+                        <option value="motif">{{options.chipseq.motif}}</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="runAnalysis('chipseq')">{{labels.run}}</button>
+                <div id="chipseq-result" class="result"></div>
+            </div>
+            
+            <!-- 单细胞 -->
+            <div id="singlecell-tab" style="display:none;">
+                <div class="form-group">
+                    <label>{{labels.analysis}}</label>
+                    <select id="singlecell-analysis">
+                        <option value="dimred">{{options.singlecell.dimred}}</option>
+                        <option value="cluster">{{options.singlecell.cluster}}</option>
+                        <option value="markers">{{options.singlecell.markers}}</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="runAnalysis('singlecell')">{{labels.run}}</button>
+                <div id="singlecell-result" class="result"></div>
+            </div>
+            
+            <!-- 多组学 -->
+            <div id="multiomics-tab" style="display:none;">
+                <div class="form-group">
+                    <label>{{labels.analysis}}</label>
+                    <select id="multiomics-analysis">
+                        <option value="correlation">{{options.multiomics.correlation}}</option>
+                        <option value="joint">{{options.multiomics.joint}}</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="runAnalysis('multiomics')">{{labels.run}}</button>
+                <div id="multiomics-result" class="result"></div>
+            </div>
+            
+            <!-- 可视化 -->
+            <div id="visualization-tab" style="display:none;">
+                <div class="form-group">
+                    <label>{{labels.analysis}}</label>
+                    <select id="viz-analysis">
+                        <option value="heatmap">{{options.visualization.heatmap}}</option>
+                        <option value="volcano">{{options.visualization.volcano}}</option>
+                        <option value="pca">{{options.visualization.pca}}</option>
+                        <option value="network">{{options.visualization.network}}</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="runAnalysis('visualization')">{{labels.run}}</button>
+                <div id="visualization-result" class="result"></div>
+            </div>
+            
+            <p class="version">{{version}}</p>
+        </div>
+    </div>
+    
+    <script>
+        function switchLang() {
+            const url = new URL(window.location);
+            url.searchParams.set('lang', url.searchParams.get('lang') === 'zh' ? 'en' : 'zh');
+            window.location.href = url;
+        }
+        
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            const tabs = ['microbiome', 'chipseq', 'singlecell', 'multiomics', 'visualization'];
+            tabs.forEach(t => {
+                document.getElementById(t + '-tab').style.display = t === tab ? 'block' : 'none';
+            });
+        }
+        
+        async function runAnalysis(type) {
+            const resultDiv = document.getElementById(type + '-result');
+            resultDiv.classList.add('show');
+            resultDiv.innerHTML = '<div class="loading">{{loading}}</div>';
+            
+            const analysis = document.getElementById(type + '-analysis').value;
+            
+            let endpoint = '';
+            switch(type) {
+                case 'microbiome':
+                    endpoint = '/api/microbiome/' + analysis;
+                    break;
+                case 'chipseq':
+                    endpoint = '/api/chipseq/' + analysis;
+                    break;
+                case 'singlecell':
+                    endpoint = '/api/singlecell/' + analysis;
+                    break;
+                case 'multiomics':
+                    endpoint = '/api/multiomics/' + analysis;
+                    break;
+                case 'visualization':
+                    endpoint = '/api/viz/' + analysis;
+                    break;
+            }
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const result = await response.json();
+                resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+            } catch(e) {
+                resultDiv.innerHTML = '<div style="color:red;">Error: ' + e.message + '</div>';
+            }
+        }
+    </script>
+</body>
+</html>
