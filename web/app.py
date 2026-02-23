@@ -1,30 +1,117 @@
 #!/usr/bin/env python3
 """
-EasyMultiProfiler Web Application
-Flask网页应用
+EasyMultiProfiler Web Application - 双语版
+支持中英文切换
 """
 
 from flask import Flask, render_template_string, request, jsonify
 import sys
 import os
 
-# 添加processors路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from processors import ChipSeqProcessor, SingleCellProcessor, MultiOmicsProcessor
 
 app = Flask(__name__)
 
+# 双语文本
+TEXT = {
+    "zh": {
+        "title": "🧬 EasyMultiProfiler 网页版",
+        "subtitle": "零门槛多组学分析平台",
+        "features": {
+            "chipseq": {"title": "🧬 ChIP-seq", "desc": "Peak calling, Motif分析"},
+            "singlecell": {"title": "🦠 单细胞", "desc": "降维, 聚类, 标记基因"},
+            "multiomics": {"title": "🧪 多组学", "desc": "RNA-seq + 微生物组整合"}
+        },
+        "tabs": {
+            "chipseq": "🧬 ChIP-seq",
+            "singlecell": "🦠 单细胞", 
+            "multiomics": "🧪 多组学"
+        },
+        "labels": {
+            "analysis_type": "分析类型",
+            "input_file": "输入文件",
+            "run": "🚀 开始分析",
+            "result": "结果"
+        },
+        "chipseq_options": {
+            "macs2": "MACS2 Peak Calling",
+            "annotation": "Peak注释",
+            "go": "GO富集",
+            "kegg": "KEGG通路",
+            "motif": "Motif分析",
+            "differential": "差异分析",
+            "visualization": "可视化"
+        },
+        "sc_options": {
+            "dimred": "降维 (UMAP/tSNE)",
+            "cluster": "聚类分析",
+            "markers": "标记基因",
+            "trajectory": "轨迹分析"
+        },
+        "mo_options": {
+            "correlation": "相关性分析",
+            "network": "网络整合",
+            "joint": "联合分析"
+        },
+        "loading": "分析中...",
+        "download": "📥 下载结果"
+    },
+    "en": {
+        "title": "🧬 EasyMultiProfiler Web",
+        "subtitle": "Zero-threshold Multi-omics Analysis Platform",
+        "features": {
+            "chipseq": {"title": "🧬 ChIP-seq", "desc": "Peak calling, Motif analysis"},
+            "singlecell": {"title": "🦠 Single Cell", "desc": "DimRed, Clustering, Markers"},
+            "multiomics": {"title": "🧪 Multi-omics", "desc": "RNA-seq + Microbiome integration"}
+        },
+        "tabs": {
+            "chipseq": "🧬 ChIP-seq",
+            "singlecell": "🦠 Single Cell",
+            "multiomics": "🧪 Multi-omics"
+        },
+        "labels": {
+            "analysis_type": "Analysis Type",
+            "input_file": "Input File",
+            "run": "🚀 Run",
+            "result": "Result"
+        },
+        "chipseq_options": {
+            "macs2": "MACS2 Peak Calling",
+            "annotation": "Peak Annotation",
+            "go": "GO Enrichment",
+            "kegg": "KEGG Pathway",
+            "motif": "Motif Analysis",
+            "differential": "Differential Analysis",
+            "visualization": "Visualization"
+        },
+        "sc_options": {
+            "dimred": "Dimensionality Reduction (UMAP/tSNE)",
+            "cluster": "Clustering",
+            "markers": "Marker Genes",
+            "trajectory": "Trajectory Analysis"
+        },
+        "mo_options": {
+            "correlation": "Correlation Analysis",
+            "network": "Network Integration",
+            "joint": "Joint Analysis"
+        },
+        "loading": "Running...",
+        "download": "📥 Download Results"
+    }
+}
+
 # HTML模板
-HTML = '''
+HTML_TEMPLATE = '''
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{lang}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EasyMultiProfiler Web</title>
+    <title>EasyMultiProfiler</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * { box-sizing: border-box; margin: 0; padding:0; }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -41,6 +128,23 @@ HTML = '''
         }
         h1 { color: #1a1a2e; text-align: center; margin-bottom: 10px; }
         .subtitle { text-align: center; color: #666; margin-bottom: 30px; }
+        
+        .lang-switch {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+        }
+        .lang-btn {
+            padding: 8px 16px;
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .lang-btn:hover { background: #667eea; color: white; }
         
         .features {
             display: grid;
@@ -86,88 +190,101 @@ HTML = '''
         
         .result { background: #f8f9fa; border-radius: 8px; padding: 20px; margin-top: 20px; display: none; }
         .result.show { display: block; }
-        
         .loading { text-align: center; padding: 20px; color: #666; }
+        pre { overflow-x: auto; }
     </style>
 </head>
 <body>
+    <div class="lang-switch">
+        <button class="lang-btn" onclick="switchLang()">{{lang == 'zh' ? 'EN' : '中文'}}</button>
+    </div>
+    
     <div class="container">
         <div class="card">
-            <h1>🧬 EasyMultiProfiler Web</h1>
-            <p class="subtitle">零门槛多组学分析平台</p>
+            <h1>{{title}}</h1>
+            <p class="subtitle">{{subtitle}}</p>
             
             <div class="features">
                 <div class="feature-card">
-                    <h3>🧬 ChIP-seq</h3>
-                    <p>Peak calling, Motif分析</p>
+                    <h3>{{features.chipseq.title}}</h3>
+                    <p>{{features.chipseq.desc}}</p>
                 </div>
                 <div class="feature-card">
-                    <h3>🦠 单细胞</h3>
-                    <p>降维, 聚类, 标记基因</p>
+                    <h3>{{features.singlecell.title}}</h3>
+                    <p>{{features.singlecell.desc}}</p>
                 </div>
                 <div class="feature-card">
-                    <h3>🧪 多组学</h3>
-                    <p>RNA-seq + 微生物组整合</p>
+                    <h3>{{features.multiomics.title}}</h3>
+                    <p>{{features.multiomics.desc}}</p>
                 </div>
             </div>
             
             <div class="tab-nav">
-                <button class="tab-btn active" onclick="switchTab('chipseq')">🧬 ChIP-seq</button>
-                <button class="tab-btn" onclick="switchTab('singlecell')">🦠 单细胞</button>
-                <button class="tab-btn" onclick="switchTab('multiomics')">🧪 多组学</button>
+                <button class="tab-btn active" onclick="switchTab('chipseq')">{{tabs.chipseq}}</button>
+                <button class="tab-btn" onclick="switchTab('singlecell')">{{tabs.singlecell}}</button>
+                <button class="tab-btn" onclick="switchTab('multiomics')">{{tabs.multiomics}}</button>
             </div>
             
             <!-- ChIP-seq -->
             <div id="chipseq-tab">
                 <div class="form-group">
-                    <label>分析类型</label>
+                    <label>{{labels.analysis_type}}</label>
                     <select id="chipseq-analysis">
-                        <option value="qc">质控 (QC)</option>
-                        <option value="callpeak">Peak Calling</option>
-                        <option value="motif">Motif分析</option>
-                        <option value="annotate">Peak注释</option>
+                        <option value="macs2">{{chipseq_options.macs2}}</option>
+                        <option value="annotation">{{chipseq_options.annotation}}</option>
+                        <option value="go">{{chipseq_options.go}}</option>
+                        <option value="kegg">{{chipseq_options.kegg}}</option>
+                        <option value="motif">{{chipseq_options.motif}}</option>
+                        <option value="visualization">{{chipseq_options.visualization}}</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>输入文件 (BAM/BED)</label>
+                    <label>{{labels.input_file}}</label>
                     <input type="file" id="chipseq-input">
                 </div>
-                <button class="btn" onclick="runChipSeq()">🚀 开始分析</button>
+                <button class="btn" onclick="runChipSeq()">{{labels.run}}</button>
                 <div id="chipseq-result" class="result"></div>
             </div>
             
-            <!-- 单细胞 -->
+            <!-- Single Cell -->
             <div id="singlecell-tab" style="display:none;">
                 <div class="form-group">
-                    <label>分析类型</label>
+                    <label>{{labels.analysis_type}}</label>
                     <select id="sc-analysis">
-                        <option value="dimred">降维 (UMAP/tSNE)</option>
-                        <option value="cluster">聚类分析</option>
-                        <option value="markers">标记基因检测</option>
-                        <option value="trajectory">轨迹分析</option>
+                        <option value="dimred">{{sc_options.dimred}}</option>
+                        <option value="cluster">{{sc_options.cluster}}</option>
+                        <option value="markers">{{sc_options.markers}}</option>
                     </select>
                 </div>
-                <button class="btn" onclick="runSingleCell()">🚀 开始分析</button>
+                <button class="btn" onclick="runSingleCell()">{{labels.run}}</button>
                 <div id="singlecell-result" class="result"></div>
             </div>
             
-            <!-- 多组学 -->
+            <!-- Multi-omics -->
             <div id="multiomics-tab" style="display:none;">
                 <div class="form-group">
-                    <label>组学类型</label>
+                    <label>{{labels.analysis_type}}</label>
                     <select id="mo-analysis">
-                        <option value="correlation">相关性分析</option>
-                        <option value="network">网络整合</option>
-                        <option value="joint">联合分析</option>
+                        <option value="correlation">{{mo_options.correlation}}</option>
+                        <option value="network">{{mo_options.network}}</option>
+                        <option value="joint">{{mo_options.joint}}</option>
                     </select>
                 </div>
-                <button class="btn" onclick="runMultiOmics()">🚀 开始分析</button>
+                <button class="btn" onclick="runMultiOmics()">{{labels.run}}</button>
                 <div id="multiomics-result" class="result"></div>
             </div>
         </div>
     </div>
     
     <script>
+        const text = {{text_json | safe}};
+        let currentLang = '{{lang}}';
+        
+        function switchLang() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            location.reload();
+        }
+        
         function switchTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             event.target.classList.add('active');
@@ -176,10 +293,13 @@ HTML = '''
             document.getElementById('multiomics-tab').style.display = tab === 'multiomics' ? 'block' : 'none';
         }
         
+        function getText() { return text[currentLang]; }
+        
         async function runChipSeq() {
+            const t = getText();
             const resultDiv = document.getElementById('chipseq-result');
             resultDiv.classList.add('show');
-            resultDiv.innerHTML = '<div class="loading">🧬 分析中...</div>';
+            resultDiv.innerHTML = '<div class="loading">' + t.loading + '</div>';
             
             const analysis = document.getElementById('chipseq-analysis').value;
             
@@ -187,19 +307,20 @@ HTML = '''
                 const response = await fetch('/api/chipseq', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({analysis, input: 'demo.bam'})
+                    body: JSON.stringify({analysis})
                 });
                 const result = await response.json();
                 resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
             } catch(e) {
-                resultDiv.innerHTML = '<div style="color:red;">错误: ' + e.message + '</div>';
+                resultDiv.innerHTML = '<div style="color:red;">Error: ' + e.message + '</div>';
             }
         }
         
         async function runSingleCell() {
+            const t = getText();
             const resultDiv = document.getElementById('singlecell-result');
             resultDiv.classList.add('show');
-            resultDiv.innerHTML = '<div class="loading">🦠 分析中...</div>';
+            resultDiv.innerHTML = '<div class="loading">' + t.loading + '</div>';
             
             const analysis = document.getElementById('sc-analysis').value;
             
@@ -212,14 +333,15 @@ HTML = '''
                 const result = await response.json();
                 resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
             } catch(e) {
-                resultDiv.innerHTML = '<div style="color:red;">错误: ' + e.message + '</div>';
+                resultDiv.innerHTML = '<div style="color:red;">Error: ' + e.message + '</div>';
             }
         }
         
         async function runMultiOmics() {
+            const t = getText();
             const resultDiv = document.getElementById('multiomics-result');
             resultDiv.classList.add('show');
-            resultDiv.innerHTML = '<div class="loading">🧪 分析中...</div>';
+            resultDiv.innerHTML = '<div class="loading">' + t.loading + '</div>';
             
             const analysis = document.getElementById('mo-analysis').value;
             
@@ -232,7 +354,7 @@ HTML = '''
                 const result = await response.json();
                 resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
             } catch(e) {
-                resultDiv.innerHTML = '<div style="color:red;">错误: ' + e.message + '</div>';
+                resultDiv.innerHTML = '<div style="color:red;">Error: ' + e.message + '</div>';
             }
         }
     </script>
@@ -242,21 +364,41 @@ HTML = '''
 
 @app.route('/')
 def index():
-    return render_template_string(HTML)
+    lang = request.args.get('lang', 'zh')
+    if lang not in ['zh', 'en']:
+        lang = 'zh'
+    
+    return render_template_string(
+        HTML_TEMPLATE,
+        lang=lang,
+        title=TEXT[lang]['title'],
+        subtitle=TEXT[lang]['subtitle'],
+        features=TEXT[lang]['features'],
+        tabs=TEXT[lang]['tabs'],
+        labels=TEXT[lang]['labels'],
+        chipseq_options=TEXT[lang]['chipseq_options'],
+        sc_options=TEXT[lang]['sc_options'],
+        mo_options=TEXT[lang]['mo_options'],
+        text_json=TEXT
+    )
 
 @app.route('/api/chipseq', methods=['POST'])
 def api_chipseq():
     data = request.json
     processor = ChipSeqProcessor()
     
-    if data['analysis'] == 'qc':
-        result = processor.quality_control(data.get('input', 'demo.bam'))
+    if data['analysis'] == 'macs2':
+        result = processor.macs2_call_bam(data.get('input', 'demo.bam'))
+    elif data['analysis'] == 'annotation':
+        result = processor.annotate_peaks(data.get('input', 'demo.peaks'))
+    elif data['analysis'] == 'go':
+        result = processor.go_enrichment(data.get('input', 'demo.peaks'))
+    elif data['analysis'] == 'kegg':
+        result = processor.kegg_enrichment(data.get('input', 'demo.peaks'))
     elif data['analysis'] == 'motif':
         result = processor.motif_analysis(data.get('input', 'demo.peaks'))
-    elif data['analysis'] == 'annotate':
-        result = processor.annotation(data.get('input', 'demo.peaks'))
     else:
-        result = processor.peak_calling(data.get('input', 'demo.bam'))
+        result = processor.generate_plots()
     
     return jsonify(result)
 
@@ -292,9 +434,10 @@ def api_multiomics():
 
 if __name__ == '__main__':
     print("""
-🧬 EasyMultiProfiler Web 启动中...
+🧬 EasyMultiProfiler Web (Bilingual)
    
-   访问: http://localhost:5000
+   中文: http://localhost:5000
+   English: http://localhost:5000?lang=en
    
    按 Ctrl+C 停止
     """)
