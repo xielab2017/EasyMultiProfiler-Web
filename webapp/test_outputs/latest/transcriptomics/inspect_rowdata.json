@@ -1,0 +1,7 @@
+{
+  "success": true,
+  "total": 19150,
+  "offset": 1,
+  "limit": 10,
+  "rows": "[{\"feature\":\"0610005C13Rik\",\"Name\":\"0610005C13Rik\",\"_row\":\"0610005C13Rik\"},{\"feature\":\"0610007P14Rik\",\"Name\":\"0610007P14Rik\",\"_row\":\"0610007P14Rik\"},{\"feature\":\"0610009B22Rik\",\"Name\":\"0610009B22Rik\",\"_row\":\"0610009B22Rik\"},{\"feature\":\"0610009L18Rik\",\"Name\":\"0610009L18Rik\",\"_row\":\"0610009L18Rik\"},{\"feature\":\"0610009O20Rik\",\"Name\":\"0610009O20Rik\",\"_row\":\"0610009O20Rik\"},{\"feature\":\"0610010B08Rik\",\"Name\":\"0610010B08Rik\",\"_row\":\"0610010B08Rik\"},{\"feature\":\"0610010F05Rik\",\"Name\":\"0610010F05Rik\",\"_row\":\"0610010F05Rik\"},{\"feature\":\"0610010K14Rik\",\"Name\":\"0610010K14Rik\",\"_row\":\"0610010K14Rik\"},{\"feature\":\"0610011F06Rik\",\"Name\":\"0610011F06Rik\",\"_row\":\"0610011F06Rik\"},{\"feature\":\"0610012G03Rik\",\"Name\":\"0610012G03Rik\",\"_row\":\"0610012G03Rik\"}]"
+}

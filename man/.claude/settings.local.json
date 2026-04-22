@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.R$\")",
+      "Bash(wc -l \"/Users/liweixie/Documents/Lab/Project-Manuscript/Project/Liwei Xie/LLM/Cursor/EMP/EasyMultiProfiler-main/R\"/*.R)",
+      "Bash(BASE=\"/Users/liweixie/Documents/Lab/Project-Manuscript/Project/Liwei Xie/LLM/Cursor/EMP/EasyMultiProfiler-main/webapp\")",
+      "Bash(mkdir -p \"$BASE/backend/helpers\")",
+      "Bash(mkdir -p \"$BASE/frontend/css\")",
+      "Bash(mkdir -p \"$BASE/frontend/js/pages\")",
+      "Bash(mkdir -p \"$BASE/nginx\")",
+      "Bash(R --version)",
+      "Bash(R -e \"library\\(plumber\\); library\\(base64enc\\); library\\(jsonlite\\); cat\\(''''All API dependencies OK\\\\n''''\\)\")",
+      "Bash(R -e \"install.packages\\(''''plumber'''', repos=''''https://cran.r-project.org'''', quiet=TRUE\\); install.packages\\(''''base64enc'''', repos=''''https://cran.r-project.org'''', quiet=TRUE\\)\")",
+      "Bash(API=\"http://127.0.0.1:8766\" SID=\"fRHsXcsUsbI4eOGegNNYT41o\" DATA=\"/Users/liweixie/Documents/Lab/Project-Manuscript/Project/Liwei Xie/LLM/Cursor/EMP/EasyMultiProfiler-main/RNAseq_output.csv\" __NEW_LINE_ad06f90aa6c77ac5__ curl --noproxy '*' -v -X POST \"$API/api/import?session_id=$SID&experiment_name=RNAseq&data_type=normal&assay_name=counts\" -F \"data_file=@$DATA\")",
+      "Bash(API=\"http://127.0.0.1:8766\" DATA=\"/Users/liweixie/Documents/Lab/Project-Manuscript/Project/Liwei Xie/LLM/Cursor/EMP/EasyMultiProfiler-main/RNAseq_output.csv\" SID=\"mwc9sQ2kSqudsSkrFoeKQ8EI\" __NEW_LINE_1c479c3a4980b2b9__ curl --noproxy '*' -v -X POST \"$API/api/import?session_id=$SID&experiment_name=RNAseq&data_type=normal&assay_name=counts\" -F \"data_file=@$DATA\")"
+    ]
+  }
+}

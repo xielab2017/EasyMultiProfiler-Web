@@ -1,0 +1,7 @@
+{
+  "success": true,
+  "ready": true,
+  "experiment": "16S_test",
+  "n_samples": 6,
+  "n_features": 50
+}

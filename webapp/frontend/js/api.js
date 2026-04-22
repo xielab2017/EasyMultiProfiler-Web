@@ -1,0 +1,636 @@
+// API client – talks to the Plumber backend.
+// The base URL is resolved lazily on every request so that the value
+// picked up at module-load time does not go stale if the surrounding
+// page re-configures window.API_BASE (e.g. after a late reverse-proxy
+// rewrite, or when a user navigates between pages of a multi-page app).
+//
+// Priority:
+//   1. window.API_BASE  (explicit override – used in embedded deployments)
+//   2. Heuristic based on window.location.port:
+//      - 8080  → http://<host>:8000/api   (local dev, matches start_local.sh)
+//      - 18080 → http://<host>:18000/api  (alt pairing used by some CI scripts)
+//   3. Fallback: "/api" (same-origin reverse proxy)
+function resolveApiBase() {
+  if (typeof window !== "undefined" && window.API_BASE) return window.API_BASE;
+  if (typeof window === "undefined" || !window.location) return "/api";
+  const host = window.location.hostname || "127.0.0.1";
+  const p = window.location.port || "";
+  if (p === "8080")  return `http://${host}:8000/api`;
+  if (p === "18080") return `http://${host}:18000/api`;
+  return "/api";
+}
+export function apiBase() { return resolveApiBase(); }
+// Backward-compatible export – a handful of call-sites read `API` as a
+// string to build URLs (e.g. download links).  Keep it reactive via a
+// string-wrapping object that delegates to the resolver on every call.
+// Equality/concat keeps working because we define toString/Symbol.toPrimitive.
+export const API = Object.freeze({
+  toString:            () => resolveApiBase(),
+  [Symbol.toPrimitive]: () => resolveApiBase(),
+  valueOf:             () => resolveApiBase(),
+});
+
+function sessionId() {
+  return localStorage.getItem("emp_session_id") || null;
+}
+
+function headers() {
+  const h = { "Content-Type": "application/json" };
+  const sid = sessionId();
+  if (sid) h["X-Session-Id"] = sid;
+  return h;
+}
+
+async function request(method, path, body = null, multipart = false) {
+  const opts = { method, headers: multipart ? {} : headers() };
+  if (body && !multipart) opts.body = JSON.stringify(body);
+  if (body && multipart) opts.body = body; // FormData
+
+  const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
+  const res = await fetch(`${resolveApiBase()}${path}`, opts);
+  const totalMs = ((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0);
+  const ct = res.headers.get("content-type") || "";
+
+  if (ct.includes("application/json")) {
+    const data = await res.json();
+    if (!res.ok || data.success === false) {
+      const err = new Error(data.error || data.message || `HTTP ${res.status}`);
+      err.total_ms = Math.round(totalMs);
+      err.backend_ms = data.backend_ms;
+      throw err;
+    }
+    data._total_ms = Math.round(totalMs);
+    // Emit a lightweight timing event so app.js can surface it.
+    try {
+      window.dispatchEvent(new CustomEvent("emp:timing", {
+        detail: { path, method, total_ms: data._total_ms,
+                  backend_ms: data.backend_ms, ok: true }
+      }));
+    } catch (_) { /* no-op */ }
+    return data;
+  }
+
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`);
+    err.total_ms = Math.round(totalMs);
+    throw err;
+  }
+  return res;
+}
+
+// ── SESSION ───────────────────────────────────────
+export async function getWorkflows() {
+  const data = await request("GET", "/workflows");
+  return data.workflows || [];
+}
+
+export async function getWorkflow(workflowId) {
+  const data = await request("GET", `/workflows/${encodeURIComponent(workflowId)}`);
+  return data.workflow;
+}
+
+export async function createSession() {
+  const data = await request("POST", "/session");
+  localStorage.setItem("emp_session_id", data.session_id);
+  return data.session_id;
+}
+
+export async function deleteSession() {
+  const sid = sessionId();
+  if (!sid) return { success: true };
+  const data = await request("DELETE", `/session/${encodeURIComponent(sid)}`);
+  localStorage.removeItem("emp_session_id");
+  return data;
+}
+
+export async function listExperiments() {
+  const sid = sessionId();
+  if (!sid) return [];
+  const data = await request("GET", `/session/${sid}/experiments`);
+  return data.experiments || [];
+}
+
+// ── IMPORT ────────────────────────────────────────
+export async function importData(formData) {
+  const sid = sessionId();
+  if (!sid) await createSession();
+
+  const url = new URL(`${API}/import`, window.location.href);
+  const params = new URLSearchParams({
+    session_id:      sessionId(),
+    experiment_name: formData.get("experiment_name") || "experiment",
+    data_type:       formData.get("data_type")       || "normal",
+    assay_name:      formData.get("assay_name")      || "counts",
+    start_level:     formData.get("start_level")     || "Species",
+    tax_sep:         formData.get("tax_sep")          || ";",
+  });
+  url.search = params.toString();
+
+  const res = await fetch(url.toString(), { method: "POST", body: formData });
+  const data = await res.json();
+  if (!res.ok || data.success === false)
+    throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function previewFile(formData) {
+  const res = await fetch(`${API}/preview`, { method: "POST", body: formData });
+  const data = await res.json();
+  if (!res.ok || data.success === false)
+    throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// ── SUMMARY ───────────────────────────────────────
+export async function getSummary(experiment) {
+  const sid = sessionId();
+  return request("GET", `/summary/${sid}/${encodeURIComponent(experiment)}`);
+}
+
+export async function getColdata(experiment) {
+  const sid = sessionId();
+  return request("GET", `/coldata/${sid}/${encodeURIComponent(experiment)}`);
+}
+
+export async function getFeatures(experiment) {
+  const sid = sessionId();
+  return request("GET", `/features/${sid}/${encodeURIComponent(experiment)}`);
+}
+
+export async function inspectOverview(experiment) {
+  const sid = sessionId();
+  return request("GET", `/inspect/${sid}/${encodeURIComponent(experiment)}`);
+}
+
+export async function inspectAssay(experiment, offset = 1, limit = 20) {
+  const sid = sessionId();
+  return request("GET", `/inspect/assay/${sid}/${encodeURIComponent(experiment)}?offset=${offset}&limit=${limit}`);
+}
+
+export async function inspectColdata(experiment) {
+  const sid = sessionId();
+  return request("GET", `/inspect/coldata/${sid}/${encodeURIComponent(experiment)}`);
+}
+
+export async function inspectRowdata(experiment, offset = 1, limit = 50) {
+  const sid = sessionId();
+  return request("GET", `/inspect/rowdata/${sid}/${encodeURIComponent(experiment)}?offset=${offset}&limit=${limit}`);
+}
+
+export async function inspectResults(experiment) {
+  const sid = sessionId();
+  return request("GET", `/inspect/results/${sid}/${encodeURIComponent(experiment)}`);
+}
+
+export async function inspectResult(experiment, resultName) {
+  const sid = sessionId();
+  return request("GET", `/inspect/result/${sid}/${encodeURIComponent(experiment)}/${encodeURIComponent(resultName)}`);
+}
+
+// ── PREPARATION ───────────────────────────────────
+export async function filterData(experiment, params) {
+  const sid = sessionId();
+  return request("POST", "/prepare/filter", { session_id: sid, experiment, ...params });
+}
+
+export async function normalizeData(experiment, methodOrParams) {
+  const sid = sessionId();
+  const body = (methodOrParams && typeof methodOrParams === "object")
+    ? { session_id: sid, experiment, ...methodOrParams }
+    : { session_id: sid, experiment, method: methodOrParams };
+  return request("POST", "/prepare/normalize", body);
+}
+
+export async function imputeData(experiment, methodOrParams) {
+  const sid = sessionId();
+  const body = (methodOrParams && typeof methodOrParams === "object")
+    ? { session_id: sid, experiment, ...methodOrParams }
+    : { session_id: sid, experiment, method: methodOrParams };
+  return request("POST", "/prepare/impute", body);
+}
+
+export async function rarefyData(experiment, sampleSizeOrParams) {
+  const sid = sessionId();
+  const body = (sampleSizeOrParams && typeof sampleSizeOrParams === "object")
+    ? { session_id: sid, experiment, ...sampleSizeOrParams }
+    : { session_id: sid, experiment, sample_size: sampleSizeOrParams };
+  return request("POST", "/prepare/rarefy", body);
+}
+
+export async function collapseData(experiment, taxaLevelOrParams) {
+  const sid = sessionId();
+  const body = (taxaLevelOrParams && typeof taxaLevelOrParams === "object")
+    ? { session_id: sid, experiment, ...taxaLevelOrParams }
+    : { session_id: sid, experiment, taxa_level: taxaLevelOrParams };
+  return request("POST", "/prepare/collapse", body);
+}
+
+export async function listPrepareSnapshots(experiment) {
+  const sid = sessionId();
+  return request("GET", `/prepare/snapshots/${encodeURIComponent(sid)}/${encodeURIComponent(experiment)}`);
+}
+
+export async function usePrepareSnapshot(experiment, snapshot_id) {
+  const sid = sessionId();
+  return request("POST", "/prepare/use_snapshot", { session_id: sid, experiment, snapshot_id });
+}
+
+// ── ANALYSIS ──────────────────────────────────────
+export async function analyzeAlpha(experiment, method, source = "current") {
+  const sid = sessionId();
+  return request("POST", "/analyze/alpha", { session_id: sid, experiment, method, source });
+}
+
+export async function analyzeDiff(experiment, method, group_var, ref_group, test_group, opts = {}) {
+  const sid = sessionId();
+  return request("POST", "/analyze/differential",
+    { session_id: sid, experiment, method, group_var, ref_group, test_group, ...opts });
+}
+
+export async function analyzeDiffAsync(experiment, method, group_var, ref_group, test_group, opts = {}) {
+  const sid = sessionId();
+  return request("POST", "/analyze/differential/async",
+    { session_id: sid, experiment, method, group_var, ref_group, test_group, ...opts });
+}
+
+export async function getJobStatus(jobId) {
+  return request("GET", `/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export async function getJobResult(jobId) {
+  return request("GET", `/jobs/${encodeURIComponent(jobId)}/result`);
+}
+
+// ────────────────────────────────────────────────────────────────
+//  One-click pipelines (Run All)
+// ────────────────────────────────────────────────────────────────
+
+export async function runAllRnaseq(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/rnaseq/run_all", { session_id: sid, experiment, ...params });
+}
+
+export async function runAllM16s(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/microbiome_16s/run_all", { session_id: sid, experiment, ...params });
+}
+
+export async function listBundles() {
+  const sid = sessionId();
+  return request("GET", `/bundles/${encodeURIComponent(sid)}`);
+}
+
+export function bundleDownloadUrl(name) {
+  const sid = sessionId();
+  return `${resolveApiBase()}/bundles/${encodeURIComponent(sid)}/${encodeURIComponent(name)}`;
+}
+
+export async function pollJobUntilDone(jobId, onProgress = null, intervalMs = 700, timeoutMs = 600000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const st = await getJobStatus(jobId);
+    const job = st.job || {};
+    if (onProgress) {
+      try { onProgress(job); } catch (_) { /* no-op */ }
+    }
+    if (job.status === "done")  return { job, result: await getJobResult(jobId) };
+    if (job.status === "error") throw new Error(job.error || "Job failed");
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  throw new Error("Job timed out");
+}
+
+export async function analyzeDimension(experiment, method) {
+  const sid = sessionId();
+  return request("POST", "/analyze/dimension", { session_id: sid, experiment, method });
+}
+
+export async function analyzeCorrelation(experiment, use) {
+  const sid = sessionId();
+  return request("POST", "/analyze/correlation", { session_id: sid, experiment, use });
+}
+
+export async function analyzeCluster(experiment, method, k) {
+  const sid = sessionId();
+  return request("POST", "/analyze/cluster", { session_id: sid, experiment, method, k });
+}
+
+export async function analyzeMarker(experiment, method, group_var, ref_group = null, test_group = null) {
+  const sid = sessionId();
+  return request("POST", "/analyze/marker", { session_id: sid, experiment, method, group_var, ref_group, test_group });
+}
+
+export async function analyzeEnrichment(experiment, database, organism, opts = {}) {
+  const sid = sessionId();
+  return request("POST", "/analyze/enrichment", {
+    session_id: sid,
+    experiment,
+    database,
+    organism,
+    fc_cutoff: opts.fcCutoff ?? 1.0,
+    p_cutoff:  opts.pCutoff  ?? 0.05,
+    use_padj:  opts.usePadj  ?? true,
+    direction: opts.direction ?? "both",
+    top_n:     opts.topN      ?? 20,
+  });
+}
+
+// Submit enrichment as a background job so the UI can show a progress bar
+// through the same polling mechanism used by "Run All".
+export async function analyzeEnrichmentAsync(experiment, database, organism, opts = {}) {
+  const sid = sessionId();
+  return request("POST", "/analyze/enrichment/async", {
+    session_id: sid,
+    experiment,
+    database,
+    organism,
+    fc_cutoff: opts.fcCutoff ?? 1.0,
+    p_cutoff:  opts.pCutoff  ?? 0.05,
+    use_padj:  opts.usePadj  ?? true,
+    direction: opts.direction ?? "both",
+    top_n:     opts.topN      ?? 20,
+  });
+}
+
+// Retrieve the list of known enrichment species plus which OrgDb packages
+// are already installed on the backend.  Used to build the dropdown.
+export async function listEnrichmentSpecies() {
+  return request("GET", "/enrichment/species");
+}
+
+// Trigger a server-side BiocManager::install() for a missing OrgDb.  Returns
+// a job_id that the frontend polls with its usual progress bar.
+export async function installOrgDb(orgdb) {
+  return request("POST", "/enrichment/install", { orgdb });
+}
+
+export async function vizDegHeatmap(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/visualize/deg_heatmap", { session_id: sid, experiment, ...params });
+}
+
+export async function getDiffRaw(experiment) {
+  const sid = sessionId();
+  return request("GET", `/analyze/diff_raw/${sid}/${encodeURIComponent(experiment)}`);
+}
+
+export async function analyzeNetwork(experiment, method, cutoff) {
+  const sid = sessionId();
+  return request("POST", "/analyze/network", { session_id: sid, experiment, method, cutoff });
+}
+
+// ── VISUALIZATION ─────────────────────────────────
+export async function vizBarplot(experiment, params) {
+  const sid = sessionId();
+  return request("POST", "/visualize/barplot", { session_id: sid, experiment, ...params });
+}
+
+export async function vizBoxplot(experiment, params) {
+  const sid = sessionId();
+  return request("POST", "/visualize/boxplot", { session_id: sid, experiment, ...params });
+}
+
+export async function vizHeatmap(experiment, params) {
+  const sid = sessionId();
+  return request("POST", "/visualize/heatmap", { session_id: sid, experiment, ...params });
+}
+
+export async function vizVolcano(experiment, params) {
+  const sid = sessionId();
+  return request("POST", "/visualize/volcano", { session_id: sid, experiment, ...params });
+}
+
+export async function vizScatter(experiment, params) {
+  const sid = sessionId();
+  return request("POST", "/visualize/scatter", { session_id: sid, experiment, ...params });
+}
+
+export async function vizStructure(experiment, params) {
+  const sid = sessionId();
+  return request("POST", "/visualize/structure", { session_id: sid, experiment, ...params });
+}
+
+export async function vizAlpha(experiment, params) {
+  const sid = sessionId();
+  return request("POST", "/visualize/alpha", { session_id: sid, experiment, ...params });
+}
+
+// ── CLINICAL & PHENOTYPE ──────────────────────────
+// List numeric (+ categorical, informational only) colData columns so the
+// Clinical & Phenotype page can populate its dropdowns.
+export async function clinicalVars(experiment) {
+  const sid = sessionId();
+  return request("GET",
+    `/clinical/vars/${encodeURIComponent(sid)}/${encodeURIComponent(experiment)}`);
+}
+
+export async function clinicalVarsStandalone() {
+  const sid = sessionId();
+  return request("GET", `/clinical/vars_standalone/${encodeURIComponent(sid)}`);
+}
+
+export async function clinicalThreeLine(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/clinical/three_line", { session_id: sid, ...params });
+}
+
+export async function clinicalSystematicSummary(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/clinical/systematic_summary", { session_id: sid, ...params });
+}
+
+export async function clinicalReorient(mode = "auto") {
+  const sid = sessionId();
+  return request("POST", "/clinical/reorient", { session_id: sid, mode });
+}
+
+export async function clinicalMultiomicsJoint(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/clinical/multiomics_joint", { session_id: sid, ...params });
+}
+
+// Feature × Trait correlation (synchronous – usually < 5 s).
+// `params` = { traits: [..], method, top_n_features, p_adjust }
+export async function clinicalCor(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/clinical/cor",
+    { session_id: sid, experiment, ...params });
+}
+
+// Scatter + regression line for ONE feature vs ONE numeric trait.
+// `params` = { feature, trait, group, method, log_y }
+export async function clinicalFitline(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/clinical/fitline",
+    { session_id: sid, experiment, ...params });
+}
+
+// WGCNA module–trait correlation (async: 1–5 min on bulk RNAseq).
+// Returns `{ success, job_id, kind }`.  Poll with the usual progress helper.
+export async function clinicalWgcnaAsync(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/clinical/wgcna/async",
+    { session_id: sid, experiment, ...params });
+}
+
+// ── WORKFLOW: METABOLOMICS ────────────────────────
+export async function mbxProfile(experiment) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metabolomics/profile", { session_id: sid, experiment });
+}
+
+export async function mbxPreprocess(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metabolomics/preprocess", { session_id: sid, experiment, ...params });
+}
+
+export async function mbxAnalyzeDiff(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metabolomics/analyze/differential", { session_id: sid, experiment, ...params });
+}
+
+export async function mbxVizVolcano(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metabolomics/visualize/volcano", { session_id: sid, experiment, ...params });
+}
+
+// ── WORKFLOW: MICROBIOME 16S ──────────────────────
+export async function m16sProfile(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/microbiome_16s/profile", { session_id: sid, experiment, ...params });
+}
+export async function m16sValidate(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/microbiome_16s/validate", { session_id: sid, experiment, ...params });
+}
+
+export async function m16sPrepareTaxonomy(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/microbiome_16s/prepare/taxonomy", { session_id: sid, experiment, ...params });
+}
+
+export async function m16sVizSankey(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/microbiome_16s/visualize/sankey", { session_id: sid, experiment, ...params });
+}
+
+export async function m16sVizNetwork(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/microbiome_16s/visualize/network", { session_id: sid, experiment, ...params });
+}
+
+// ── METAGENOMICS WORKFLOW ─────────────────────────
+export async function mgxProfile(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metagenomics/profile", { session_id: sid, experiment, ...params });
+}
+export async function mgxValidate(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metagenomics/validate", { session_id: sid, experiment, ...params });
+}
+
+export async function mgxPreprocess(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metagenomics/preprocess", { session_id: sid, experiment, ...params });
+}
+
+export async function mgxAnalyzeDifferential(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metagenomics/analyze/differential", { session_id: sid, experiment, ...params });
+}
+
+export async function mgxAnalyzeEnrichment(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metagenomics/analyze/enrichment", { session_id: sid, experiment, ...params });
+}
+
+export async function mgxVizHeatmap(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metagenomics/visualize/heatmap", { session_id: sid, experiment, ...params });
+}
+
+export async function mgxVizVolcano(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metagenomics/visualize/volcano", { session_id: sid, experiment, ...params });
+}
+
+export function mgxExportResultURL(experiment) {
+  const sid = sessionId();
+  return `${API}/workflows/metagenomics/export/result/${sid}/${encodeURIComponent(experiment)}`;
+}
+
+// ── TRANSCRIPTOMICS WORKFLOW ───────────────────────
+export async function txProfile(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/transcriptomics/profile", { session_id: sid, experiment, ...params });
+}
+export async function txValidate(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/transcriptomics/validate", { session_id: sid, experiment, ...params });
+}
+
+export async function txAnalyzeDifferential(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/transcriptomics/analyze/differential", { session_id: sid, experiment, ...params });
+}
+
+export async function txAnalyzeGsea(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/transcriptomics/analyze/gsea", { session_id: sid, experiment, ...params });
+}
+
+export async function txAnalyzeWgcna(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/transcriptomics/analyze/wgcna", { session_id: sid, experiment, ...params });
+}
+
+export async function txVizHeatmap(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/transcriptomics/visualize/heatmap", { session_id: sid, experiment, ...params });
+}
+
+export async function txVizVolcano(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/transcriptomics/visualize/volcano", { session_id: sid, experiment, ...params });
+}
+
+// ── EXPORT ────────────────────────────────────────
+export function exportAssayURL(experiment) {
+  const sid = sessionId();
+  return `${API}/export/assay/${sid}/${encodeURIComponent(experiment)}`;
+}
+
+export function exportEmptURL(experiment) {
+  const sid = sessionId();
+  return `${API}/export/empt/${sid}/${encodeURIComponent(experiment)}`;
+}
+
+export async function prepareEmptExport(experiment) {
+  const sid = sessionId();
+  return request("POST", "/export/empt/prepare", { session_id: sid, experiment });
+}
+
+export function exportColdataURL(experiment) {
+  const sid = sessionId();
+  return `${API}/export/coldata/${sid}/${encodeURIComponent(experiment)}`;
+}
+
+export function exportResultURL(experiment, analysis) {
+  const sid = sessionId();
+  return `${API}/export/result/${sid}/${encodeURIComponent(experiment)}/${analysis}`;
+}
+
+export function exportRdsURL() {
+  const sid = sessionId();
+  return `${API}/export/rds/${sid}`;
+}
+
+export function mbxExportDiffURL(experiment) {
+  const sid = sessionId();
+  return `${API}/workflows/metabolomics/export/differential/${sid}/${encodeURIComponent(experiment)}`;
+}
+
+export async function mbxValidate(experiment, params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/metabolomics/validate", { session_id: sid, experiment, ...params });
+}

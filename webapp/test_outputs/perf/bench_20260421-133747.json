@@ -1,0 +1,124 @@
+{
+  "rnaseq": {
+    "session_id": "xXbtJQh6wBmUD1z9RBHXLlWA",
+    "steps": [
+      {
+        "label": "import.rnaseq (19150x24)",
+        "total_ms": 916,
+        "backend_ms": 894.9,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "summary",
+        "total_ms": 1115,
+        "backend_ms": 1102.9,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "analyze.alpha.shannon",
+        "total_ms": 772,
+        "backend_ms": 762.7,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "analyze.dimension.PCA",
+        "total_ms": 629,
+        "backend_ms": 623.8,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "diff.sync.DESeq2 (optimised)",
+        "total_ms": 6803,
+        "backend_ms": 6760.3,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "diff.async.wilcox (opt: filter+subset+parallel)",
+        "total_ms": 110619,
+        "backend_ms": 111.2,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "viz.heatmap.top50",
+        "total_ms": 1041,
+        "backend_ms": 1030.6,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "viz.scatter.pca",
+        "total_ms": 495,
+        "backend_ms": 488,
+        "ok": true,
+        "error": null
+      }
+    ]
+  },
+  "microbiome_16s": {
+    "session_id": "7Y6Seh0LroqRpqzpVYe4AU79",
+    "steps": [
+      {
+        "label": "import.16s",
+        "total_ms": 189,
+        "backend_ms": 180.5,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "summary",
+        "total_ms": 18,
+        "backend_ms": 14.1,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.profile",
+        "total_ms": 27,
+        "backend_ms": 22.6,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.prepare_taxonomy",
+        "total_ms": 77,
+        "backend_ms": 65.7,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.analyze.alpha",
+        "total_ms": 8,
+        "backend_ms": 3.5,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.viz.heatmap.top40",
+        "total_ms": 1016,
+        "backend_ms": 1006.6,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.viz.sankey",
+        "total_ms": 298,
+        "backend_ms": 286.3,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.viz.network",
+        "total_ms": 1209,
+        "backend_ms": 1173.7,
+        "ok": true,
+        "error": null
+      }
+    ]
+  }
+}

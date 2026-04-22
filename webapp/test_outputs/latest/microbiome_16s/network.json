@@ -1,0 +1,7 @@
+{
+  "success": true,
+  "nodes": 30,
+  "edges": 170,
+  "method": "spearman",
+  "cutoff": 0.5
+}

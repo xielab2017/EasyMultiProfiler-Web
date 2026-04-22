@@ -1,0 +1,69 @@
+{
+  "success": true,
+  "n_samples": 6,
+  "n_features": 50,
+  "assay_name": "counts",
+  "sample_names": [
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6"
+  ],
+  "feature_names": [
+    "Proteobacteria_unclassified_unclassified_unclassified_unclassified",
+    "Olsenella",
+    "Firmicutes_unclassified_unclassified_unclassified_unclassified",
+    "Dorea",
+    "F16_unclassified",
+    "Clostridiales_unclassified_unclassified",
+    "Clostridium",
+    "Mucispirillum",
+    "Desulfovibrio",
+    "Erysipelotrichaceae_unclassified",
+    "S24-7_unclassified",
+    "Lactobacillales_unclassified_unclassified",
+    "Bacteroidales_unclassified_unclassified",
+    "Lactobacillus",
+    "Helicobacter",
+    "Pediococcus",
+    "Lachnospiraceae_unclassified",
+    "Ruminococcaceae_unclassified",
+    "Sporobacter",
+    "Enterobacteriaceae_unclassified"
+  ],
+  "coldata_cols": "group",
+  "coldata": [
+    {
+      "group": "tax_1",
+      "sample": "A1"
+    },
+    {
+      "group": "tax_1",
+      "sample": "A2"
+    },
+    {
+      "group": "tax_1",
+      "sample": "A3"
+    },
+    {
+      "group": "tax_2",
+      "sample": "A4"
+    },
+    {
+      "group": "tax_2",
+      "sample": "A5"
+    },
+    {
+      "group": "tax_2",
+      "sample": "A6"
+    }
+  ],
+  "rowdata_cols": [
+    "feature",
+    "Name",
+    "taxon",
+    "taxonomy_level"
+  ]
+}

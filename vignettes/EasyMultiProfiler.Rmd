@@ -1,0 +1,62 @@
+---
+title: "Introduction to EasyMultiProfiler"
+author: |
+  | Bingdong Liu and Erqiang Hu
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    toc: true
+    theme: cayman
+    highlight: vignette
+  pdf_document:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Introduction to EasyMultiProfiler}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\usepackage[utf8]{inputenc}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, echo=FALSE, results="asis", message=FALSE, KnitrSetUp}
+library(knitr)
+knit_hooks$set(crop = hook_pdfcrop)
+knitr::opts_chunk$set(crop = TRUE, tidy=FALSE, warning=FALSE,message=FALSE, fig.align="center")
+Biocpkg <- function (pkg){
+    sprintf("[%s](http://bioconductor.org/packages/%s)", pkg, pkg)
+}
+
+CRANpkg <- function(pkg){
+    cran <- "https://CRAN.R-project.org/package" 
+    fmt <- "[%s](%s=%s)"
+    sprintf(fmt, pkg, cran, pkg) 
+}
+```
+
+```{r, echo=FALSE, results="hide", message=FALSE, Loadpackages}
+library(EasyMultiProfiler)
+```
+
+# 1. Introduction
+The EasyMultiProfiler package aims to offer a user-friendly and efficient multi-omics data analysis tool on the R platform. It facilitates various essential tasks related to microbiome, genome, and metabolite downstream analysis, providing a seamless workflow from start to finish.
+
+# 2. Function exhibition
+
+## Supported Analysis
+For more detailed information
+```{r, warning=FALSE, message=FALSE}
+help("EasyMultiProfiler")
+```
+
+# Vignette
+
+Please go to <https://github.com/liubingdong/EasyMultiProfiler/tree/main> for the full vignette.
+
+
+
+
+
+
+
+
+
+

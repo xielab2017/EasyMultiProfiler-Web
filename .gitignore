@@ -1,7 +1,6 @@
-__pycache__/
-*.pyc
-*.egg-info/
-.eggs/
-dist/
-build/
-*.egg
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+docs
+.DS_Store

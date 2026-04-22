@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "n_rows": 19150,
+  "columns": [
+    "feature",
+    "Estimate_group",
+    "pvalue",
+    "fdr",
+    "sign_group",
+    "method",
+    "vs",
+    "fold_change",
+    "log2FC"
+  ]
+}

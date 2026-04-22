@@ -1,0 +1,110 @@
+{
+  "rnaseq": {
+    "session_id": "Wdni21HfScVtVDoL3syHm6C4",
+    "steps": [
+      {
+        "label": "import.rnaseq (19150x24)",
+        "total_ms": 629,
+        "backend_ms": 607.4,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "summary",
+        "total_ms": 1199,
+        "backend_ms": 1194.4,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "analyze.alpha.shannon",
+        "total_ms": 771,
+        "backend_ms": 766.3,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "analyze.dimension.PCA",
+        "total_ms": 891,
+        "backend_ms": 884.5,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "diff.sync.DESeq2 (optimised)",
+        "total_ms": 7009,
+        "backend_ms": 6962.4,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "diff.async.wilcox (opt: filter+subset+parallel)",
+        "total_ms": 112995,
+        "backend_ms": 89.1,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "viz.heatmap.top50",
+        "total_ms": 1567,
+        "backend_ms": 1558.1,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "viz.scatter.pca",
+        "total_ms": 1236,
+        "backend_ms": 1229.7,
+        "ok": true,
+        "error": null
+      }
+    ]
+  },
+  "microbiome_16s": {
+    "session_id": "lpLvq8dYWKl0ARcksP88ThFk",
+    "steps": [
+      {
+        "label": "import.16s",
+        "total_ms": 205,
+        "backend_ms": 191.7,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "summary",
+        "total_ms": 76,
+        "backend_ms": 64.5,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.profile",
+        "total_ms": 59,
+        "backend_ms": 54,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.prepare_taxonomy",
+        "total_ms": 88,
+        "backend_ms": 84,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.analyze.alpha",
+        "total_ms": 5,
+        "backend_ms": null,
+        "ok": false,
+        "error": "HTTP Error 404: Not Found"
+      },
+      {
+        "label": "m16s.viz.heatmap.top40",
+        "total_ms": 4,
+        "backend_ms": null,
+        "ok": false,
+        "error": "HTTP Error 404: Not Found"
+      }
+    ]
+  }
+}

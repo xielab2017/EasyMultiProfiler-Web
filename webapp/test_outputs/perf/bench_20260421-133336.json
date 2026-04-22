@@ -1,0 +1,124 @@
+{
+  "rnaseq": {
+    "session_id": "sUr5j4ukYG6nPfSujpVzeQFp",
+    "steps": [
+      {
+        "label": "import.rnaseq (19150x24)",
+        "total_ms": 660,
+        "backend_ms": 641.1,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "summary",
+        "total_ms": 1575,
+        "backend_ms": 1569.1,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "analyze.alpha.shannon",
+        "total_ms": 720,
+        "backend_ms": 715.7,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "analyze.dimension.PCA",
+        "total_ms": 807,
+        "backend_ms": 801.8,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "diff.sync.DESeq2 (optimised)",
+        "total_ms": 6805,
+        "backend_ms": 6758.4,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "diff.async.wilcox (opt: filter+subset+parallel)",
+        "total_ms": 112973,
+        "backend_ms": 108.3,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "viz.heatmap.top50",
+        "total_ms": 1327,
+        "backend_ms": 1317.8,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "viz.scatter.pca",
+        "total_ms": 499,
+        "backend_ms": 492.4,
+        "ok": true,
+        "error": null
+      }
+    ]
+  },
+  "microbiome_16s": {
+    "session_id": "3RrusI2KF8zMVvmFFbKVnJhW",
+    "steps": [
+      {
+        "label": "import.16s",
+        "total_ms": 209,
+        "backend_ms": 195.1,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "summary",
+        "total_ms": 82,
+        "backend_ms": 70.6,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.profile",
+        "total_ms": 44,
+        "backend_ms": 39.9,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.prepare_taxonomy",
+        "total_ms": 94,
+        "backend_ms": 89.9,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.analyze.alpha",
+        "total_ms": 14,
+        "backend_ms": null,
+        "ok": false,
+        "error": "HTTP Error 500: Internal Server Error"
+      },
+      {
+        "label": "m16s.viz.heatmap.top40",
+        "total_ms": 1000,
+        "backend_ms": 992.3,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.viz.sankey",
+        "total_ms": 419,
+        "backend_ms": 413.2,
+        "ok": true,
+        "error": null
+      },
+      {
+        "label": "m16s.viz.network",
+        "total_ms": 1222,
+        "backend_ms": 1186.7,
+        "ok": true,
+        "error": null
+      }
+    ]
+  }
+}

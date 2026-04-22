@@ -1,0 +1,58 @@
+{
+  "timeline": [
+    {
+      "t": 0.01,
+      "progress": 0,
+      "message": "Queued"
+    },
+    {
+      "t": 9.14,
+      "progress": 25,
+      "message": "Mapping 22 genes to ENTREZID"
+    },
+    {
+      "t": 9.34,
+      "progress": 45,
+      "message": "Running KEGG enrichment on 20 genes"
+    },
+    {
+      "t": 22.01,
+      "progress": 80,
+      "message": "Formatting results"
+    },
+    {
+      "t": 22.43,
+      "progress": 90,
+      "message": "Building dot plot"
+    },
+    {
+      "t": 22.84,
+      "progress": 100,
+      "message": "Done"
+    }
+  ],
+  "n_rows": 2,
+  "columns": [
+    "category",
+    "subcategory",
+    "ID",
+    "Description",
+    "GeneRatio",
+    "BgRatio",
+    "RichFactor",
+    "FoldEnrichment",
+    "zScore",
+    "pvalue",
+    "p.adjust",
+    "qvalue",
+    "geneID",
+    "Count"
+  ],
+  "summary": {
+    "database": "KEGG",
+    "organism": "mmu",
+    "direction": "both",
+    "deg_count": 22,
+    "mapped_count": 20
+  }
+}

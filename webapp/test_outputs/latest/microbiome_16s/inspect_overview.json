@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "summary": {
+    "experiment": "16S_test",
+    "assay_name": "counts",
+    "n_features": 369,
+    "n_samples": 6,
+    "n_coldata_cols": 1,
+    "n_rowdata_cols": 8
+  }
+}
