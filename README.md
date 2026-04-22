@@ -150,7 +150,7 @@ Then open:
 Desktop launchers created after install:
 
 - macOS: `~/Desktop/EasyMultiProfiler-Web.command`
-- Windows: `%USERPROFILE%\Desktop\EasyMultiProfiler-Web.bat`
+- Windows: `%USERPROFILE%\Desktop\EasyMultiProfiler-Web.bat` and `EasyMultiProfiler-Web.lnk`
 
 You can also run directly:
 
