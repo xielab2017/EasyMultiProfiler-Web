@@ -439,6 +439,15 @@ tr:hover td { background: rgba(59,110,245,.04); }
 }
 .perf-title { text-transform: uppercase; letter-spacing: .5px; font-size: 10px; }
 .perf-last  { color: #cbd5e1; word-break: break-word; }
+.locale-note {
+  margin-top: 10px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: #94a3b8;
+  word-break: break-word;
+  border-top: 1px dashed #2d3d56;
+  padding-top: 8px;
+}
 
 /* ─── STEP TIMING CHIP ──────────────────────── */
 .step-timing {

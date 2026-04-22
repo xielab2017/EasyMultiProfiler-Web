@@ -2977,7 +2977,39 @@ document.getElementById("clin-btn-wgcna")?.addEventListener("click", async () =>
 });
 
 // ── INITIALISE ────────────────────────────────────
+async function detectPreferredLocale() {
+  const navLang = (navigator.language || "").toLowerCase();
+  let locale = navLang.startsWith("zh") ? "zh" : "en";
+  try {
+    const ctl = new AbortController();
+    const tm = setTimeout(() => ctl.abort(), 1200);
+    const r = await fetch("https://ipapi.co/json/", { signal: ctl.signal });
+    clearTimeout(tm);
+    if (r.ok) {
+      const j = await r.json();
+      const c = String(j?.country_code || "").toUpperCase();
+      if (["CN", "HK", "MO", "TW"].includes(c)) locale = "zh";
+    }
+  } catch (_) {
+    // Keep browser-language fallback when IP lookup is unavailable.
+  }
+  return locale;
+}
+
+async function renderLocaleNote() {
+  const el = document.getElementById("locale-note");
+  if (!el) return;
+  const locale = await detectPreferredLocale();
+  const cmd = `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"`;
+  if (locale === "zh") {
+    el.textContent = `一键安装命令: ${cmd} ｜ 常见问题: GitHub Issues`;
+  } else {
+    el.textContent = `One-line install: ${cmd} | Support: GitHub Issues`;
+  }
+}
+
 (async () => {
+  renderLocaleNote();
   await loadWorkflowBlueprint();
   await refreshExperimentList();
   if (localStorage.getItem("emp_session_id")) {
