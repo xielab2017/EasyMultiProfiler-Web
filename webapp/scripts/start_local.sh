@@ -2,6 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CFG_FILE="${ROOT_DIR}/webapp/config/runtime.env"
+if [[ -f "${CFG_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${CFG_FILE}"
+fi
 API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-8080}"
 PIDS_DIR="${ROOT_DIR}/.local_run"

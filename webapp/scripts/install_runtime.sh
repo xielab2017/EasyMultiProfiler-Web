@@ -11,6 +11,7 @@ fi
 
 echo "Installing EasyMultiProfiler web runtime dependencies..."
 Rscript "webapp/scripts/install_runtime.R" "$@"
+bash "webapp/scripts/init_runtime_config.sh"
 if [[ -x "webapp/scripts/create_desktop_launcher.sh" ]]; then
   bash "webapp/scripts/create_desktop_launcher.sh" || true
 fi

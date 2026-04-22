@@ -1,6 +1,16 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$cfg = Join-Path $Root "webapp\config\runtime.env"
+if (Test-Path $cfg) {
+  Get-Content $cfg | ForEach-Object {
+    if ($_ -match "^\s*#" -or $_ -notmatch "=") { return }
+    $kv = $_.Split("=",2)
+    $k = $kv[0].Trim()
+    $v = $kv[1].Trim()
+    if ($k -and $v) { Set-Item -Path "Env:$k" -Value $v }
+  }
+}
 $ApiPort = if ($env:API_PORT) { $env:API_PORT } else { "8000" }
 $WebPort = if ($env:WEB_PORT) { $env:WEB_PORT } else { "8080" }
 $RunDir = Join-Path $Root ".local_run"

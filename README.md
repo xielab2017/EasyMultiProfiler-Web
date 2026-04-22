@@ -132,6 +132,13 @@ This repo now includes scripts for a distributable "download and run" workflow:
 - Install + start in one command: `webapp/scripts/bootstrap_and_start.sh`
 - Build release zip: `webapp/scripts/package_release.sh`
 
+The installer now integrates EMP core package installation in one pass:
+
+- Automatically installs `EasyMultiProfiler` from local source in this repo (preferred)
+- Falls back to GitHub install when local package source is unavailable
+- Installs `gtsummary` and key dependencies together
+- Writes runtime config file: `webapp/config/runtime.env`
+
 #### End-user quick start
 
 ```bash
