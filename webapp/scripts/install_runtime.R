@@ -4,6 +4,17 @@ args <- commandArgs(trailingOnly = TRUE)
 fail_fast <- "--fail-fast" %in% args
 
 msg <- function(...) cat(sprintf(...), "\n")
+set_default_repos <- function() {
+  repos <- getOption("repos")
+  if (is.null(repos) || !length(repos)) repos <- c(CRAN = "@CRAN@")
+  if (identical(unname(repos["CRAN"]), "@CRAN@") || is.na(repos["CRAN"]) || !nzchar(repos["CRAN"])) {
+    repos["CRAN"] <- Sys.getenv("EMP_CRAN_MIRROR", unset = "https://cloud.r-project.org")
+  }
+  options(repos = repos)
+  if (!nzchar(Sys.getenv("BIOCONDUCTOR_CONFIG_FILE", ""))) {
+    options(BioC_mirror = Sys.getenv("EMP_BIOC_MIRROR", unset = "https://bioconductor.org"))
+  }
+}
 
 install_cran <- function(pkgs) {
   missing <- pkgs[!vapply(pkgs, requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))]
@@ -30,7 +41,9 @@ safe <- function(expr, label) {
 }
 
 options(timeout = max(600L, getOption("timeout", 60L)))
+set_default_repos()
 msg("=== EasyMultiProfiler web runtime installer ===")
+msg("[REPO] CRAN mirror: %s", getOption("repos")[["CRAN"]])
 
 cran_pkgs <- c(
   "plumber", "jsonlite", "base64enc", "matrixStats", "pheatmap",

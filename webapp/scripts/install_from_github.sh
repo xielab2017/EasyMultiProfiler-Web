@@ -22,4 +22,5 @@ fi
 
 cd "${TARGET_DIR}"
 echo "Running one-step installer and launcher..."
+export EMP_CRAN_MIRROR="${EMP_CRAN_MIRROR:-https://cloud.r-project.org}"
 bash "webapp/scripts/bootstrap_and_start.sh"
