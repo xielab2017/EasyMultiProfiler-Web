@@ -4,34 +4,17 @@ This folder contains the non-Shiny web interface for EasyMultiProfiler.
 
 ## Run locally
 
-From the project root:
-
-### One-line install from GitHub
+### One-line install (recommended)
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"
 ```
 
-This command clones the GitHub repository and runs one-step install + start automatically.
+This command does everything automatically:
 
-```bash
-# Recommended: one-step install + run
-webapp/scripts/bootstrap_and_start.sh
-```
-
-This installer automatically installs:
-
-- EasyMultiProfiler (EMP core package)
-- gtsummary
-- clusterProfiler / WGCNA and other required runtime dependencies
-
-No manual EMP installation step is required for web usage.
-
-If dependencies are already installed and you only want to start services:
-
-```bash
-webapp/scripts/start_local.sh
-```
+1. Download project from GitHub
+2. Install required dependencies
+3. Start services and open the web page
 
 Open:
 

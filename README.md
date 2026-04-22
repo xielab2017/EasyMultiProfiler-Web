@@ -125,52 +125,24 @@ Open:
 
 ### GitHub download + one-click start (recommended for end users)
 
-This repo now includes scripts for a distributable "download and run" workflow:
-
-- One-click launcher (macOS): `Run-EMP-Web.command`
-- Runtime installer: `webapp/scripts/install_runtime.sh`
-- Install + start in one command: `webapp/scripts/bootstrap_and_start.sh`
-- Build release zip: `webapp/scripts/package_release.sh`
-
-#### One-line install from GitHub link (new)
+Use this single command:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"
 ```
 
-What this does:
+This command will automatically:
 
 1. Clone `https://github.com/xielab2017/EasyMultiProfiler-Web.git`
-2. Install EMP + web dependencies automatically
+2. Install all required dependencies
 3. Start backend/frontend and open browser
-
-#### End-user quick start
-
-```bash
-# 1) Download from GitHub (Code -> Download ZIP), then unzip and enter folder
-cd EasyMultiProfiler-main
-
-# 2) One-click install + run
-#    (installs EMP + gtsummary + required dependencies automatically)
-bash webapp/scripts/bootstrap_and_start.sh
-```
-
-No separate EMP pre-install is required for web users.
 
 Then open:
 
 - `http://127.0.0.1:8080` (frontend)
 - `http://127.0.0.1:8000/api/health` (backend health)
 
-Desktop launchers created after install:
-
-- macOS: `~/Desktop/EasyMultiProfiler-Web.command`
-- Windows: `%USERPROFILE%\Desktop\EasyMultiProfiler-Web.bat`
-
-You can also run directly:
-
-- macOS: double-click `Run-EMP-Web.command`
-- Windows: double-click `Start-EMP-Web.bat`
+No separate manual package installation steps are required.
 
 #### Maintainer release packaging
 
