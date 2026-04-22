@@ -26,6 +26,9 @@ The EasyMultiProfiler package aims to offer a user-friendly and efficient multi-
 
 <u>The R version must be **4.3.3** or higher.</u>
 
+> This section is for **R package users** (`library(EasyMultiProfiler)`) only.  
+> If you use the **Web version**, skip this whole section and use the one-click installer in `Web deployment`.
+
 **1. Easily install (recommend)**
 
 ```R
@@ -111,11 +114,8 @@ This repository includes a web architecture that does **not** require Shiny as t
 Quick start:
 
 ```bash
-# Start backend API
-Rscript webapp/backend/run_api.R
-
-# Start frontend static server
-python -m http.server 8080 --directory webapp/frontend
+# One-step install + start (recommended)
+bash webapp/scripts/bootstrap_and_start.sh
 ```
 
 Open:
@@ -132,12 +132,17 @@ This repo now includes scripts for a distributable "download and run" workflow:
 - Install + start in one command: `webapp/scripts/bootstrap_and_start.sh`
 - Build release zip: `webapp/scripts/package_release.sh`
 
-The installer now integrates EMP core package installation in one pass:
+#### One-line install from GitHub link (new)
 
-- Automatically installs `EasyMultiProfiler` from local source in this repo (preferred)
-- Falls back to GitHub install when local package source is unavailable
-- Installs `gtsummary` and key dependencies together
-- Writes runtime config file: `webapp/config/runtime.env`
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"
+```
+
+What this does:
+
+1. Clone `https://github.com/xielab2017/EasyMultiProfiler-Web.git`
+2. Install EMP + web dependencies automatically
+3. Start backend/frontend and open browser
 
 #### End-user quick start
 
@@ -146,8 +151,11 @@ The installer now integrates EMP core package installation in one pass:
 cd EasyMultiProfiler-main
 
 # 2) One-click install + run
+#    (installs EMP + gtsummary + required dependencies automatically)
 bash webapp/scripts/bootstrap_and_start.sh
 ```
+
+No separate EMP pre-install is required for web users.
 
 Then open:
 
@@ -157,7 +165,7 @@ Then open:
 Desktop launchers created after install:
 
 - macOS: `~/Desktop/EasyMultiProfiler-Web.command`
-- Windows: `%USERPROFILE%\Desktop\EasyMultiProfiler-Web.bat` and `EasyMultiProfiler-Web.lnk`
+- Windows: `%USERPROFILE%\Desktop\EasyMultiProfiler-Web.bat`
 
 You can also run directly:
 

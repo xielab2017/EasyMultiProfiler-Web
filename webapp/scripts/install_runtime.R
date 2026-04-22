@@ -4,7 +4,6 @@ args <- commandArgs(trailingOnly = TRUE)
 fail_fast <- "--fail-fast" %in% args
 
 msg <- function(...) cat(sprintf(...), "\n")
-root_dir <- normalizePath(getwd(), winslash = "/", mustWork = FALSE)
 
 install_cran <- function(pkgs) {
   missing <- pkgs[!vapply(pkgs, requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))]
@@ -52,16 +51,9 @@ if (!requireNamespace("remotes", quietly = TRUE)) {
 }
 
 safe({
-  emp_local <- file.path(root_dir, "DESCRIPTION")
-  emp_ns <- file.path(root_dir, "NAMESPACE")
   if (!requireNamespace("EasyMultiProfiler", quietly = TRUE)) {
-    if (file.exists(emp_local) && file.exists(emp_ns)) {
-      msg("[EMP] Installing EasyMultiProfiler from local source: %s", root_dir)
-      remotes::install_local(root_dir, upgrade = "never", dependencies = TRUE, force = TRUE)
-    } else {
-      msg("[GITHUB] Installing EasyMultiProfiler from liubingdong/EasyMultiProfiler")
-      remotes::install_github("liubingdong/EasyMultiProfiler", upgrade = "never", dependencies = TRUE)
-    }
+    msg("[GITHUB] Installing EasyMultiProfiler from liubingdong/EasyMultiProfiler")
+    remotes::install_github("liubingdong/EasyMultiProfiler", upgrade = "never", dependencies = TRUE)
   } else {
     msg("[OK] EasyMultiProfiler already installed.")
   }

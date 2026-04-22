@@ -22,9 +22,6 @@ if [[ -n "${USERPROFILE:-}" ]] && [[ -d "${USERPROFILE}/Desktop" ]]; then
   cat > "${TARGET}" <<EOF
 @echo off
 set ROOT=${ROOT_DIR}
-if exist "%ROOT%\\webapp\\scripts\\create_windows_shortcut.ps1" (
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\\webapp\\scripts\\create_windows_shortcut.ps1" -Root "%ROOT%" >nul 2>nul
-)
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\\webapp\\scripts\\start_local_windows.ps1"
 EOF
   echo "Created desktop launcher: ${TARGET}"
