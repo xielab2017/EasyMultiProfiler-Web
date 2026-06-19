@@ -178,6 +178,7 @@ build_mae <- function(data_file, metadata_file = NULL,
       assay_name = assay_name
     )
   }
+  empt <- restore_feature_rownames(empt)
 
   sample_names <- colnames(empt)
 

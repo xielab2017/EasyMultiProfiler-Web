@@ -1,3 +1,8 @@
+#page-clinical .clinical-script-active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
 /* ═══════════════════════════════════════════════
    EasyMultiProfiler – Web Platform Styles
    ═══════════════════════════════════════════════ */
@@ -534,6 +539,63 @@ body.omics-metabolomics    [data-omics]:not([data-omics~="metabolomics"]) {
 /* ─── UTILITIES ───────────────────────────────── */
 .hidden { display: none !important; }
 
+/* ─── AI COPILOT (AI 解读) ─────────────────────── */
+.ai-copilot { margin: 12px 12px 4px; }
+.ai-copilot-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: linear-gradient(135deg, #6366f1, #3b6ef5);
+  color: #fff; border: none;
+}
+.ai-copilot-btn:hover { filter: brightness(1.06); }
+.ai-copilot-btn:disabled { opacity: .6; cursor: progress; }
+.ai-copilot-panel {
+  margin-top: 10px; padding: 14px 16px;
+  background: var(--clr-bg);
+  border: 1px solid var(--clr-border);
+  border-left: 3px solid var(--clr-primary);
+  border-radius: var(--radius);
+  color: var(--clr-text);
+  font-size: 14px; line-height: 1.6;
+}
+.ai-copilot-loading, .ai-copilot-error { margin: 0; color: var(--clr-muted); }
+.ai-copilot-error { color: var(--clr-danger); }
+.ai-copilot-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.ai-copilot-src { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.ai-src-llm { background: #ecfdf5; color: #047857; }
+.ai-src-offline { background: #eff6ff; color: #1d4ed8; }
+.ai-copilot-hint { font-size: 11px; color: var(--clr-muted); }
+.ai-copilot-body .ai-md-h { margin: 12px 0 4px; font-size: 14px; color: var(--clr-primary-d); }
+.ai-copilot-body p { margin: 6px 0; }
+.ai-copilot-body ul, .ai-copilot-body ol { margin: 4px 0 8px; padding-left: 22px; }
+.ai-copilot-body li { margin: 3px 0; }
+.ai-copilot-body code {
+  background: var(--clr-surface); border: 1px solid var(--clr-border);
+  border-radius: 4px; padding: 0 4px; font-size: 12px;
+}
+
+/* ─── WORKFLOW STEPPER & ONBOARDING ───────────── */
+.topbar-left { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.workflow-stepper {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--clr-muted);
+}
+.wf-step {
+  padding: 2px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.wf-step:hover { border-color: var(--clr-border); background: var(--clr-surface); }
+.wf-step.is-active { background: #eef2ff; color: var(--clr-primary-d); font-weight: 600; }
+.wf-step.is-done { color: #059669; }
+.wf-arrow { opacity: 0.4; user-select: none; }
+.welcome-card { border-left: 4px solid var(--clr-primary); background: linear-gradient(135deg, #f8fafc, #eef2ff); }
+.demo-dataset-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.upload-zone.is-dragover { border-color: var(--clr-primary); background: #eef2ff; }
+.btn-link {
+  background: none; border: none; color: #93c5fd; cursor: pointer;
+  font-size: inherit; padding: 0; text-decoration: underline;
+}
+.locale-note a { color: #93c5fd; }
+
 /* ─── RESPONSIVE ──────────────────────────────── */
 @media (max-width: 768px) {
   #sidebar { width: 60px; }
@@ -542,4 +604,13 @@ body.omics-metabolomics    [data-omics]:not([data-omics~="metabolomics"]) {
   .nav-item { justify-content: center; padding: 10px; }
   .form-grid { grid-template-columns: 1fr; }
   .upload-row { flex-direction: column; }
+  .omics-switch {
+    position: fixed; top: 0; left: 60px; right: 0; z-index: 90;
+    background: var(--clr-sidebar); padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .omics-switch-label { display: none; }
+  #omics-pipeline { width: 100%; max-width: none; }
+  #topbar { margin-top: 48px; }
+  .workflow-stepper { display: none; }
 }

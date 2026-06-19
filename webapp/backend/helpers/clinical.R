@@ -22,6 +22,14 @@
   x
 }
 
+.clin_exact_id <- function(x) {
+  x <- toupper(trimws(as.character(x)))
+  x <- sub("^\ufeff", "", x)
+  x <- gsub("[\\.\\-]+", "_", x)
+  x <- gsub("_+", "_", x)
+  x
+}
+
 .clin_external_path <- function(session_id, kind = "legacy") {
   k <- tolower(trimws(as.character(kind %||% "legacy")))
   dirp <- dirname(mae_path(session_id))
@@ -30,17 +38,55 @@
   file.path(dirp, "clinical_uploaded.csv")
 }
 
-.clin_read_external <- function(session_id) {
-  candidates <- c(
-    .clin_external_path(session_id, "raw"),
-    .clin_external_path(session_id, "legacy"),
-    .clin_external_path(session_id, "meta")
-  )
-  for (p in candidates) {
-    if (!file.exists(p)) next
-    meta <- tryCatch(read_metadata_table(p), error = function(e) NULL)
-    if (!is.null(meta) && nrow(meta) && ncol(meta)) return(meta)
+.clin_merge_external_tables <- function(raw, meta) {
+  if (is.null(raw) || !nrow(raw)) return(meta)
+  if (is.null(meta) || !nrow(meta)) return(raw)
+  if (!"primary" %in% names(raw) || !"primary" %in% names(meta)) return(raw)
+
+  raw_key <- .clin_exact_id(raw$primary)
+  meta_key <- .clin_exact_id(meta$primary)
+  all_key <- unique(c(raw_key[nzchar(raw_key)], meta_key[nzchar(meta_key)]))
+  out <- data.frame(primary = character(length(all_key)), stringsAsFactors = FALSE)
+  out$primary <- all_key
+
+  raw_idx <- match(all_key, raw_key)
+  meta_idx <- match(all_key, meta_key)
+  raw_cols <- setdiff(names(raw), "primary")
+  meta_cols <- setdiff(names(meta), "primary")
+  for (col in union(raw_cols, meta_cols)) {
+    vals <- rep(NA_character_, length(all_key))
+    if (col %in% raw_cols) {
+      ii <- which(!is.na(raw_idx))
+      vals[ii] <- as.character(raw[[col]][raw_idx[ii]])
+    }
+    if (col %in% meta_cols) {
+      ii <- which(!is.na(meta_idx))
+      mv <- as.character(meta[[col]][meta_idx[ii]])
+      empty <- is.na(vals[ii]) | !nzchar(vals[ii])
+      vals[ii[empty]] <- mv[empty]
+    }
+    out[[col]] <- vals
   }
+  raw_primary <- as.character(raw$primary)[raw_idx]
+  meta_primary <- as.character(meta$primary)[meta_idx]
+  out$primary <- ifelse(!is.na(raw_idx), raw_primary, meta_primary)
+  out
+}
+
+.clin_read_external <- function(session_id) {
+  raw <- NULL
+  legacy <- NULL
+  meta <- NULL
+  p_raw <- .clin_external_path(session_id, "raw")
+  p_legacy <- .clin_external_path(session_id, "legacy")
+  p_meta <- .clin_external_path(session_id, "meta")
+  if (file.exists(p_raw)) raw <- tryCatch(read_metadata_table(p_raw), error = function(e) NULL)
+  if (file.exists(p_legacy)) legacy <- tryCatch(read_metadata_table(p_legacy), error = function(e) NULL)
+  if (file.exists(p_meta)) meta <- tryCatch(read_metadata_table(p_meta), error = function(e) NULL)
+
+  base <- if (!is.null(raw) && nrow(raw) && ncol(raw)) raw else legacy
+  merged <- .clin_merge_external_tables(base, meta)
+  if (!is.null(merged) && nrow(merged) && ncol(merged)) return(merged)
   NULL
 }
 
@@ -120,6 +166,47 @@ reorient_standalone_clinical_table <- function(session_id, mode = "auto") {
   merged
 }
 
+merged_experiment_coldata <- function(session_id, empt) {
+  cd <- .clin_merge_external_cd(session_id, empt)
+  sn <- as.character(colnames(empt))
+  if (!length(sn) || !nrow(cd)) return(cd)
+  if (all(sn %in% rownames(cd))) {
+    return(cd[sn, , drop = FALSE])
+  }
+  idx <- match(sn, rownames(cd))
+  if (any(is.na(idx))) {
+  idx2 <- match(.clin_norm_id(sn), .clin_norm_id(rownames(cd)))
+  idx[is.na(idx)] <- idx2[is.na(idx)]
+  }
+  out <- cd[idx, , drop = FALSE]
+  rownames(out) <- sn
+  out
+}
+
+apply_merged_coldata <- function(session_id, empt) {
+  cd_df <- merged_experiment_coldata(session_id, empt)
+  SummarizedExperiment::colData(empt) <- S4Vectors::DataFrame(cd_df)
+  empt
+}
+
+.coldata_is_group_like_name <- function(nm) {
+  tolower(trimws(as.character(nm))) %in% c(
+    "group", "subgroup", "cohort", "condition", "disease", "diagnosis", "treatment"
+  )
+}
+
+.coldata_column_summaries <- function(cd, max_values = 100L) {
+  lapply(names(cd), function(col) {
+    vals <- unique(na.omit(as.character(cd[[col]])))
+    vals <- vals[nzchar(vals)]
+    list(
+      name = col,
+      n_unique = length(vals),
+      values = as.character(vals[seq_len(min(max_values, length(vals)))])
+    )
+  })
+}
+
 # ---------------------------------------------------------------------------
 # list_clinical_vars(session_id, experiment)
 #
@@ -144,7 +231,8 @@ list_clinical_vars <- function(session_id, experiment) {
   rows <- lapply(names(cd), function(nm) {
     v <- cd[[nm]]
     vn <- suppressWarnings(as.numeric(v))
-    is_num <- is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))
+    is_num <- (is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))) &&
+      !.coldata_is_group_like_name(nm)
     if (is_num) {
       data.frame(
         name      = nm,
@@ -191,7 +279,8 @@ list_clinical_vars_standalone <- function(session_id) {
   rows <- lapply(names(cd), function(nm) {
     v <- cd[[nm]]
     vn <- suppressWarnings(as.numeric(v))
-    is_num <- is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))
+    is_num <- (is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))) &&
+      !.coldata_is_group_like_name(nm)
     if (is_num) {
       data.frame(
         name = nm, type = "numeric",
@@ -223,6 +312,41 @@ list_clinical_vars_standalone <- function(session_id) {
   out
 }
 
+.clinical_is_numeric_like <- function(v) {
+  vn <- suppressWarnings(as.numeric(v))
+  is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))
+}
+
+.clinical_is_low_cardinality_group <- function(v, max_levels = 20L) {
+  if (.clinical_is_numeric_like(v)) return(FALSE)
+  ux <- unique(stats::na.omit(as.character(v)))
+  ux <- ux[nzchar(ux)]
+  length(ux) >= 2L && length(ux) <= max_levels
+}
+
+.clinical_preferred_group_var <- function(cd, group_var = NULL, max_levels = 20L) {
+  if (is.null(cd) || !ncol(cd)) return(NULL)
+  if (!is.null(group_var) && nzchar(group_var)) {
+    hit <- names(cd)[tolower(names(cd)) == tolower(group_var)]
+    if (length(hit)) return(hit[1])
+  }
+  preferred <- c(
+    "Group", "group", "Disease", "disease", "Condition", "condition",
+    "Diagnosis", "diagnosis", "Cohort", "cohort", "Subgroup", "subgroup"
+  )
+  for (nm in preferred) {
+    hit <- names(cd)[tolower(names(cd)) == tolower(nm)]
+    if (length(hit) && .clinical_is_low_cardinality_group(cd[[hit[1]]], max_levels = max_levels)) {
+      return(hit[1])
+    }
+  }
+  avoid <- c("primary", "SampleID", "sampleID", "Sample", "patient", "Patient", "gender", "Gender", "sex", "Sex")
+  cat_cols <- setdiff(names(cd)[sapply(cd, .clinical_is_low_cardinality_group, max_levels = max_levels)], avoid)
+  if (length(cat_cols)) return(cat_cols[1])
+  cat_cols <- names(cd)[sapply(cd, .clinical_is_low_cardinality_group, max_levels = max_levels)]
+  if (length(cat_cols)) cat_cols[1] else NULL
+}
+
 .three_line_gtsummary_from_df <- function(cd, group_var = NULL,
                                           skip_high_cardinality = TRUE,
                                           max_levels = 20L) {
@@ -243,7 +367,8 @@ list_clinical_vars_standalone <- function(session_id) {
     keep_var <- keep_var[sapply(keep_var, function(nm) {
       v <- x[[nm]]
       vn <- suppressWarnings(as.numeric(v))
-      is_num <- is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))
+      is_num <- (is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))) &&
+      !.coldata_is_group_like_name(nm)
       if (is_num) return(TRUE)
       nlv <- length(unique(stats::na.omit(as.character(v))))
       nlv <= max_levels
@@ -252,20 +377,7 @@ list_clinical_vars_standalone <- function(session_id) {
   }
   if (!ncol(x)) stop("No variables left after high-cardinality filtering.")
 
-  by_var <- NULL
-  if (!is.null(group_var) && nzchar(group_var)) {
-    hit <- names(x)[tolower(names(x)) == tolower(group_var)]
-    if (length(hit)) by_var <- hit[1]
-  } else {
-    cat_cols <- names(x)[sapply(x, function(v) {
-      vn <- suppressWarnings(as.numeric(v))
-      is_num <- is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))
-      if (is_num) return(FALSE)
-      ux <- unique(stats::na.omit(as.character(v)))
-      length(ux) >= 2 && length(ux) <= 10
-    })]
-    if (length(cat_cols)) by_var <- cat_cols[1]
-  }
+  by_var <- .clinical_preferred_group_var(x, group_var = group_var, max_levels = min(max_levels, 20L))
 
   .is_score_like <- function(v) {
     vn <- suppressWarnings(as.numeric(v))
@@ -274,16 +386,11 @@ list_clinical_vars_standalone <- function(session_id) {
     # Treat low-cardinality integer scales as categorical (clinical scores).
     all(abs(fin - round(fin)) < 1e-8) && length(unique(fin)) >= 2L && length(unique(fin)) <= 8L
   }
-  .is_numeric_like <- function(v) {
-    vn <- suppressWarnings(as.numeric(v))
-    is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))
-  }
-
   # Build gtsummary variable types systematically for clinical indicators.
   var_type <- setNames(rep("categorical", length(names(x))), names(x))
   for (nm in names(x)) {
     v <- x[[nm]]
-    if (.is_numeric_like(v) && !.is_score_like(v)) {
+    if (.clinical_is_numeric_like(v) && !.is_score_like(v)) {
       var_type[[nm]] <- "continuous"
       x[[nm]] <- suppressWarnings(as.numeric(v))
     } else {
@@ -372,17 +479,9 @@ list_clinical_vars_standalone <- function(session_id) {
   if (!length(keep_cols)) stop("Clinical table has no variables.")
   cd <- cd[, keep_cols, drop = FALSE]
 
-  if (!is.null(group_var) && nzchar(group_var) && group_var %in% names(cd)) {
-    grp <- as.character(cd[[group_var]])
-    grp[!nzchar(grp)] <- NA_character_
-  } else {
-    cat_cols <- names(cd)[sapply(cd, function(x) {
-      ux <- unique(stats::na.omit(as.character(x)))
-      length(ux) >= 2 && length(ux) <= 10
-    })]
-    group_var <- if (length(cat_cols)) cat_cols[1] else NULL
-    grp <- if (!is.null(group_var)) as.character(cd[[group_var]]) else rep("All", nrow(cd))
-  }
+  group_var <- .clinical_preferred_group_var(cd, group_var = group_var, max_levels = min(max_levels, 20L))
+  grp <- if (!is.null(group_var)) as.character(cd[[group_var]]) else rep("All", nrow(cd))
+  grp[!nzchar(grp)] <- NA_character_
   grp[is.na(grp)] <- "NA"
   groups <- unique(grp)
   groups <- groups[order(groups)]
@@ -411,7 +510,8 @@ list_clinical_vars_standalone <- function(session_id) {
     if (!is.null(group_var) && identical(nm, group_var)) next
     v <- cd[[nm]]
     vn <- suppressWarnings(as.numeric(v))
-    is_num <- is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))
+    is_num <- (is.numeric(v) || (sum(is.finite(vn)) >= max(3L, floor(0.1 * length(v))))) &&
+      !.coldata_is_group_like_name(nm)
     row_base <- list(Variable = nm)
 
     if (is_num) {
@@ -525,32 +625,198 @@ make_clinical_three_line_table_experiment <- function(session_id, experiment, gr
   }
 }
 
+.clinical_sample_sid <- function(cd) {
+  id_col <- intersect(c("primary", "SampleID", "sampleID", "Sample"), names(cd))
+  sid <- if (length(id_col)) as.character(cd[[id_col[1]]]) else rownames(cd)
+  sid <- as.character(sid)
+  sid[is.na(sid)] <- ""
+  trimws(sid)
+}
+
+.clinical_infer_cohort <- function(sid) {
+  prefix2 <- ifelse(nchar(sid) >= 2L, substr(sid, 1L, 2L), "")
+  ifelse(substr(prefix2, 2L, 2L) == "K", "UC",
+         ifelse(substr(prefix2, 2L, 2L) == "J", "IBS", NA_character_))
+}
+
+.clinical_is_paired_sample_id <- function(sid) {
+  sid <- as.character(sid)
+  prefix2 <- ifelse(nchar(sid) >= 2L, substr(sid, 1L, 2L), "")
+  grepl("^[ABCD][KJ](_|$)", prefix2, ignore.case = TRUE) |
+    grepl("^[ABCD][KJ]_", sid, ignore.case = TRUE)
+}
+
+.clinical_infer_longitudinal_design <- function(cd, sid) {
+  sid <- as.character(sid)
+  prefix2 <- ifelse(nchar(sid) >= 2L, substr(sid, 1L, 2L), "")
+  paired_id <- .clinical_is_paired_sample_id(sid)
+  phase <- rep(NA_character_, length(sid))
+  cohort <- rep(NA_character_, length(sid))
+  if (any(paired_id)) {
+    phase[paired_id] <- ifelse(substr(prefix2[paired_id], 1L, 1L) %in% c("A", "C"), "before", "after")
+    cohort[paired_id] <- .clinical_infer_cohort(sid[paired_id])
+  }
+  pair_key <- ifelse(nchar(sid) >= 2L, substring(sid, 2L), sid)
+
+  group_col <- .clinical_preferred_group_var(cd, max_levels = 50L)
+  if (!is.null(group_col)) {
+    gv <- trimws(as.character(cd[[group_col]]))
+    temporal <- grepl("(^|[_ -])(pre|before|baseline|base|前|治疗前|post|after|follow|治疗后|后)([_ -]|$)", gv, ignore.case = TRUE)
+    if (any(temporal)) {
+      phase_from_group <- ifelse(grepl("(^|[_ -])(pre|before|baseline|base|前|治疗前)([_ -]|$)", gv, ignore.case = TRUE), "before",
+                                 ifelse(grepl("(^|[_ -])(post|after|follow|治疗后|后)([_ -]|$)", gv, ignore.case = TRUE), "after", NA_character_))
+      phase[!is.na(phase_from_group)] <- phase_from_group[!is.na(phase_from_group)]
+      cohort_from_group <- gsub("(^|[_ -])(pre|before|baseline|base|post|after|follow|前|后|治疗前|治疗后)([_ -]|$)", "_", gv, ignore.case = TRUE)
+      cohort_from_group <- gsub("(_before|_after|before_|after_)", "_", cohort_from_group, ignore.case = TRUE)
+      cohort_from_group <- gsub("[_ -]+$", "", gsub("^[_ -]+", "", cohort_from_group))
+      cohort_from_group <- toupper(cohort_from_group)
+      cohort_from_group[!nzchar(cohort_from_group)] <- NA_character_
+      cohort[is.na(cohort) & !is.na(cohort_from_group)] <- cohort_from_group[is.na(cohort) & !is.na(cohort_from_group)]
+    }
+  }
+
+  patient_cols <- names(cd)[tolower(names(cd)) %in% c("patient", "subject", "subjectid", "patientid", "id")]
+  patient_cols <- setdiff(patient_cols, c("primary", "SampleID", "sampleID", "Sample"))
+  if (length(patient_cols)) {
+    pk <- trimws(as.character(cd[[patient_cols[1]]]))
+    pair_key[nzchar(pk)] <- pk[nzchar(pk)]
+  }
+
+  data.frame(pair_key = pair_key, phase = phase, cohort = cohort, stringsAsFactors = FALSE)
+}
+
+.clinical_count_paired_samples <- function(design) {
+  pair_key_before <- unique(design$pair_key[design$phase == "before" & !is.na(design$cohort) & nzchar(design$pair_key)])
+  pair_key_after <- unique(design$pair_key[design$phase == "after" & !is.na(design$cohort) & nzchar(design$pair_key)])
+  length(intersect(pair_key_before, pair_key_after))
+}
+
+.clinical_fmt_med_iqr <- function(v) {
+  v <- suppressWarnings(as.numeric(v))
+  v <- v[is.finite(v)]
+  if (!length(v)) return("NA")
+  qs <- stats::quantile(v, probs = c(0.25, 0.5, 0.75), na.rm = TRUE, names = FALSE)
+  sprintf("%.2f [%.2f; %.2f]", qs[2], qs[1], qs[3])
+}
+
+.clinical_cross_group_table <- function(cd, group_var = NULL) {
+  group_var <- .clinical_preferred_group_var(cd, group_var = group_var, max_levels = 50L)
+  if (is.null(group_var) || !group_var %in% names(cd)) return(data.frame())
+  grp <- trimws(as.character(cd[[group_var]]))
+  keep <- !is.na(grp) & nzchar(grp)
+  if (sum(keep) < 6L) return(data.frame())
+  cd <- cd[keep, , drop = FALSE]
+  grp <- grp[keep]
+  groups <- sort(unique(grp))
+  if (length(groups) < 2L) return(data.frame())
+
+  skip_cols <- c("primary", "SampleID", "sampleID", "Sample", group_var, "Subgroup", "subgroup", "patient", "Patient")
+  keep_cols <- setdiff(names(cd), skip_cols)
+  num_vars <- keep_cols[vapply(keep_cols, function(nm) .clinical_is_numeric_like(cd[[nm]]), logical(1L))]
+  num_vars <- num_vars[!grepl("^(D_|R_)", num_vars, ignore.case = TRUE)]
+  if (!length(num_vars)) return(data.frame())
+
+  rows <- list()
+  idx <- 1L
+  for (nm in num_vars) {
+    v <- suppressWarnings(as.numeric(cd[[nm]]))
+    ok <- is.finite(v)
+    if (sum(ok) < 6L) next
+    gtab <- table(grp[ok])
+    if (length(gtab) < 2L || any(gtab < 3L)) next
+    p <- tryCatch(
+      if (length(gtab) == 2L) {
+        g1 <- v[ok & grp == groups[1]]
+        g2 <- v[ok & grp == groups[2]]
+        stats::wilcox.test(g1, g2)$p.value
+      } else {
+        stats::kruskal.test(v[ok] ~ as.factor(grp[ok]))$p.value
+      },
+      error = function(e) NA_real_
+    )
+    row <- list(
+      Variable = nm,
+      Comparison = paste(groups, collapse = " vs "),
+      P_value = ifelse(is.finite(p), signif(p, 4), NA_real_)
+    )
+    for (g in groups) row[[g]] <- .clinical_fmt_med_iqr(v[ok & grp == g])
+    rows[[idx]] <- as.data.frame(row, stringsAsFactors = FALSE)
+    idx <- idx + 1L
+  }
+  if (!length(rows)) return(data.frame())
+  dplyr::bind_rows(rows)
+}
+
+.clinical_resolve_cohorts <- function(cohort_filter = NULL) {
+  if (is.null(cohort_filter) || !length(cohort_filter)) return(c("UC", "IBS"))
+  cohorts <- toupper(trimws(as.character(cohort_filter)))
+  cohorts <- cohorts[nzchar(cohorts)]
+  cohorts <- cohorts[cohorts %in% c("UC", "IBS")]
+  if (!length(cohorts)) c("UC", "IBS") else unique(cohorts)
+}
+
+.clinical_filter_cd_by_cohorts <- function(cd, cohort_filter = NULL) {
+  if (is.null(cohort_filter) || !length(cohort_filter)) return(cd)
+  cohorts <- .clinical_resolve_cohorts(cohort_filter)
+  sid <- .clinical_sample_sid(cd)
+  cohort <- .clinical_infer_longitudinal_design(cd, sid)$cohort
+  keep <- !is.na(cohort) & cohort %in% cohorts
+  if (!any(keep)) {
+    stop(sprintf(
+      "No samples matched cohort_filter (%s). Sample IDs use AK/BK=UC and CJ/DJ=IBS prefixes.",
+      paste(cohorts, collapse = ", ")
+    ))
+  }
+  cd[keep, , drop = FALSE]
+}
+
 .clinical_systematic_tables_from_df <- function(cd, group_var = NULL,
                                                 skip_high_cardinality = TRUE,
                                                 max_levels = 20L,
-                                                table_engine = "gtsummary") {
+                                                table_engine = "gtsummary",
+                                                cohort_filter = NULL) {
+  sid <- .clinical_sample_sid(cd)
+  cohorts_to_run <- .clinical_resolve_cohorts(cohort_filter)
+  design <- .clinical_infer_longitudinal_design(cd, sid)
+  n_pairs_total <- .clinical_count_paired_samples(design)
+  longitudinal <- n_pairs_total >= 3L
+  baseline_cd <- cd
+  baseline_group_var <- .clinical_preferred_group_var(cd, group_var = group_var, max_levels = max_levels)
+  if (is.null(baseline_group_var) || !nzchar(baseline_group_var)) baseline_group_var <- group_var
+  if (isTRUE(longitudinal) && (is.null(group_var) || !nzchar(group_var))) {
+    keep_base <- design$phase == "before" & !is.na(design$cohort)
+    if (length(cohorts_to_run) && !identical(sort(cohorts_to_run), sort(c("UC", "IBS")))) {
+      keep_base <- keep_base & design$cohort %in% cohorts_to_run
+    }
+    if (any(keep_base)) {
+      baseline_cd <- cd[keep_base, , drop = FALSE]
+      baseline_cd$Cohort <- design$cohort[keep_base]
+      baseline_group_var <- "Cohort"
+    }
+  }
+
   base_tbl <- tryCatch(
     {
       engine <- tolower(trimws(as.character(table_engine %||% "gtsummary")))
       if (identical(engine, "gtsummary")) {
         tryCatch(
           .three_line_gtsummary_from_df(
-            cd,
-            group_var = group_var,
+            baseline_cd,
+            group_var = baseline_group_var,
             skip_high_cardinality = skip_high_cardinality,
             max_levels = max_levels
           ),
           error = function(e) .three_line_from_df(
-            cd,
-            group_var = group_var,
+            baseline_cd,
+            group_var = baseline_group_var,
             skip_high_cardinality = skip_high_cardinality,
             max_levels = max_levels
           )
         )
       } else {
         .three_line_from_df(
-          cd,
-          group_var = group_var,
+          baseline_cd,
+          group_var = baseline_group_var,
           skip_high_cardinality = skip_high_cardinality,
           max_levels = max_levels
         )
@@ -559,20 +825,12 @@ make_clinical_three_line_table_experiment <- function(session_id, experiment, gr
     error = function(e) data.frame(Variable = character(), stringsAsFactors = FALSE)
   )
 
-  id_col <- intersect(c("primary", "SampleID", "sampleID", "Sample"), names(cd))
-  sid <- if (length(id_col)) as.character(cd[[id_col[1]]]) else rownames(cd)
-  sid <- as.character(sid)
-  sid[is.na(sid)] <- ""
-  sid <- trimws(sid)
-
-  # Pairing rule for current clinical test sets:
-  # AK/BK and CJ/DJ share the same subject key after dropping the first letter.
-  prefix2 <- ifelse(nchar(sid) >= 2L, substr(sid, 1L, 2L), "")
-  phase <- ifelse(substr(prefix2, 1L, 1L) %in% c("A", "C"), "before",
-                  ifelse(substr(prefix2, 1L, 1L) %in% c("B", "D"), "after", NA_character_))
-  cohort <- ifelse(substr(prefix2, 2L, 2L) == "K", "UC",
-                   ifelse(substr(prefix2, 2L, 2L) == "J", "IBS", NA_character_))
-  pair_key <- ifelse(nchar(sid) >= 2L, substring(sid, 2L), sid)
+  # Longitudinal design is inferred from either:
+  # - sample IDs (AK/BK = UC before/after; CJ/DJ = IBS before/after), or
+  # - metadata columns such as Group=UC_before/UC_after plus patient IDs.
+  pair_key <- design$pair_key
+  phase <- design$phase
+  cohort <- design$cohort
 
   keep_cols <- setdiff(names(cd), c("primary", "SampleID", "sampleID", "Sample"))
   if (length(keep_cols) == 0L) {
@@ -609,32 +867,60 @@ make_clinical_three_line_table_experiment <- function(session_id, experiment, gr
   )
   d <- cbind(d, x[, num_vars, drop = FALSE])
   d <- d[!is.na(d$phase) & !is.na(d$cohort) & nzchar(d$pair_key), , drop = FALSE]
+  if (length(cohorts_to_run) && !identical(sort(cohorts_to_run), sort(c("UC", "IBS")))) {
+    d <- d[d$cohort %in% cohorts_to_run, , drop = FALSE]
+  }
   pair_key_before <- unique(d$pair_key[d$phase == "before"])
   pair_key_after <- unique(d$pair_key[d$phase == "after"])
   n_pairs_total <- length(intersect(pair_key_before, pair_key_after))
+  if (!longitudinal) {
+    grp_var <- .clinical_preferred_group_var(cd, group_var = group_var, max_levels = max_levels)
+    between_tbl <- .clinical_cross_group_table(cd = cd, group_var = grp_var)
+    n_groups <- if (!is.null(grp_var) && grp_var %in% names(cd)) {
+      length(unique(stats::na.omit(trimws(as.character(cd[[grp_var]])))))
+    } else {
+      0L
+    }
+    return(list(
+      baseline = base_tbl,
+      within = data.frame(),
+      between = between_tbl,
+      meta = list(
+        n_pairs = 0L,
+        design_type = "cross_sectional",
+        group_var = grp_var,
+        n_groups = n_groups,
+        analysis_note = if (nrow(between_tbl)) {
+          "Cross-sectional design detected: Table 1 by group plus between-group comparison. Paired before/after tables are not applicable."
+        } else {
+          "Cross-sectional design detected: only baseline Table 1 is available."
+        }
+      )
+    ))
+  }
   if (!nrow(d)) {
     return(list(
       baseline = base_tbl,
       within = data.frame(),
       between = data.frame(),
-      meta = list(n_pairs = 0L)
+      meta = list(
+        n_pairs = 0L,
+        design_type = "longitudinal",
+        group_var = baseline_group_var %||% group_var,
+        n_groups = 0L,
+        analysis_note = "Longitudinal labels were detected but no valid paired before/after samples were found."
+      )
     ))
   }
 
-  fmt_med_iqr <- function(v) {
-    v <- suppressWarnings(as.numeric(v))
-    v <- v[is.finite(v)]
-    if (!length(v)) return("NA")
-    qs <- stats::quantile(v, probs = c(0.25, 0.5, 0.75), na.rm = TRUE, names = FALSE)
-    sprintf("%.2f [%.2f; %.2f]", qs[2], qs[1], qs[3])
-  }
+  fmt_med_iqr <- .clinical_fmt_med_iqr
 
   within_rows <- list()
   between_rows <- list()
   ridx <- 1L
   bidx <- 1L
 
-  for (coh in c("UC", "IBS")) {
+  for (coh in cohorts_to_run) {
     dd <- d[d$cohort == coh, , drop = FALSE]
     if (!nrow(dd)) next
     keys <- unique(dd$pair_key)
@@ -669,8 +955,8 @@ make_clinical_three_line_table_experiment <- function(session_id, experiment, gr
 
   within_tbl <- if (length(within_rows)) dplyr::bind_rows(within_rows) else data.frame()
 
-  # Between-cohort comparison on paired deltas.
-  if (nrow(within_tbl)) {
+  # Between-cohort comparison on paired deltas (only when both UC and IBS are requested).
+  if (nrow(within_tbl) && all(c("UC", "IBS") %in% cohorts_to_run)) {
     for (nm in unique(within_tbl$Variable)) {
       get_delta <- function(coh) {
         dd <- d[d$cohort == coh, , drop = FALSE]
@@ -705,7 +991,13 @@ make_clinical_three_line_table_experiment <- function(session_id, experiment, gr
     baseline = base_tbl,
     within = within_tbl,
     between = between_tbl,
-    meta = list(n_pairs = as.integer(n_pairs_total))
+    meta = list(
+      n_pairs = as.integer(n_pairs_total),
+      design_type = "longitudinal",
+      group_var = baseline_group_var %||% group_var,
+      n_groups = length(unique(d$cohort[!is.na(d$cohort)])),
+      analysis_note = "Longitudinal paired design detected: baseline (before), within-group change, and between-cohort delta tables."
+    )
   )
 }
 
@@ -715,7 +1007,8 @@ run_clinical_systematic_summary <- function(session_id,
                                             group_var = NULL,
                                             skip_high_cardinality = TRUE,
                                             max_levels = 20L,
-                                            table_engine = "gtsummary") {
+                                            table_engine = "gtsummary",
+                                            cohort_filter = NULL) {
   src <- tolower(trimws(as.character(source %||% "standalone")))
   if (identical(src, "experiment")) {
     if (is.null(experiment) || !nzchar(experiment)) stop("experiment is required when source='experiment'.")
@@ -729,12 +1022,14 @@ run_clinical_systematic_summary <- function(session_id,
     cd <- .clin_read_external(session_id)
     if (is.null(cd) || !nrow(cd)) stop("No standalone clinical data found. Upload clinical data first.")
   }
+  cd <- .clinical_filter_cd_by_cohorts(cd, cohort_filter = cohort_filter)
   .clinical_systematic_tables_from_df(
     cd = cd,
     group_var = group_var,
     skip_high_cardinality = skip_high_cardinality,
     max_levels = max_levels,
-    table_engine = table_engine
+    table_engine = table_engine,
+    cohort_filter = cohort_filter
   )
 }
 
@@ -861,6 +1156,353 @@ run_multiomics_clinical_joint <- function(session_id, exp_a, exp_b,
     top_a = top_a,
     top_b = top_b,
     edges = edge_df
+  )
+}
+
+.clinical_binary_metrics <- function(y_true, score, positive_class = NULL) {
+  y <- as.character(y_true)
+  if (is.null(positive_class) || !nzchar(positive_class)) {
+    lv <- unique(stats::na.omit(y))
+    positive_class <- if (length(lv) >= 2L) lv[2] else lv[1]
+  }
+  ok <- !is.na(y) & is.finite(score)
+  y <- y[ok]
+  score <- as.numeric(score[ok])
+  if (length(unique(y)) != 2L || length(score) < 4L) {
+    return(list(auc = NA_real_, cutoff = NA_real_, sensitivity = NA_real_,
+                specificity = NA_real_, n = length(score), positive_class = positive_class))
+  }
+  truth <- y == positive_class
+  pos <- score[truth]
+  neg <- score[!truth]
+  if (!length(pos) || !length(neg)) {
+    return(list(auc = NA_real_, cutoff = NA_real_, sensitivity = NA_real_,
+                specificity = NA_real_, n = length(score), positive_class = positive_class))
+  }
+  auc <- (sum(rank(c(pos, neg))[seq_along(pos)]) - length(pos) * (length(pos) + 1) / 2) /
+    (length(pos) * length(neg))
+  if (auc < 0.5) {
+    score <- -score
+    auc <- 1 - auc
+  }
+  cuts <- sort(unique(score), decreasing = TRUE)
+  best <- data.frame(cutoff = NA_real_, sensitivity = NA_real_, specificity = NA_real_, youden = -Inf)
+  for (ct in cuts) {
+    pred <- score >= ct
+    sens <- sum(pred & truth) / sum(truth)
+    spec <- sum(!pred & !truth) / sum(!truth)
+    yd <- sens + spec - 1
+    if (is.finite(yd) && yd > best$youden[1]) {
+      best <- data.frame(cutoff = ct, sensitivity = sens, specificity = spec, youden = yd)
+    }
+  }
+  list(
+    auc = as.numeric(auc),
+    cutoff = as.numeric(best$cutoff[1]),
+    sensitivity = as.numeric(best$sensitivity[1]),
+    specificity = as.numeric(best$specificity[1]),
+    n = length(score),
+    positive_class = positive_class
+  )
+}
+
+.clinical_marker_build_matrix <- function(session_id, experiments,
+                                          clinical_source = "experiment",
+                                          include_clinical_numeric = TRUE,
+                                          max_features_per_omics = 200L) {
+  experiments <- unique(stats::na.omit(trimws(as.character(experiments))))
+  experiments <- experiments[nzchar(experiments)]
+  if (!length(experiments)) stop("Select at least one omics experiment.")
+
+  mats <- list()
+  common_s <- NULL
+  first_empt <- NULL
+  for (exp in experiments) {
+    empt <- get_empt_fresh(session_id, exp)
+    if (is.null(first_empt)) first_empt <- empt
+    ad <- SummarizedExperiment::assays(empt)[[1]]
+    if (is.null(ad) || !nrow(ad) || !ncol(ad)) next
+    m <- as.matrix(ad)
+    storage.mode(m) <- "numeric"
+    m[!is.finite(m)] <- NA_real_
+    vars <- apply(m, 1L, stats::var, na.rm = TRUE)
+    vars[!is.finite(vars)] <- 0
+    keep_n <- max(1L, min(as.integer(max_features_per_omics), length(vars)))
+    keep <- names(sort(vars, decreasing = TRUE))[seq_len(keep_n)]
+    m <- m[keep, , drop = FALSE]
+    rownames(m) <- paste0(make.names(exp), "::", make.names(rownames(m), unique = TRUE))
+    mats[[exp]] <- m
+    common_s <- if (is.null(common_s)) colnames(m) else intersect(common_s, colnames(m))
+  }
+  if (!length(mats)) stop("No usable omics matrices found.")
+  if (length(common_s) < 6L) stop("Too few shared samples across selected omics experiments (need >= 6).")
+
+  X <- do.call(cbind, lapply(mats, function(m) t(m[, common_s, drop = FALSE])))
+  X <- as.matrix(X)
+  rownames(X) <- common_s
+  X[!is.finite(X)] <- NA_real_
+  for (j in seq_len(ncol(X))) {
+    v <- X[, j]
+    med <- stats::median(v, na.rm = TRUE)
+    if (!is.finite(med)) med <- 0
+    v[!is.finite(v)] <- med
+    sdv <- stats::sd(v)
+    X[, j] <- if (is.finite(sdv) && sdv > 0) (v - mean(v)) / sdv else 0
+  }
+
+  cd <- if (identical(tolower(clinical_source), "standalone")) {
+    ext <- .clin_read_external(session_id)
+    if (is.null(ext) || !nrow(ext)) stop("No standalone clinical data found.")
+    ext
+  } else {
+    .clin_merge_external_cd(session_id, first_empt)
+  }
+  if (!"primary" %in% names(cd)) cd$primary <- rownames(cd)
+  idx <- match(.clin_norm_id(common_s), .clin_norm_id(cd$primary))
+  ok <- !is.na(idx)
+  if (sum(ok) < 6L) stop("Too few samples could be matched between omics and clinical metadata.")
+  X <- X[ok, , drop = FALSE]
+  cd <- cd[idx[ok], , drop = FALSE]
+  rownames(cd) <- rownames(X)
+
+  if (isTRUE(include_clinical_numeric)) {
+    num_cols <- setdiff(names(cd)[sapply(cd, function(v) {
+      vv <- suppressWarnings(as.numeric(v))
+      sum(is.finite(vv)) >= max(4L, floor(0.2 * nrow(cd)))
+    })], c("primary", "SampleID", "sampleID", "Sample"))
+    if (length(num_cols)) {
+      clin <- sapply(num_cols, function(nm) suppressWarnings(as.numeric(cd[[nm]])))
+      clin <- as.matrix(clin)
+      colnames(clin) <- paste0("Clinical::", make.names(num_cols, unique = TRUE))
+      for (j in seq_len(ncol(clin))) {
+        v <- clin[, j]
+        med <- stats::median(v, na.rm = TRUE)
+        if (!is.finite(med)) med <- 0
+        v[!is.finite(v)] <- med
+        sdv <- stats::sd(v)
+        clin[, j] <- if (is.finite(sdv) && sdv > 0) (v - mean(v)) / sdv else 0
+      }
+      X <- cbind(X, clin)
+    }
+  }
+  list(X = X, clinical = cd, experiments = experiments)
+}
+
+.clinical_train_test_split <- function(y, validation_fraction = 0.3, seed = 123L) {
+  set.seed(as.integer(seed %||% 123L))
+  y <- as.factor(y)
+  n <- length(y)
+  vf <- suppressWarnings(as.numeric(validation_fraction %||% 0.3))
+  if (!is.finite(vf) || vf <= 0 || vf >= 0.8 || n < 12L || any(table(y) < 4L)) {
+    return(list(train = seq_len(n), test = integer(0), validation = "apparent"))
+  }
+  test <- unlist(lapply(split(seq_len(n), y), function(idx) {
+    ns <- max(1L, floor(length(idx) * vf))
+    sample(idx, ns)
+  }), use.names = FALSE)
+  train <- setdiff(seq_len(n), test)
+  if (length(unique(y[train])) < 2L || length(unique(y[test])) < 2L) {
+    return(list(train = seq_len(n), test = integer(0), validation = "apparent"))
+  }
+  list(train = train, test = test, validation = "holdout")
+}
+
+run_clinical_marker_model <- function(session_id, experiments, outcome_var,
+                                      positive_class = NULL,
+                                      methods = c("randomForest", "lasso", "xgboost"),
+                                      clinical_source = "experiment",
+                                      include_clinical_numeric = TRUE,
+                                      max_features_per_omics = 200L,
+                                      top_n = 30L,
+                                      validation_fraction = 0.3,
+                                      seed = 123L) {
+  built <- .clinical_marker_build_matrix(
+    session_id = session_id,
+    experiments = experiments,
+    clinical_source = clinical_source,
+    include_clinical_numeric = include_clinical_numeric,
+    max_features_per_omics = max_features_per_omics
+  )
+  X <- built$X
+  cd <- built$clinical
+  if (is.null(outcome_var) || !nzchar(outcome_var) || !outcome_var %in% names(cd)) {
+    cats <- names(cd)[sapply(cd, function(v) {
+      ux <- unique(stats::na.omit(as.character(v)))
+      length(ux) == 2L
+    })]
+    cats <- setdiff(cats, c("primary", "SampleID", "sampleID", "Sample"))
+    if (!length(cats)) stop("Select a binary clinical outcome variable.")
+    outcome_var <- cats[1]
+  }
+  y <- as.character(cd[[outcome_var]])
+  ok <- !is.na(y) & nzchar(y)
+  X <- X[ok, , drop = FALSE]
+  cd <- cd[ok, , drop = FALSE]
+  y <- y[ok]
+  y <- as.factor(y)
+  if (length(levels(y)) != 2L) stop("Outcome variable must have exactly 2 classes.")
+  if (is.null(positive_class) || !nzchar(positive_class) || !positive_class %in% levels(y)) {
+    positive_class <- levels(y)[2]
+  }
+  y <- stats::relevel(y, ref = setdiff(levels(y), positive_class)[1])
+
+  split <- .clinical_train_test_split(y, validation_fraction = validation_fraction, seed = seed)
+  train <- split$train
+  test <- split$test
+  eval_idx <- if (length(test)) test else train
+  methods <- unique(tolower(trimws(as.character(methods))))
+  methods <- methods[nzchar(methods)]
+  if (!length(methods)) methods <- c("randomforest")
+
+  performance <- list()
+  marker_rows <- list()
+  score_rows <- list()
+  pidx <- 1L
+  midx <- 1L
+  sidx <- 1L
+
+  add_perf <- function(method, score, status = "ok", message = "") {
+    mm <- .clinical_binary_metrics(y[eval_idx], score[eval_idx], positive_class = positive_class)
+    performance[[pidx]] <<- data.frame(
+      model = method,
+      validation = split$validation,
+      outcome = outcome_var,
+      positive_class = positive_class,
+      n_total = length(y),
+      n_train = length(train),
+      n_test = length(test),
+      auc = signif(mm$auc, 4),
+      auc_gt_0_8 = is.finite(mm$auc) && mm$auc > 0.8,
+      cutoff = signif(mm$cutoff, 4),
+      sensitivity = signif(mm$sensitivity, 4),
+      specificity = signif(mm$specificity, 4),
+      model_type = ifelse(grepl("^single:", method), "single_marker", "multi_marker"),
+      independent_validation = FALSE,
+      validation_note = ifelse(identical(split$validation, "holdout"),
+                               "Internal stratified holdout; external validation cohort not supplied.",
+                               "Apparent performance; sample size was too small for holdout."),
+      status = status,
+      message = message,
+      stringsAsFactors = FALSE
+    )
+    pidx <<- pidx + 1L
+  }
+
+  # Single-indicator ROC screen for the top variance-filtered features.
+  assoc <- apply(X, 2L, function(v) {
+    mm <- .clinical_binary_metrics(y, as.numeric(v), positive_class = positive_class)
+    mm$auc
+  })
+  assoc[!is.finite(assoc)] <- NA_real_
+  ord <- order(abs(assoc - 0.5), decreasing = TRUE, na.last = NA)
+  ord <- utils::head(ord, as.integer(top_n))
+  for (j in ord) {
+    nm <- colnames(X)[j]
+    score <- as.numeric(X[, j])
+    mm <- .clinical_binary_metrics(y[eval_idx], score[eval_idx], positive_class = positive_class)
+    marker_rows[[midx]] <- data.frame(
+      model = "single_marker",
+      feature = nm,
+      importance = abs(assoc[j] - 0.5),
+      auc = signif(mm$auc, 4),
+      cutoff = signif(mm$cutoff, 4),
+      sensitivity = signif(mm$sensitivity, 4),
+      specificity = signif(mm$specificity, 4),
+      stringsAsFactors = FALSE
+    )
+    midx <- midx + 1L
+  }
+
+  fit_methods <- list(
+    randomforest = function() {
+      if (!requireNamespace("randomForest", quietly = TRUE)) stop("Package 'randomForest' is required.")
+      fit <- randomForest::randomForest(x = X[train, , drop = FALSE], y = y[train], importance = TRUE)
+      prob <- stats::predict(fit, X, type = "prob")[, positive_class]
+      imp <- randomForest::importance(fit, type = 1)
+      importance <- if (is.null(dim(imp))) as.numeric(imp) else as.numeric(imp[, 1])
+      names(importance) <- if (is.null(dim(imp))) names(imp) else rownames(imp)
+      list(score = prob, importance = importance)
+    },
+    lasso = function() {
+      if (!requireNamespace("glmnet", quietly = TRUE)) stop("Package 'glmnet' is required.")
+      nfolds <- max(2L, min(5L, as.integer(min(table(y[train]))), length(train)))
+      fit <- glmnet::cv.glmnet(X[train, , drop = FALSE], y[train], family = "binomial", alpha = 1, nfolds = nfolds)
+      prob <- as.numeric(stats::predict(fit, X, s = "lambda.min", type = "response"))
+      cf <- as.matrix(stats::coef(fit, s = "lambda.min"))
+      importance <- abs(as.numeric(cf[, 1]))
+      names(importance) <- rownames(cf)
+      importance <- importance[names(importance) != "(Intercept)"]
+      list(score = prob, importance = importance)
+    },
+    xgboost = function() {
+      if (!requireNamespace("xgboost", quietly = TRUE)) stop("Package 'xgboost' is required.")
+      label <- as.integer(y == positive_class)
+      dtrain <- xgboost::xgb.DMatrix(data = X[train, , drop = FALSE], label = label[train])
+      fit <- xgboost::xgb.train(
+        params = list(objective = "binary:logistic", eval_metric = "auc", eta = 0.08, max_depth = 3),
+        data = dtrain,
+        nrounds = 80,
+        verbose = 0
+      )
+      prob <- stats::predict(fit, xgboost::xgb.DMatrix(data = X))
+      imp <- xgboost::xgb.importance(model = fit, feature_names = colnames(X))
+      importance <- if (!is.null(imp) && nrow(imp)) stats::setNames(imp$Gain, imp$Feature) else numeric(0)
+      list(score = prob, importance = importance)
+    }
+  )
+
+  for (m in methods) {
+    key <- if (m %in% c("rf", "randomforest", "random_forest")) "randomforest" else if (m %in% c("xgb", "xgboost")) "xgboost" else m
+    label <- if (identical(key, "randomforest")) "randomForest" else key
+    if (is.null(fit_methods[[key]])) next
+    fit_out <- tryCatch(fit_methods[[key]](), error = function(e) e)
+    if (inherits(fit_out, "error")) {
+      performance[[pidx]] <- data.frame(
+        model = label, validation = split$validation, outcome = outcome_var,
+        positive_class = positive_class, n_total = length(y), n_train = length(train),
+        n_test = length(test), auc = NA_real_, auc_gt_0_8 = FALSE, cutoff = NA_real_,
+        sensitivity = NA_real_, specificity = NA_real_, model_type = "multi_marker",
+        independent_validation = FALSE,
+        validation_note = "Model failed before validation metrics could be computed.",
+        status = "error", message = conditionMessage(fit_out), stringsAsFactors = FALSE
+      )
+      pidx <- pidx + 1L
+      next
+    }
+    add_perf(label, fit_out$score)
+    imp <- sort(fit_out$importance, decreasing = TRUE)
+    imp <- imp[is.finite(imp) & imp > 0]
+    for (nm in names(utils::head(imp, as.integer(top_n)))) {
+      marker_rows[[midx]] <- data.frame(
+        model = label, feature = nm, importance = as.numeric(imp[[nm]]),
+        auc = NA_real_, cutoff = NA_real_, sensitivity = NA_real_, specificity = NA_real_,
+        stringsAsFactors = FALSE
+      )
+      midx <- midx + 1L
+    }
+    score_rows[[sidx]] <- data.frame(
+      sample = rownames(X),
+      outcome = as.character(y),
+      model = label,
+      risk_score = as.numeric(fit_out$score),
+      data_split = ifelse(seq_along(y) %in% test, "test", "train"),
+      stringsAsFactors = FALSE
+    )
+    sidx <- sidx + 1L
+  }
+
+  list(
+    performance = if (length(performance)) do.call(rbind, performance) else data.frame(),
+    markers = if (length(marker_rows)) do.call(rbind, marker_rows) else data.frame(),
+    sample_scores = if (length(score_rows)) do.call(rbind, score_rows) else data.frame(),
+    meta = list(
+      experiments = built$experiments,
+      n_samples = length(y),
+      n_features = ncol(X),
+      outcome = outcome_var,
+      positive_class = positive_class,
+      validation = split$validation
+    )
   )
 }
 

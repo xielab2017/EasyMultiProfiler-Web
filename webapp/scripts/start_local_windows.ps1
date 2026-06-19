@@ -1,9 +1,25 @@
 $ErrorActionPreference = "Stop"
 
-$Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. "$PSScriptRoot\windows_r_utils.ps1"
+Initialize-EMPPaths $PSScriptRoot
+$Root = Get-EMPRepoRoot
+
 $ApiPort = if ($env:API_PORT) { $env:API_PORT } else { "8000" }
 $WebPort = if ($env:WEB_PORT) { $env:WEB_PORT } else { "8080" }
 $RunDir = Join-Path $Root ".local_run"
+
+$RscriptExe = Resolve-EMPRscriptExe
+if (-not $RscriptExe) {
+  Write-Error @"
+Rscript.exe not found.
+  Install R, add its bin folder to PATH, or set one of:
+    `$env:EMPI_RSCRIPT = 'D:\path\to\Rscript.exe'
+    `$env:R_HOME      = 'D:\path\to\R-4.x.x'
+  Or place R under: $(Join-Path (Split-Path -Parent $Root) 'R\R-4.x.x')
+"@
+}
+Write-Host "Using Rscript: $RscriptExe"
+
 $ApiLog = Join-Path $RunDir "api.log"
 $WebLog = Join-Path $RunDir "web.log"
 $ApiPid = Join-Path $RunDir "api.pid"
@@ -23,15 +39,32 @@ function Stop-PidFile($pidFile) {
 
 Stop-PidFile $ApiPid
 Stop-PidFile $WebPid
+Stop-EMPListenersOnPorts -Ports @([int]$ApiPort, [int]$WebPort)
 
-$apiCmd = "cd `"$Root`"; `$env:API_PORT=`"$ApiPort`"; Rscript `"webapp/backend/run_api.R`" *> `"$ApiLog`""
+$apiCmd = "cd `"$Root`"; `$env:API_PORT=`"$ApiPort`"; & `"$RscriptExe`" `"webapp/backend/run_api.R`" *> `"$ApiLog`""
 $apiProc = Start-Process -FilePath "powershell" -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-Command",$apiCmd -WindowStyle Hidden -PassThru
 $apiProc.Id | Out-File -FilePath $ApiPid -Encoding ascii -Force
 
-$webCmd = "cd `"$Root`"; python -m http.server $WebPort --directory `"webapp/frontend`" *> `"$WebLog`""
+# Bind loopback only; avoids stray 0.0.0.0 listeners and matches browser URL 127.0.0.1
+$webCmd = "cd `"$Root`"; python webapp/scripts/static_server.py $WebPort `"webapp/frontend`" *> `"$WebLog`""
 $webProc = Start-Process -FilePath "powershell" -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-Command",$webCmd -WindowStyle Hidden -PassThru
 $webProc.Id | Out-File -FilePath $WebPid -Encoding ascii -Force
 
-Start-Sleep -Seconds 2
-Start-Process "http://127.0.0.1:$WebPort"
-Write-Host "EasyMultiProfiler Web started: http://127.0.0.1:$WebPort"
+# R + Bioconductor load can take 30–90s on first start; wait for API before opening the browser.
+$healthUrl = "http://127.0.0.1:$ApiPort/api/health"
+$deadline = (Get-Date).AddSeconds(120)
+$apiReady = $false
+while ((Get-Date) -lt $deadline) {
+  try {
+    $resp = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+    if ($resp.StatusCode -eq 200) { $apiReady = $true; break }
+  } catch { }
+  Start-Sleep -Seconds 2
+}
+if (-not $apiReady) {
+  Write-Warning "API not ready after 120s. Open $ApiLog or try: $healthUrl"
+} else {
+  Write-Host "API health OK: $healthUrl"
+}
+Start-Process "http://127.0.0.1:$WebPort/"
+Write-Host "EasyMultiProfiler Web (static UI): http://127.0.0.1:$WebPort"

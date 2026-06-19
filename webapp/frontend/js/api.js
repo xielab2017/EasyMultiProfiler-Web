@@ -34,8 +34,8 @@ function sessionId() {
   return localStorage.getItem("emp_session_id") || null;
 }
 
-function headers() {
-  const h = { "Content-Type": "application/json" };
+function headers(extra = {}) {
+  const h = { "Content-Type": "application/json", ...extra };
   const sid = sessionId();
   if (sid) h["X-Session-Id"] = sid;
   return h;
@@ -103,6 +103,62 @@ export async function deleteSession() {
   return data;
 }
 
+// ── USER R (local learning; runs on Plumber host — trusted use only) ──
+// POST /api/user_r/run (legacy: /api/exec/user_r)
+export async function execUserR(params = {}) {
+  if (!sessionId()) await createSession();
+  return request("POST", "/user_r/run", {
+    session_id: sessionId(),
+    experiment: params.experiment ?? null,
+    code:       params.code ?? "",
+    width:      params.width,
+    height:     params.height,
+    workflow:   params.workflow ?? null,
+    tab:        params.tab ?? null,
+    label:      params.label ?? null,
+    source_code: params.source_code ?? null,
+  });
+}
+
+export function codeLabArtifactURL(artifactName) {
+  const sid = sessionId();
+  return `${resolveApiBase()}/code_lab/artifacts/${encodeURIComponent(sid)}/${encodeURIComponent(artifactName)}`;
+}
+
+// ── LLM CODE OPTIMIZATION (Code Lab) ─────────────────────
+export async function optimizeRCode(params = {}) {
+  return request("POST", "/llm/optimize_r", {
+    provider:    params.provider ?? "chatgpt",
+    config:      params.config ?? {},
+    workflow:    params.workflow ?? null,
+    tab:         params.tab ?? null,
+    source_code: params.source_code ?? params.code ?? "",
+    instruction: params.instruction ?? "",
+  });
+}
+
+// AI copilot: interpret an analysis result and suggest next steps. Reuses the
+// Code Lab LLM config if the student configured one; otherwise the backend
+// falls back to a deterministic offline interpretation.
+export async function aiInterpret(context = {}, opts = {}) {
+  let provider = opts.provider ?? null;
+  let config = opts.config ?? null;
+  if (!provider || !config) {
+    try {
+      const stored = JSON.parse(localStorage.getItem("emp_code_lab_llm_config_v1") || "null");
+      if (stored && typeof stored === "object") {
+        config = config ?? stored;
+        provider = provider ?? stored.provider ?? null;
+      }
+    } catch { /* ignore malformed config */ }
+  }
+  return request("POST", "/ai/interpret", {
+    context,
+    provider: provider ?? "campus",
+    config: config ?? {},
+  });
+}
+
 export async function listExperiments() {
   const sid = sessionId();
   if (!sid) return [];
@@ -131,6 +187,19 @@ export async function importData(formData) {
   if (!res.ok || data.success === false)
     throw new Error(data.error || `HTTP ${res.status}`);
   return data;
+}
+
+export async function listDemoDatasets() {
+  const data = await request("GET", "/demo_datasets");
+  return data.datasets || [];
+}
+
+export async function importDemoDataset(datasetId, experimentName = null) {
+  const sid = sessionId();
+  if (!sid) await createSession();
+  const body = { session_id: sessionId(), dataset_id: datasetId };
+  if (experimentName) body.experiment_name = experimentName;
+  return request("POST", "/import/demo", body);
 }
 
 export async function previewFile(formData) {
@@ -449,6 +518,11 @@ export async function clinicalMultiomicsJoint(params = {}) {
   return request("POST", "/clinical/multiomics_joint", { session_id: sid, ...params });
 }
 
+export async function clinicalMarkerModel(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/clinical/marker_model", { session_id: sid, ...params });
+}
+
 // Feature × Trait correlation (synchronous – usually < 5 s).
 // `params` = { traits: [..], method, top_n_features, p_adjust }
 export async function clinicalCor(experiment, params = {}) {
@@ -633,4 +707,64 @@ export function mbxExportDiffURL(experiment) {
 export async function mbxValidate(experiment, params = {}) {
   const sid = sessionId();
   return request("POST", "/workflows/metabolomics/validate", { session_id: sid, experiment, ...params });
+}
+
+// ── TEACHING ──────────────────────────────────────
+export async function teachingCases() {
+  return request("GET", "/teaching/cases");
+}
+
+export async function teachingCase(caseId) {
+  return request("GET", `/teaching/cases/${encodeURIComponent(caseId)}`);
+}
+
+export async function teachingPrompts() {
+  return request("GET", "/teaching/prompts");
+}
+
+export async function teachingTrace(eventOrOpts = {}) {
+  if (typeof eventOrOpts === "object" && eventOrOpts.user_id) {
+    const q = new URLSearchParams();
+    q.set("user_id", eventOrOpts.user_id);
+    if (eventOrOpts.limit) q.set("limit", String(eventOrOpts.limit));
+    return request("GET", `/teaching/trace?${q.toString()}`);
+  }
+  return request("POST", "/teaching/trace", eventOrOpts);
+}
+
+export async function teachingReflection(payload) {
+  return request("POST", "/teaching/reflection", payload);
+}
+
+export async function teachingSubmitQuiz(payload) {
+  return request("POST", "/teaching/quiz", payload);
+}
+
+export async function teachingProgress(userId = null) {
+  const q = userId ? `?user_id=${encodeURIComponent(userId)}` : "";
+  return request("GET", `/teaching/progress${q}`);
+}
+
+export async function teachingPreclassTemplate() {
+  return request("GET", "/teaching/preclass");
+}
+
+export async function teachingSubmitPreclass(fields) {
+  return request("POST", "/teaching/preclass", { fields });
+}
+
+export async function teachingCritiqueCases() {
+  return request("GET", "/teaching/critique");
+}
+
+export async function teachingSubmitCritique(payload) {
+  return request("POST", "/teaching/critique", payload);
+}
+
+export async function teachingSaveJournal(payload) {
+  return request("POST", "/teaching/journal", payload);
+}
+
+export async function teachingReport() {
+  return request("GET", "/teaching/report");
 }

@@ -52,10 +52,21 @@ detect_sep <- function(filepath) {
 
 # Read a tabular file auto-detecting sep
 read_table_auto <- function(filepath, nrows = -1) {
+  if (is.null(filepath) || !nzchar(filepath)) {
+    stop("Uploaded data file path is empty.")
+  }
+  if (!file.exists(filepath)) {
+    stop(sprintf("Uploaded data file not found on server: %s", filepath))
+  }
   sep <- detect_sep(filepath)
-  read.table(filepath, header = TRUE, sep = sep,
-             stringsAsFactors = FALSE, check.names = FALSE,
-             comment.char = "", nrows = if (nrows > 0) nrows else -1)
+  tryCatch(
+    read.table(filepath, header = TRUE, sep = sep,
+               stringsAsFactors = FALSE, check.names = FALSE,
+               comment.char = "", nrows = if (nrows > 0) nrows else -1),
+    error = function(e) {
+      stop(sprintf("Failed to read uploaded table (%s): %s", basename(filepath), conditionMessage(e)))
+    }
+  )
 }
 
 # Detect if first column is a numeric index
@@ -78,6 +89,68 @@ clean_feature_col <- function(df) {
   if (is_idx && ncol(df) > 1) df <- df[, -1, drop = FALSE]
   names(df)[1] <- "feature"
   df
+}
+
+# When EMP import detects duplicate feature IDs it stores the original labels in
+# `.feature` / `.FEATURE` and assigns generic rownames (feature1, feature_1, …).
+# Restore human-readable gene / feature symbols as assay rownames when possible.
+restore_feature_rownames <- function(obj) {
+  if (!inherits(obj, c("SummarizedExperiment", "EMPT"))) return(obj)
+  ad <- SummarizedExperiment::assays(obj)[[1]]
+  if (is.null(ad) || !nrow(ad)) return(obj)
+  ids <- rownames(ad)
+  if (!length(ids) || !all(grepl("^feature_?\\d+$", ids, ignore.case = TRUE))) return(obj)
+
+  rd <- as.data.frame(SummarizedExperiment::rowData(obj), stringsAsFactors = FALSE)
+  if (!nrow(rd)) return(obj)
+
+  alias_cols <- unique(c(
+    ".FEATURE", ".feature", "Name", "name", "SYMBOL", "symbol",
+    "gene_symbol", "Gene", "gene"
+  ))
+  alias_cols <- intersect(alias_cols, names(rd))
+  labels <- NULL
+  for (col in alias_cols) {
+    vals <- trimws(as.character(rd[[col]]))
+    vals[!nzchar(vals)] <- NA_character_
+    ok <- !is.na(vals) & !grepl("^feature_?\\d+$", vals, ignore.case = TRUE)
+    if (sum(ok) >= 0.5 * length(ids)) {
+      labels <- vals
+      break
+    }
+  }
+  if (is.null(labels)) return(obj)
+
+  fill <- is.na(labels) | !nzchar(labels)
+  labels[fill] <- ids[fill]
+  new_rn <- make.unique(labels, sep = "_")
+
+  rownames(ad) <- new_rn
+  if ("feature" %in% names(rd)) rd$feature <- new_rn
+
+  assay_name <- names(SummarizedExperiment::assays(obj))[1]
+  if (is.null(assay_name) || !nzchar(assay_name)) assay_name <- "counts"
+  cd <- SummarizedExperiment::colData(obj)
+  rebuilt <- SummarizedExperiment::SummarizedExperiment(
+    assays = setNames(list(ad), assay_name),
+    rowData = S4Vectors::DataFrame(rd, row.names = new_rn),
+    colData = cd
+  )
+  if (!inherits(obj, "EMPT")) return(rebuilt)
+
+  empt_slots <- c(
+    "deposit", "deposit2", "plot_deposit", "deposit_append", "deposit_info",
+    "experiment", "assay_name", "estimate_group", "estimate_group_info",
+    "message_info", "formula", "method", "algorithm", "history", "palette",
+    "plot_category", "plot_specific", "plot_info", "info"
+  )
+  for (slot_name in empt_slots) {
+    if (methods::.hasSlot(obj, slot_name)) {
+      methods::slot(rebuilt, slot_name) <- methods::slot(obj, slot_name)
+    }
+  }
+  class(rebuilt) <- class(obj)
+  rebuilt
 }
 
 # Force all columns after feature to numeric; remove columns that can't convert
@@ -261,6 +334,17 @@ emp_prepare_preview_rows <- function(empt, n = 30L) {
     out[[i]] <- c(list(feature = feats[[i]]), lst)
   }
   out
+}
+
+# Serialise a data.frame to a CSV string for plumber contentType("text/csv")
+# routes. Using write.csv() without a connection writes to stdout and returns
+# NULL, which yields an empty download body; capture.output fixes that.
+.csv_response <- function(df) {
+  df <- tryCatch(as.data.frame(df), error = function(e) df)
+  paste0(
+    paste(utils::capture.output(utils::write.csv(df, row.names = FALSE)), collapse = "\n"),
+    "\n"
+  )
 }
 
 # Wrap a block so plumber returns a tidy error JSON on failure

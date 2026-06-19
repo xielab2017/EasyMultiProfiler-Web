@@ -2,14 +2,28 @@
 // The ?v= query string is a cache-buster: browsers treat each unique URL
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
-// this value in lock-step with the one used in index.html.
-import * as API from "./api.js?v=2026-04-22-clinical-precheck-v2";
+// this value in lock-step with the one used in index.html (app.js ?v=).
+import * as API from "./api.js?v=2026-06-20-genz-v1";
+import {
+  initCodeLab,
+  notifyCodeLabNavigate,
+  notifyCodeLabTab,
+  notifyCodeLabClinicalStep,
+  refreshCodeLabContext,
+  openCodeLabPanel,
+} from "./code_lab.js?v=2026-06-20-genz-v1";
+import {
+  initTeaching,
+  onTeachingPage,
+  setupTeachingTraceHooks,
+} from "./teaching.js?v=2026-06-20-genz-v1";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
   experiments: [],      // [{name, samples, features, assay}]
   currentExp: null,     // string – currently selected experiment
   standaloneClinical: null, // {columns:[], orientation:"..."} for clinical-only uploads
+  clinicalResolvedSource: "experiment",
   coldataCols: [],      // [{name, n_unique, values}]
   features: [],         // string[]
   workflows: [],        // [{id,label,description,n_stages}]
@@ -199,7 +213,8 @@ export function showResultTable(containerId, jsonStr, maxRows = 500, options = {
   try {
     const rows = coerceTableRows(jsonStr);
     if (!Array.isArray(rows) || rows.length === 0) {
-      container.innerHTML = "<p style='padding:12px;color:#64748b'>No results returned.</p>";
+      const emptyMsg = options.emptyMessage || "No results returned.";
+      container.innerHTML = `<p style='padding:12px;color:#64748b'>${emptyMsg}</p>`;
       container.classList.remove("hidden");
       return;
     }
@@ -296,6 +311,9 @@ export function showResultTable(containerId, jsonStr, maxRows = 500, options = {
         `<p style="padding:6px 12px 10px;color:#64748b;font-size:12px">${options.publicationNote}</p>`);
     }
     container.classList.remove("hidden");
+    if (options.aiCopilot !== false) {
+      attachAiCopilot(container, { ...inferAiContext(containerId), kind: "table", ...(options.aiContext || {}) });
+    }
   } catch(e) {
     container.innerHTML = `<p style='padding:12px;color:#991b1b'>Could not parse results: ${e.message}</p>`;
     container.classList.remove("hidden");
@@ -375,6 +393,157 @@ export function showPlot(containerId, base64png) {
   }
   // Re-initialise icons inside the new element
   if (window.lucide) lucide.createIcons({ nodes: [container] });
+  attachAiCopilot(container, { ...inferAiContext(containerId), kind: "plot" });
+}
+
+// ── AI 分析助手 (Copilot) ───────────────────────────
+// Adds a lightweight "AI 解读" button under any result table / plot. It posts a
+// compact context to /api/ai/interpret and renders a student-friendly
+// interpretation (LLM when configured, deterministic offline otherwise).
+
+// Minimal, safe Markdown → HTML (headings, bold, ordered/unordered lists).
+// (Reuses the shared escapeHtml defined later in this module.)
+function renderMiniMarkdown(md) {
+  const lines = String(md ?? "").split(/\r?\n/);
+  let html = "";
+  let listType = null;
+  const closeList = () => { if (listType) { html += `</${listType}>`; listType = null; } };
+  for (let raw of lines) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { closeList(); continue; }
+    let m;
+    if ((m = line.match(/^#{1,6}\s+(.*)$/))) {
+      closeList();
+      html += `<h4 class="ai-md-h">${inline(m[1])}</h4>`;
+    } else if ((m = line.match(/^\s*[-*]\s+(.*)$/))) {
+      if (listType !== "ul") { closeList(); html += "<ul>"; listType = "ul"; }
+      html += `<li>${inline(m[1])}</li>`;
+    } else if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) {
+      if (listType !== "ol") { closeList(); html += "<ol>"; listType = "ol"; }
+      html += `<li>${inline(m[1])}</li>`;
+    } else {
+      closeList();
+      html += `<p>${inline(line)}</p>`;
+    }
+  }
+  closeList();
+  return html;
+  function inline(t) {
+    return escapeHtml(t)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`(.+?)`/g, "<code>$1</code>");
+  }
+}
+
+function currentOmicsPreset() {
+  try { return localStorage.getItem("emp_omics") || ""; } catch { return ""; }
+}
+
+// Infer {analysis_type, omics} from a result/plot container id like
+// "alpha-result", "tx-viz-volcano-out", "mgx-diff-result".
+function inferAiContext(domId) {
+  let id = String(domId || "").replace(/-(result|out|table|output)$/i, "");
+  const omicsPrefix = { tx: "transcriptomics", mgx: "metagenomics", mbx: "metabolomics", m16s: "microbiome_16s" };
+  let omics = currentOmicsPreset();
+  const pfx = id.match(/^(tx|mgx|mbx|m16s)-/);
+  if (pfx) { omics = omicsPrefix[pfx[1]] || omics; id = id.replace(/^(tx|mgx|mbx|m16s)-/, ""); }
+  id = id.replace(/^(viz|analysis|ana)-/, "").replace(/-(plot|viz|out)$/, "");
+  const map = {
+    alpha: "alpha", "alpha-plot": "alpha", dim: "dimension", scatter: "scatter",
+    cor: "correlation", cluster: "cluster", marker: "marker", enrich: "enrichment",
+    diff: "differential", volcano: "volcano", heatmap: "heatmap", boxplot: "boxplot",
+    barplot: "barplot", structure: "structure", sankey: "structure", network: "network",
+    analysis: "differential",
+  };
+  const analysis_type = map[id] || id || "analysis";
+  return { analysis_type, omics, experiment: window._emp?.currentExp || null };
+}
+
+// Derive quick stats from a differential-style table to enrich interpretation.
+function deriveTableStats(rows, cols) {
+  const stats = {};
+  if (!Array.isArray(rows) || !rows.length) return stats;
+  stats.n_total = rows.length;
+  const lc = cols.map((c) => String(c).toLowerCase());
+  const findCol = (cands) => { for (const cand of cands) { const i = lc.indexOf(cand); if (i >= 0) return cols[i]; } return null; };
+  const padjCol = findCol(["padj", "p_adj", "fdr", "qvalue", "q_value", "adj.p.val", "adj_pval"]);
+  const pCol = findCol(["pvalue", "p_value", "pval", "p"]);
+  const fcCol = findCol(["log2fc", "log2foldchange", "logfc", "log2_fc", "fc"]);
+  const sigCol = padjCol || pCol;
+  if (sigCol) {
+    let nsig = 0, up = 0, down = 0;
+    for (const r of rows) {
+      const p = Number(r[sigCol]);
+      if (Number.isFinite(p) && p < 0.05) {
+        nsig++;
+        if (fcCol) { const fc = Number(r[fcCol]); if (Number.isFinite(fc)) { if (fc > 0) up++; else if (fc < 0) down++; } }
+      }
+    }
+    stats.n_significant = nsig;
+    if (fcCol) { stats.n_up = up; stats.n_down = down; }
+  }
+  return stats;
+}
+
+function attachAiCopilot(container, baseContext) {
+  if (!container || container.querySelector(".ai-copilot")) return;
+  const wrap = document.createElement("div");
+  wrap.className = "ai-copilot";
+  wrap.innerHTML = `
+    <button type="button" class="btn btn-outline ai-copilot-btn">
+      <i data-lucide="sparkles"></i> AI 解读结果
+    </button>
+    <div class="ai-copilot-panel hidden"></div>
+  `;
+  container.appendChild(wrap);
+  if (window.lucide) lucide.createIcons({ nodes: [wrap] });
+  const btn = wrap.querySelector(".ai-copilot-btn");
+  const panel = wrap.querySelector(".ai-copilot-panel");
+
+  btn.addEventListener("click", async () => {
+    panel.classList.remove("hidden");
+    panel.innerHTML = `<p class="ai-copilot-loading">AI 正在解读结果…</p>`;
+    btn.disabled = true;
+    try {
+      const ctx = { ...baseContext };
+      // Enrich with table data if present.
+      const table = container.querySelector("table");
+      if (table) {
+        const cols = [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+        const bodyRows = [...table.querySelectorAll("tbody tr")].slice(0, 8).map((tr) => {
+          const cells = [...tr.querySelectorAll("td")];
+          const obj = {};
+          cells.forEach((td, i) => { obj[cols[i] || `c${i}`] = (td.getAttribute("title") || td.textContent).trim(); });
+          return obj;
+        });
+        const allRows = [...table.querySelectorAll("tbody tr")].map((tr) => {
+          const cells = [...tr.querySelectorAll("td")];
+          const obj = {};
+          cells.forEach((td, i) => { obj[cols[i] || `c${i}`] = (td.getAttribute("title") || td.textContent).trim(); });
+          return obj;
+        });
+        ctx.table = { columns: cols, n_rows: allRows.length, rows: bodyRows };
+        ctx.stats = { ...deriveTableStats(allRows, cols), ...(ctx.stats || {}) };
+      }
+      const dsExp = (window._emp?.experiments || []).find((e) => e.name === window._emp?.currentExp);
+      if (dsExp) ctx.dataset = { n_samples: dsExp.samples, n_features: dsExp.features };
+      const res = await API.aiInterpret(ctx);
+      const sourceBadge = res.source === "llm"
+        ? `<span class="ai-copilot-src ai-src-llm">AI 模型</span>`
+        : `<span class="ai-copilot-src ai-src-offline">本地解读</span>`;
+      panel.innerHTML = `
+        <div class="ai-copilot-head">${sourceBadge}
+          <span class="ai-copilot-hint">AI 生成内容仅供学习参考，请结合统计与生物学知识判断。</span>
+        </div>
+        <div class="ai-copilot-body">${renderMiniMarkdown(res.interpretation)}</div>`;
+      if (window.lucide) lucide.createIcons({ nodes: [panel] });
+      window.dispatchEvent(new CustomEvent("emp:ai-interpret", { detail: { analysis_type: ctx.analysis_type, source: res.source } }));
+    } catch (e) {
+      panel.innerHTML = `<p class="ai-copilot-error">AI 解读失败：${escapeHtml(e.message)}</p>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 function toStringArray(value) {
@@ -430,6 +599,8 @@ async function ensureWorkflowReady(workflowId, exp, opts = {}) {
 
 // ── Navigation ────────────────────────────────────
 const pageTitles = {
+  course: "Course Cases",
+  prompts: "AI Prompt Library",
   import: "Import Data",
   summary: "Data Summary",
   inspector: "EMPT Inspector",
@@ -441,6 +612,23 @@ const pageTitles = {
   export: "Export Results",
 };
 
+const WORKFLOW_PAGES = new Set(["course", "import", "preparation", "analysis", "visualization", "export"]);
+
+function updateWorkflowStepper(page) {
+  const stepper = document.getElementById("workflow-stepper");
+  if (!stepper) return;
+  const wfPage = page === "summary" || page === "inspector" ? "import"
+    : page === "runall" ? "analysis"
+    : page === "clinical" ? "analysis"
+    : page === "prompts" ? "course"
+    : page;
+  stepper.querySelectorAll(".wf-step").forEach(el => {
+    el.classList.toggle("is-active", el.dataset.wf === wfPage);
+    el.classList.toggle("is-done", WORKFLOW_PAGES.has(wfPage) &&
+      Array.from(WORKFLOW_PAGES).indexOf(el.dataset.wf) < Array.from(WORKFLOW_PAGES).indexOf(wfPage));
+  });
+}
+
 function navigateTo(page) {
   document.querySelectorAll(".nav-item").forEach(el => {
     el.classList.toggle("active", el.dataset.page === page);
@@ -449,6 +637,8 @@ function navigateTo(page) {
   const target = document.getElementById(`page-${page}`);
   if (target) target.classList.add("active");
   document.getElementById("page-title").textContent = pageTitles[page] || page;
+  updateWorkflowStepper(page);
+  try { localStorage.setItem("emp_last_page", page); } catch { /* quota */ }
 
   // Refresh dynamic content on navigation
   if (page === "summary") loadSummary();
@@ -456,6 +646,125 @@ function navigateTo(page) {
   if (page === "analysis" || page === "visualization" || page === "preparation") refreshGroupSelectors();
   if (page === "preparation" && window._emp.currentExp) refreshPrepareSnapshots();
   if (page === "clinical") refreshClinicalVars();
+  if (page === "course" || page === "prompts") onTeachingPage(page);
+  notifyCodeLabNavigate(page);
+}
+
+window.__empNavigate = navigateTo;
+
+window.addEventListener("emp:toast", (e) => {
+  const { msg, type } = e.detail || {};
+  if (msg) toast(msg, type || "info");
+});
+
+window.addEventListener("emp:open-code-lab", (e) => {
+  const page = e.detail?.page || "analysis";
+  navigateTo(page);
+  openCodeLabPanel(page);
+});
+
+document.getElementById("workflow-stepper")?.addEventListener("click", (e) => {
+  const step = e.target.closest(".wf-step");
+  if (!step?.dataset.wf) return;
+  navigateTo(step.dataset.wf);
+});
+
+window.addEventListener("emp:import-demo", (e) => {
+  const { datasetId, omics } = e.detail || {};
+  if (datasetId) importDemoById(datasetId, omics);
+});
+
+document.getElementById("btn-help-course")?.addEventListener("click", () => navigateTo("course"));
+document.getElementById("btn-welcome-course")?.addEventListener("click", () => {
+  document.getElementById("welcome-card")?.classList.add("hidden");
+  navigateTo("course");
+});
+document.getElementById("btn-welcome-dismiss")?.addEventListener("click", () => {
+  document.getElementById("welcome-card")?.classList.add("hidden");
+  try { localStorage.setItem("emp_welcome_dismissed", "1"); } catch { /* quota */ }
+});
+
+function bindUploadDropZone(zoneId, inputId, filenameId, onFile) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  if (!zone || !input) return;
+  zone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    zone.classList.add("is-dragover");
+  });
+  zone.addEventListener("dragleave", () => zone.classList.remove("is-dragover"));
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    zone.classList.remove("is-dragover");
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    if (onFile) onFile(file);
+  });
+}
+
+async function loadDemoDatasetButtons() {
+  const root = document.getElementById("demo-dataset-buttons");
+  if (!root) return;
+  try {
+    const datasets = await API.listDemoDatasets();
+    const available = datasets.filter(d => d.available);
+    if (!available.length) {
+      root.innerHTML = '<span class="hint">示例数据暂不可用（请确认 webapp/tests 目录存在）。</span>';
+      return;
+    }
+    root.innerHTML = available.map(d => `
+      <button type="button" class="btn btn-outline demo-dataset-btn" data-demo-id="${escapeHtml(d.id)}" data-omics="${escapeHtml(d.omics || "")}">
+        ${escapeHtml(d.label)}
+      </button>`).join("");
+    root.querySelectorAll(".demo-dataset-btn").forEach(btn => {
+      btn.addEventListener("click", () => importDemoById(btn.dataset.demoId, btn.dataset.omics));
+    });
+  } catch (e) {
+    root.innerHTML = `<span class="hint">无法加载示例列表：${escapeHtml(e.message)}</span>`;
+  }
+}
+
+async function importDemoById(datasetId, omics) {
+  setLoading(true);
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    const res = await withBusy("Loading demo data", () => API.importDemoDataset(datasetId));
+    if (omics && omics !== "clinical") {
+      const sel = document.getElementById("omics-pipeline");
+      if (sel) sel.value = omics;
+      window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics } }));
+    }
+    if (res.import_mode === "clinical_standalone" || res.import_mode === "clinical_merge") {
+      showAlert("import-result",
+        `✓ 临床示例已加载。${res.columns?.length ? ` ${res.columns.length} 个变量。` : ""}`,
+        "success");
+      if (res.import_mode === "clinical_standalone") {
+        window._emp.standaloneClinical = {
+          columns: res.columns || [],
+          orientation: res.orientation || "samples in rows",
+        };
+      }
+      toast("Clinical 示例数据已就绪，可前往 Clinical 页分析。", "success");
+      navigateTo("clinical");
+    } else {
+      showAlert("import-result",
+        `✓ 已加载「${res.experiment_name}」：${res.samples} 样本 · ${res.features} 特征`,
+        "success");
+      toast(`${res.experiment_name} 示例已导入！`, "success");
+      await refreshExperimentList();
+      navigateTo("summary");
+    }
+    document.getElementById("btn-topbar-clear")?.classList.remove("hidden");
+  } catch (e) {
+    showAlert("import-result", `Error: ${e.message}`, "error");
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
 }
 
 document.querySelectorAll(".nav-item").forEach(el => {
@@ -530,6 +839,11 @@ document.querySelectorAll(".tab-bar").forEach(bar => {
     if (targetId === "ana-enrich" && typeof refreshEnrichmentSpecies === "function") {
       refreshEnrichmentSpecies();
     }
+    const sec = tab.closest("section");
+    if (sec?.id?.startsWith("page-")) {
+      const pageKey = sec.id.slice(5);
+      notifyCodeLabTab(pageKey, targetId);
+    }
   });
 });
 
@@ -596,6 +910,10 @@ async function refreshExperimentList() {
       if (exps.length > 1) crossB.value = exps[1].name;
       if (crossC) crossC.innerHTML = `<option value="">none</option>${html}`;
     }
+    const markerExp = document.getElementById("clin-marker-experiments");
+    if (markerExp) {
+      markerExp.innerHTML = exps.map(e => `<option value="${e.name}" selected>${e.name}</option>`).join("");
+    }
 
     // Import page cards
     cards.innerHTML = exps.map(e => `
@@ -656,21 +974,53 @@ async function refreshGroupSelectors() {
     window._emp.features = ft.features || [];
   } catch(e) { return; }
 
+  const GROUP_NAME_HINTS = new Set([
+    "group", "subgroup", "cohort", "condition", "disease", "diagnosis", "treatment",
+  ]);
+  const groupColumnOptions = (cols) => {
+    const usable = (cols || []).filter((c) => {
+      const n = Number(c.n_unique) || 0;
+      if (n < 2) return false;
+      const key = String(c.name || "").toLowerCase();
+      if (GROUP_NAME_HINTS.has(key)) return true;
+      return n <= 50;
+    });
+    const preferred = usable.filter((c) => GROUP_NAME_HINTS.has(String(c.name || "").toLowerCase()));
+    const rest = usable.filter((c) => !preferred.includes(c));
+  preferred.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  rest.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    return [...preferred, ...rest];
+  };
+
   const groupSelectors = [
     "bar-group","box-group","heat-group","scat-group","struct-group","aplot-group",
     "diff-group","marker-group","mgx-group","mgx-viz-group","mbx-group",
     "tx-group","tx-viz-group","ra-group"
   ];
+  const cats = groupColumnOptions(window._emp.coldataCols);
   groupSelectors.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     const hasNone = el.id.startsWith("bar-") || el.id.startsWith("box-") ||
                     el.id.startsWith("heat-") || el.id.startsWith("scat-") ||
                     el.id.startsWith("struct-") || el.id.startsWith("aplot-");
-    const cats = window._emp.coldataCols.filter(c => c.n_unique > 1 && c.n_unique < 30);
     el.innerHTML = (hasNone ? '<option value="">None</option>' : '') +
-      cats.map(c => `<option value="${c.name}">${c.name} (${c.n_unique})</option>`).join("");
+      cats.map(c => {
+        const preview = (c.values || []).slice(0, 4).join(", ");
+        const suffix = preview ? ` — ${preview}${(c.values || []).length > 4 ? "…" : ""}` : ` (${c.n_unique})`;
+        return `<option value="${c.name}">${c.name}${suffix}</option>`;
+      }).join("");
   });
+
+  const autoGroup =
+    cats.find((c) => String(c.name).toLowerCase() === "group") ||
+    cats.find((c) => GROUP_NAME_HINTS.has(String(c.name).toLowerCase()));
+  if (autoGroup) {
+    groupSelectors.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && !el.value) el.value = autoGroup.name;
+    });
+  }
 
   // Feature selectors
   const featureSelectors = ["bar-feature","box-feature"];
@@ -681,13 +1031,22 @@ async function refreshGroupSelectors() {
     el.innerHTML = feats.map(f => `<option value="${f}">${f}</option>`).join("");
   });
 
-  // Group-dependent: ref / test group
-  document.getElementById("diff-group").addEventListener("change", updateDiffGroups);
-  document.getElementById("marker-group")?.addEventListener("change", updateMarkerGroups);
-  document.getElementById("mgx-group").addEventListener("change", updateMgxGroups);
-  document.getElementById("mbx-group")?.addEventListener("change", updateMbxGroups);
-  document.getElementById("tx-group")?.addEventListener("change", updateTxGroups);
-  document.getElementById("ra-group")?.addEventListener("change", updateRaGroups);
+  // Group-dependent: ref / test group.
+  // refreshGroupSelectors() runs on every experiment refresh / navigation, so
+  // guard against attaching duplicate change listeners (which would fire the
+  // ref/test updaters multiple times per change).
+  const bindGroupChange = (id, handler) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.groupChangeBound === "1") return;
+    el.addEventListener("change", handler);
+    el.dataset.groupChangeBound = "1";
+  };
+  bindGroupChange("diff-group", updateDiffGroups);
+  bindGroupChange("marker-group", updateMarkerGroups);
+  bindGroupChange("mgx-group", updateMgxGroups);
+  bindGroupChange("mbx-group", updateMbxGroups);
+  bindGroupChange("tx-group", updateTxGroups);
+  bindGroupChange("ra-group", updateRaGroups);
   updateDiffGroups();
   updateMarkerGroups();
   updateMgxGroups();
@@ -808,6 +1167,9 @@ document.getElementById("import-data-file").addEventListener("change", function(
 document.getElementById("import-meta-file").addEventListener("change", function() {
   document.getElementById("meta-filename").textContent = this.files[0]?.name || "";
 });
+
+bindUploadDropZone("drop-data", "import-data-file", "data-filename");
+bindUploadDropZone("drop-meta", "import-meta-file", "meta-filename");
 
 document.getElementById("btn-inspector-refresh")?.addEventListener("click", loadInspector);
 document.getElementById("btn-inspector-assay-prev")?.addEventListener("click", async () => {
@@ -2273,6 +2635,13 @@ function applyOmicsPreset(omics) {
   sel.addEventListener("change", () => applyOmicsPreset(sel.value));
 })();
 
+window.addEventListener("emp:omics-change", (e) => {
+  const omics = e.detail?.omics || "all";
+  const sel = document.getElementById("omics-pipeline");
+  if (sel) sel.value = omics;
+  applyOmicsPreset(omics);
+});
+
 // ── GLOBAL CLEAR ALL ──────────────────────────────
 async function clearAllData() {
   setLoading(true);
@@ -2480,6 +2849,26 @@ window.addEventListener("emp:timing", (ev) => {
 let _clinVarCache = null;
 let _clinResolvedSource = "experiment";
 
+function setClinicalCodeStrategy(step, opts = {}) {
+  const valid = new Set(["overview", "cor", "fitline", "wgcna", "three_line", "systematic", "joint", "reorient", "marker_model"]);
+  if (!valid.has(step)) return;
+  const sel = document.getElementById("clin-analysis-strategy");
+  if (sel && sel.value !== step) sel.value = step;
+  document.querySelectorAll("#page-clinical [data-clinical-script]").forEach((el) => {
+    el.classList.toggle("clinical-script-active", el.dataset.clinicalScript === step);
+  });
+  notifyCodeLabClinicalStep(step);
+  if (opts.scroll) {
+    const target = document.querySelector(`#page-clinical [data-clinical-script="${step}"].card`) ||
+      document.querySelector(`#page-clinical [data-clinical-script="${step}"]`);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function refreshClinicalCodeScript() {
+  if (document.querySelector("#page-clinical.page.active")) refreshCodeLabContext();
+}
+
 async function resolveClinicalSource(preferred = "auto") {
   const exp = window._emp.currentExp;
   const pref = (preferred || "auto").toLowerCase();
@@ -2581,6 +2970,7 @@ async function refreshClinicalVars() {
       }
     }
     _clinResolvedSource = resolved.source || "experiment";
+    window._emp.clinicalResolvedSource = _clinResolvedSource;
     _clinVarCache = rows;
     const num = rows.filter(r => r.type === "numeric");
     const cat = rows.filter(r => r.type === "categorical");
@@ -2619,9 +3009,26 @@ async function refreshClinicalVars() {
     const catOpts = cat.map(r => `<option value="${r.name}">${r.name}</option>`).join("");
     document.getElementById("clin-fit-group").innerHTML =
       `<option value="">— no grouping —</option>${catOpts}`;
+    const markerOutcome = document.getElementById("clin-marker-outcome");
+    if (markerOutcome) {
+      markerOutcome.innerHTML = catOpts || '<option value="">— no binary outcome —</option>';
+    }
     const threeSel = document.getElementById("clin-three-group");
     if (threeSel) {
-      threeSel.innerHTML = `<option value="">(auto)</option>${catOpts}`;
+      const groupCats = cat.filter((r) => {
+        const key = String(r.name || "").toLowerCase();
+        return key === "group" || key === "subgroup" || key === "cohort" || (r.n_unique >= 2 && r.n_unique <= 50);
+      });
+      const preferred = groupCats.filter((r) => ["group", "subgroup", "cohort"].includes(String(r.name || "").toLowerCase()));
+      const ordered = [...preferred, ...groupCats.filter((r) => !preferred.includes(r))];
+      threeSel.innerHTML = `<option value="">(auto)</option>` +
+        ordered.map((r) => {
+          const preview = Array.isArray(r.levels) ? r.levels.slice(0, 4).join(", ") : "";
+          const suffix = preview ? ` — ${preview}` : (r.n_unique ? ` (${r.n_unique})` : "");
+          return `<option value="${r.name}">${r.name}${suffix}</option>`;
+        }).join("");
+      const auto = ordered.find((r) => String(r.name).toLowerCase() === "group") || ordered[0];
+      if (auto && !threeSel.value) threeSel.value = auto.name;
     }
   } catch (e) {
     if (summary) summary.textContent = "Error: " + e.message;
@@ -2630,13 +3037,51 @@ async function refreshClinicalVars() {
   }
 }
 document.getElementById("clin-btn-refresh-vars")?.addEventListener("click",
-  refreshClinicalVars);
+  () => {
+    setClinicalCodeStrategy("overview");
+    refreshClinicalVars();
+  });
 document.getElementById("clin-data-source")?.addEventListener("change",
-  refreshClinicalVars);
+  () => {
+    refreshClinicalVars();
+    refreshClinicalCodeScript();
+  });
 document.getElementById("clin-three-engine")?.addEventListener("change",
-  updateClinicalPrecheck);
+  () => {
+    updateClinicalPrecheck();
+    refreshClinicalCodeScript();
+  });
+
+document.getElementById("clin-analysis-strategy")?.addEventListener("change", (e) => {
+  setClinicalCodeStrategy(e.target.value, { scroll: true });
+});
+
+document.querySelectorAll("#page-clinical [data-clinical-script]").forEach((el) => {
+  el.addEventListener("click", (ev) => {
+    const step = ev.target?.closest?.("[data-clinical-script]")?.dataset?.clinicalScript ||
+      el.dataset.clinicalScript;
+    if (step) setClinicalCodeStrategy(step);
+  }, { capture: true });
+  el.addEventListener("focusin", () => {
+    if (el.dataset.clinicalScript) setClinicalCodeStrategy(el.dataset.clinicalScript);
+  });
+});
+
+[
+  "clin-three-group", "clin-three-skip-high-card", "clin-three-max-levels",
+  "clin-cor-traits", "clin-cor-method", "clin-cor-topn", "clin-cor-padj",
+  "clin-fit-feature", "clin-fit-trait", "clin-fit-group", "clin-fit-method", "clin-fit-logy",
+  "clin-wgcna-traits", "clin-wgcna-minmod", "clin-reorient-mode",
+  "clin-marker-experiments", "clin-marker-outcome", "clin-marker-positive", "clin-marker-methods",
+  "clin-marker-max-features", "clin-marker-validation", "clin-marker-include-clinical",
+].forEach((id) => {
+  const el = document.getElementById(id);
+  el?.addEventListener("change", refreshClinicalCodeScript);
+  el?.addEventListener("input", refreshClinicalCodeScript);
+});
 
 document.getElementById("clin-btn-reorient")?.addEventListener("click", async () => {
+  setClinicalCodeStrategy("reorient");
   const mode = document.getElementById("clin-reorient-mode")?.value || "auto";
   setLoading(true);
   try {
@@ -2677,6 +3122,7 @@ async function resolveClinicalAnalysisExperiment() {
 }
 
 document.getElementById("clin-btn-three-line")?.addEventListener("click", async () => {
+  setClinicalCodeStrategy("three_line");
   const out = document.getElementById("clin-three-table");
   let source = document.getElementById("clin-data-source")?.value || "auto";
   const exp = window._emp.currentExp;
@@ -2688,8 +3134,10 @@ document.getElementById("clin-btn-three-line")?.addEventListener("click", async 
       const resolved = await resolveClinicalSource("auto");
       source = resolved.source;
       _clinResolvedSource = source;
+      window._emp.clinicalResolvedSource = source;
       _clinVarCache = resolved.rows;
       updateClinicalPrecheck();
+      refreshClinicalCodeScript();
     }
     const r = await withBusy("Clinical three-line table", () => API.clinicalThreeLine({
       source,
@@ -2722,6 +3170,7 @@ document.getElementById("clin-btn-three-line")?.addEventListener("click", async 
 });
 
 document.getElementById("clin-btn-systematic")?.addEventListener("click", async () => {
+  setClinicalCodeStrategy("systematic");
   let source = document.getElementById("clin-data-source")?.value || "auto";
   const exp = window._emp.currentExp;
   const baseDiv = document.getElementById("clin-three-table");
@@ -2738,9 +3187,12 @@ document.getElementById("clin-btn-systematic")?.addEventListener("click", async 
       const resolved = await resolveClinicalSource("auto");
       source = resolved.source;
       _clinResolvedSource = source;
+      window._emp.clinicalResolvedSource = source;
       _clinVarCache = resolved.rows;
       updateClinicalPrecheck();
+      refreshClinicalCodeScript();
     }
+    const cohortFilter = document.getElementById("clin-systematic-cohort")?.value || null;
     const r = await withBusy("Clinical systematic summary", () => API.clinicalSystematicSummary({
       source,
       experiment: source === "experiment" ? exp : null,
@@ -2748,15 +3200,19 @@ document.getElementById("clin-btn-systematic")?.addEventListener("click", async 
       skip_high_cardinality: document.getElementById("clin-three-skip-high-card")?.checked !== false,
       max_levels: +document.getElementById("clin-three-max-levels")?.value || 20,
       table_engine: document.getElementById("clin-three-engine")?.value || "gtsummary",
+      cohort_filter: cohortFilter || null,
     }));
 
+    const designType = r.design_type || "unknown";
+    const analysisNote = r.analysis_note || "";
+    const groupUsed = r.group_var || "(auto)";
     showResultTable("clin-three-table", r.baseline || [], 500, {
       prettyHeader: true,
       pValueKey: "P_value",
       variableKey: "Variable",
       downloadName: "clinical_baseline_table1.csv",
       tableClass: "clinical-pub-table",
-      publicationNote: `Table 1 (baseline). n=${r.n_baseline || 0}; paired samples detected=${r.n_pairs || 0}.`,
+      publicationNote: `Table 1 (baseline). design=${designType}; group=${groupUsed}; n=${r.n_baseline || 0}; paired samples=${r.n_pairs || 0}. ${analysisNote}`,
     });
     showResultTable("clin-systematic-within", r.within || [], 500, {
       prettyHeader: true,
@@ -2764,17 +3220,29 @@ document.getElementById("clin-btn-systematic")?.addEventListener("click", async 
       variableKey: "Variable",
       downloadName: "clinical_within_group_paired_change.csv",
       tableClass: "clinical-pub-table",
-      publicationNote: "Within-group paired change table: Before vs After (Wilcoxon signed-rank).",
+      publicationNote: designType === "cross_sectional"
+        ? "Within-group paired change is not applicable for cross-sectional data (no before/after pairs)."
+        : "Within-group paired change table: Before vs After (Wilcoxon signed-rank).",
+      emptyMessage: designType === "cross_sectional"
+        ? "No within-group paired table for cross-sectional data."
+        : "No valid before/after pairs found for within-group analysis.",
     });
     showResultTable("clin-systematic-between", r.between || [], 500, {
       prettyHeader: true,
       pValueKey: "P_value",
       variableKey: "Variable",
-      downloadName: "clinical_between_group_delta.csv",
+      downloadName: designType === "cross_sectional"
+        ? "clinical_between_group_comparison.csv"
+        : "clinical_between_group_delta.csv",
       tableClass: "clinical-pub-table",
-      publicationNote: "Between-group delta comparison table: UC Δ vs IBS Δ (Wilcoxon rank-sum).",
+      publicationNote: designType === "cross_sectional"
+        ? "Between-group comparison table for cross-sectional data (Wilcoxon/Kruskal-Wallis)."
+        : "Between-group delta comparison table: UC Δ vs IBS Δ (Wilcoxon rank-sum).",
+      emptyMessage: designType === "cross_sectional"
+        ? "No between-group comparison could be computed."
+        : "No between-cohort delta comparison available.",
     });
-    toast("Systematic clinical summary ready.", "success");
+    toast(`Systematic clinical summary ready (${designType}).`, "success");
   } catch (e) {
     [baseDiv, withinDiv, betweenDiv].forEach((el) => {
       if (!el) return;
@@ -2789,6 +3257,7 @@ document.getElementById("clin-btn-systematic")?.addEventListener("click", async 
 
 // ── (b) Feature × Trait correlation ───────────────────────────────
 document.getElementById("clin-btn-cor")?.addEventListener("click", async () => {
+  setClinicalCodeStrategy("cor");
   const exp = await resolveClinicalAnalysisExperiment();
   if (!exp) {
     toast("No omics experiment loaded. Import expression/abundance matrix first.", "error");
@@ -2858,6 +3327,7 @@ document.getElementById("clin-btn-cor")?.addEventListener("click", async () => {
 
 // ── (c) Scatter + regression line ─────────────────────────────────
 document.getElementById("clin-btn-fit")?.addEventListener("click", async () => {
+  setClinicalCodeStrategy("fitline");
   const exp = await resolveClinicalAnalysisExperiment();
   if (!exp) {
     toast("No omics experiment loaded. Import expression/abundance matrix first.", "error");
@@ -2906,6 +3376,7 @@ document.getElementById("clin-btn-fit")?.addEventListener("click", async () => {
 
 // ── (d) WGCNA module–trait (async, real progress bar) ──────────────
 document.getElementById("clin-btn-wgcna")?.addEventListener("click", async () => {
+  setClinicalCodeStrategy("wgcna");
   const exp = await resolveClinicalAnalysisExperiment();
   if (!exp) {
     toast("No omics experiment loaded. Import expression/abundance matrix first.", "error");
@@ -2976,6 +3447,95 @@ document.getElementById("clin-btn-wgcna")?.addEventListener("click", async () =>
   } finally { setLoading(false); }
 });
 
+// ── (e) Multi-omics marker diagnostic / warning model ───────────────
+document.getElementById("clin-btn-marker-model")?.addEventListener("click", async () => {
+  setClinicalCodeStrategy("marker_model");
+  let exps = Array.from(document.getElementById("clin-marker-experiments")?.selectedOptions || [])
+    .map(o => o.value)
+    .filter(Boolean);
+  if (!exps.length) {
+    await refreshExperimentList();
+    exps = Array.from(document.getElementById("clin-marker-experiments")?.selectedOptions || [])
+      .map(o => o.value)
+      .filter(Boolean);
+  }
+  if (!exps.length) {
+    toast("Select at least one omics experiment for marker modeling.", "error");
+    return;
+  }
+  const outcome = document.getElementById("clin-marker-outcome")?.value || "";
+  if (!outcome) {
+    toast("Select a binary clinical outcome variable.", "error");
+    return;
+  }
+  const methods = Array.from(document.getElementById("clin-marker-methods")?.selectedOptions || [])
+    .map(o => o.value);
+  const srcSel = document.getElementById("clin-data-source")?.value || "auto";
+  const src = srcSel === "auto" ? (await resolveClinicalSource("auto")).source : srcSel;
+  const status = document.getElementById("clin-marker-status");
+  ["clin-marker-performance", "clin-marker-markers", "clin-marker-scores"].forEach((id) => {
+    const el = document.getElementById(id);
+    el?.classList.remove("hidden");
+    if (el) el.innerHTML = '<p style="padding:12px">Running marker model…</p>';
+  });
+  if (status) {
+    status.className = "alert alert-info";
+    status.textContent = "Training models and computing ROC/AUC metrics…";
+    status.classList.remove("hidden");
+  }
+  setLoading(true);
+  try {
+    const r = await withBusy("Clinical marker model", () => API.clinicalMarkerModel({
+      experiments: exps,
+      outcome_var: outcome,
+      positive_class: document.getElementById("clin-marker-positive")?.value || null,
+      methods,
+      clinical_source: src,
+      include_clinical_numeric: document.getElementById("clin-marker-include-clinical")?.checked !== false,
+      max_features_per_omics: +document.getElementById("clin-marker-max-features")?.value || 200,
+      validation_fraction: +document.getElementById("clin-marker-validation")?.value || 0.3,
+      top_n: 30,
+      seed: 123,
+    }));
+    showResultTable("clin-marker-performance", r.performance || [], 200, {
+      prettyHeader: true,
+      downloadName: "clinical_marker_model_performance.csv",
+      tableClass: "clinical-pub-table",
+      publicationNote: "Diagnostic/warning model performance: AUC, cut-off, sensitivity, specificity, sample size, and validation type.",
+    });
+    showResultTable("clin-marker-markers", r.markers || [], 500, {
+      prettyHeader: true,
+      downloadName: "clinical_marker_candidates.csv",
+      tableClass: "clinical-pub-table",
+      publicationNote: "Single-marker ROC results and multi-marker feature importance.",
+    });
+    showResultTable("clin-marker-scores", r.sample_scores || [], 500, {
+      prettyHeader: true,
+      downloadName: "clinical_marker_sample_scores.csv",
+      tableClass: "clinical-pub-table",
+      publicationNote: "Per-sample risk scores from multi-marker models.",
+    });
+    if (status) {
+      const meta = r.meta || {};
+      status.className = "alert alert-success";
+      status.textContent = `Done: ${meta.n_samples || 0} samples, ${meta.n_features || 0} features, validation=${meta.validation || "NA"}.`;
+    }
+    toast("Marker model ready.", "success");
+  } catch (e) {
+    ["clin-marker-performance", "clin-marker-markers", "clin-marker-scores"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${e.message}</p>`;
+    });
+    if (status) {
+      status.className = "alert alert-error";
+      status.textContent = e.message;
+    }
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+});
+
 // ── INITIALISE ────────────────────────────────────
 async function detectPreferredLocale() {
   const navLang = (navigator.language || "").toLowerCase();
@@ -2997,22 +3557,28 @@ async function detectPreferredLocale() {
 }
 
 async function renderLocaleNote() {
-  const el = document.getElementById("locale-note");
-  if (!el) return;
-  const locale = await detectPreferredLocale();
-  const cmd = `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"`;
-  if (locale === "zh") {
-    el.textContent = `一键安装命令: ${cmd} ｜ 常见问题: GitHub Issues`;
-  } else {
-    el.textContent = `One-line install: ${cmd} | Support: GitHub Issues`;
-  }
+  /* Student-facing footer: help link only (install command moved to docs). */
 }
 
 (async () => {
+  await initCodeLab();
+  await initTeaching();
+  setupTeachingTraceHooks();
   renderLocaleNote();
   await loadWorkflowBlueprint();
+  await loadDemoDatasetButtons();
   await refreshExperimentList();
   if (localStorage.getItem("emp_session_id")) {
     document.getElementById("btn-topbar-clear")?.classList.remove("hidden");
   }
+  if (localStorage.getItem("emp_welcome_dismissed")) {
+    document.getElementById("welcome-card")?.classList.add("hidden");
+  }
+  const savedPage = localStorage.getItem("emp_last_page");
+  if (savedPage && document.getElementById(`page-${savedPage}`)) {
+    navigateTo(savedPage);
+  } else {
+    navigateTo("course");
+  }
+  updateWorkflowStepper(document.querySelector(".page.active")?.id?.replace("page-", "") || "course");
 })();

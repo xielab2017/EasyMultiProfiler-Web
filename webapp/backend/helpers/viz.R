@@ -61,6 +61,14 @@
 }
 
 # Heuristic: pick first categorical metadata column when caller didn't specify.
+.viz_load_empt <- function(session_id, experiment) {
+  empt <- get_empt(session_id, experiment)
+  if (exists("apply_merged_coldata", mode = "function", inherits = TRUE)) {
+    empt <- apply_merged_coldata(session_id, empt)
+  }
+  empt
+}
+
 .viz_pick_group <- function(empt, group) {
   cd <- as.data.frame(SummarizedExperiment::colData(empt))
   if (!is.null(group) && nzchar(group) && group %in% names(cd)) {
@@ -119,7 +127,7 @@ make_barplot <- function(session_id, experiment, group = NULL, feature = NULL,
                           color_panel = NULL, custom_colors = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- load_empt(session_id, experiment)
+  empt <- .viz_load_empt(session_id, experiment)
   ad   <- SummarizedExperiment::assays(empt)[[1]]
   cd   <- as.data.frame(SummarizedExperiment::colData(empt))
 
@@ -207,7 +215,7 @@ make_boxplot <- function(session_id, experiment, group = NULL, feature = NULL,
                           width = 9, height = 6, color_panel = NULL, custom_colors = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- load_empt(session_id, experiment)
+  empt <- .viz_load_empt(session_id, experiment)
   ad   <- SummarizedExperiment::assays(empt)[[1]]
   cd   <- as.data.frame(SummarizedExperiment::colData(empt))
 
@@ -279,7 +287,8 @@ make_boxplot <- function(session_id, experiment, group = NULL, feature = NULL,
     if (is.na(h) && nrow(rd)) {
       alias_cols <- intersect(
         c("Name", "name", "label", "gene", "gene_symbol", "symbol",
-          "SYMBOL", "Gene", "Genus", "Species", "feature"),
+          "SYMBOL", "Gene", "Genus", "Species", "feature",
+          ".FEATURE", ".feature"),
         names(rd))
       for (col in alias_cols) {
         vals <- rd[[col]]
@@ -308,7 +317,7 @@ make_heatmap <- function(session_id, experiment, group = NULL,
                           font_size = 11, color_panel = NULL, custom_colors = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- load_empt(session_id, experiment)
+  empt <- .viz_load_empt(session_id, experiment)
   ad   <- SummarizedExperiment::assays(empt)[[1]]
   cd   <- as.data.frame(SummarizedExperiment::colData(empt))
   if (nrow(ad) == 0 || ncol(ad) == 0) stop("Assay matrix is empty.")
@@ -455,7 +464,7 @@ make_volcano <- function(session_id, experiment, fc_cutoff = 1.0, p_cutoff = 0.0
                           color_panel = NULL, custom_colors = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- load_empt(session_id, experiment)
+  empt <- .viz_load_empt(session_id, experiment)
 
   raw <- load_diff_raw(session_id, experiment)
   if (!is.null(raw) && !is.null(raw$data) && nrow(raw$data) > 0) {
@@ -616,7 +625,7 @@ make_deg_heatmap <- function(session_id, experiment, group = NULL,
                               font_size = 10, color_panel = NULL, custom_colors = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- load_empt(session_id, experiment)
+  empt <- .viz_load_empt(session_id, experiment)
   raw <- load_diff_raw(session_id, experiment)
   if (is.null(raw) || is.null(raw$data) || !nrow(raw$data)) {
     stop("Run differential analysis first – no cached DEG table found.")
@@ -814,7 +823,7 @@ make_scatter <- function(session_id, experiment, group = NULL,
     c("auto", "emp", "assay_pca")
   )
 
-  empt <- load_empt(session_id, experiment)
+  empt <- .viz_load_empt(session_id, experiment)
   ad   <- SummarizedExperiment::assays(empt)[[1]]
   cd   <- as.data.frame(SummarizedExperiment::colData(empt))
   if (ncol(ad) < 2 || nrow(ad) < 2) {
@@ -963,7 +972,7 @@ make_structure <- function(session_id, experiment, group = NULL,
                             color_panel = NULL, custom_colors = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- load_empt(session_id, experiment)
+  empt <- .viz_load_empt(session_id, experiment)
   ad   <- SummarizedExperiment::assays(empt)[[1]]
   cd   <- as.data.frame(SummarizedExperiment::colData(empt))
   if (nrow(ad) == 0 || ncol(ad) == 0) stop("Assay matrix is empty.")
@@ -1026,7 +1035,7 @@ make_alpha_plot <- function(session_id, experiment, group = NULL,
                              color_panel = NULL, custom_colors = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- load_empt(session_id, experiment)
+  empt <- .viz_load_empt(session_id, experiment)
   alpha_res <- tryCatch(run_alpha(session_id, experiment, method = metric, source = source), error = function(e) NULL)
   if (is.null(alpha_res)) stop("Could not compute alpha diversity table.")
 

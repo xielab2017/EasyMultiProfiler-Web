@@ -1,0 +1,36 @@
+{
+  "cases": [
+    {
+      "id": "corr_causation",
+      "title": "相关 ≠ 因果",
+      "error_types": ["因果关系错误", "过度解读"],
+      "ai_text": "Shannon 多样性在病例组显著低于对照组（P=0.03），因此肠道菌群失调导致了代谢综合征。建议立即用益生菌干预恢复多样性即可治疗疾病。",
+      "hints": ["相关与因果", "单因素推断机制", "治疗建议过度"],
+      "correction_guide": "应表述为「关联」而非「导致」；需考虑混杂因素与纵向/干预研究证据。"
+    },
+    {
+      "id": "wrong_test",
+      "title": "RNA-seq 误用 t 检验",
+      "error_types": ["统计误用"],
+      "ai_text": "对 RNA-seq count 矩阵每基因做两组 t 检验，P<0.05 即认为差异表达显著，无需校正也不需考虑离散性。",
+      "hints": ["count 数据分布", "多重检验", "DESeq2/edgeR"],
+      "correction_guide": "应使用基于负二项或类似模型的差异分析，并进行 FDR 校正。"
+    },
+    {
+      "id": "fake_pathway",
+      "title": "通路幻觉",
+      "error_types": ["文献/通路幻觉", "过度解读"],
+      "ai_text": "富集分析显示 Wnt signaling 与 TNF 通路显著（P=0.001），这证明宿主通过 Wnt-TNF 轴直接调控肠道菌的胆汁酸代谢，与 Nature 2021 某研究完全一致。",
+      "hints": ["编造文献", "机制链条过长", "富集≠实验验证"],
+      "correction_guide": "删除无出处的文献；区分富集统计结果与实验验证的机制。"
+    },
+    {
+      "id": "pvalue_misread",
+      "title": "P 值误解",
+      "error_types": ["统计误用", "过度解读"],
+      "ai_text": "火山图显示 500 个基因 P<0.05，说明其中 95% 都是真阳性差异基因，生物学效应一定很大。",
+      "hints": ["P 值含义", "效应量", "FDR"],
+      "correction_guide": "应结合 fold change、FDR 和独立验证；P 值不能推出真阳性比例。"
+    }
+  ]
+}

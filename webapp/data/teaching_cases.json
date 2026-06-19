@@ -1,0 +1,269 @@
+{
+  "course_code": "EMP2026",
+  "cases": [
+    {
+      "id": "course_microbiome_16s",
+      "title": "16S 微生物组分析全流程",
+      "subtitle": "从数据导入到可验证假设（5 步背景微课）",
+      "omics": "microbiome_16s",
+      "scientific_question": "两组样本的肠道菌群结构有何不同？哪些菌属贡献差异、可提出怎样的可验证假设？",
+      "background": "以 16S 菌群丰度表 + 样本 metadata 为例，逐步建立『导入→预处理→多样性分析→可视化→解读与假设』的完整科研思维。每一步先看 3-5 分钟背景微课，通过测验后再上手 EMP 实操。",
+      "data_hint": "使用课程提供的 taxonomy 丰度矩阵 + 样本 metadata（含分组/表型）。",
+      "tasks": [
+        {
+          "id": "s1_import",
+          "phase": "import",
+          "title": "第1步 · 数据导入",
+          "instructions": "观看『数据从哪来、导入什么』背景微课并通过测验，再前往 Data 页导入丰度表与 metadata，在 Inspector 核对样本数与分组。",
+          "emp_page": "import",
+          "videos": ["m16s_import"],
+          "quiz": "quiz_m16s_import",
+          "reflection_prompt": "你如何确认分组变量与样本 ID 正确匹配？丰度表行列方向是否正确？",
+          "required": true
+        },
+        {
+          "id": "s2_prepare",
+          "phase": "prepare",
+          "title": "第2步 · 质控与预处理",
+          "instructions": "理解组成型数据与测序深度问题，通过测验后在 Prepare 完成过滤与标准化（如 rCLR），记录参数与理由。",
+          "emp_page": "preparation",
+          "videos": ["m16s_prepare"],
+          "quiz": "quiz_m16s_prepare",
+          "reflection_prompt": "为何选择该标准化/过滤策略？它如何缓解组成型与深度差异问题？",
+          "required": true
+        },
+        {
+          "id": "s3_analysis",
+          "phase": "analysis",
+          "title": "第3步 · 多样性分析",
+          "instructions": "理解 Alpha/Beta 多样性含义，通过测验后在 Analyze 运行 Shannon 等指数与 PCoA/PERMANOVA。",
+          "emp_page": "analysis",
+          "videos": ["m16s_analysis"],
+          "quiz": "quiz_m16s_analysis",
+          "reflection_prompt": "比较前测序深度是否可比？组间差异的可能生态学解释是什么？",
+          "required": true
+        },
+        {
+          "id": "s4_visualization",
+          "phase": "visualization",
+          "title": "第4步 · 可视化",
+          "instructions": "学习排序图与组成图的读图要点，通过测验后在 Visualize 生成 PCoA/组成图/Sankey 并解读。",
+          "emp_page": "visualization",
+          "videos": ["m16s_viz"],
+          "quiz": "quiz_m16s_viz",
+          "reflection_prompt": "排序图的组间分离说明了什么？哪些是相对丰度可能带来的误读？",
+          "required": true
+        },
+        {
+          "id": "s5_interpretation",
+          "phase": "interpretation",
+          "title": "第5步 · 解读与假设",
+          "instructions": "理解差异丰度的多重检验与效应量，通过测验后筛选差异菌属，并写出可验证的机制假设与局限性。",
+          "emp_page": "visualization",
+          "videos": ["m16s_interpret"],
+          "quiz": "quiz_m16s_interpret",
+          "reflection_prompt": "机制假设 + 局限性（独立思考，AI 草稿需标注并修改）",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "course_transcriptomics",
+      "title": "转录组 RNA-seq 分析全流程",
+      "subtitle": "从 count 导入到功能富集（5 步背景微课）",
+      "omics": "transcriptomics",
+      "scientific_question": "疾病组 vs 对照组有哪些差异表达基因？它们富集在哪些通路、提示什么生物学故事？",
+      "background": "经典 bulk RNA-seq 教学线：以 count 矩阵 + 样本信息表为例，建立『导入→归一化→差异分析→可视化→功能解读』的完整流程。每步先看背景微课并通过测验。",
+      "data_hint": "GEO 下载的 count 矩阵 + 样本信息表（含分组）。",
+      "tasks": [
+        {
+          "id": "s1_import",
+          "phase": "import",
+          "title": "第1步 · 数据导入",
+          "instructions": "理解 count 矩阵与基因 ID，通过测验后在 Data 页导入 Normal matrix，确认基因为行、样本为列。",
+          "emp_page": "import",
+          "videos": ["rnaseq_import"],
+          "quiz": "quiz_rnaseq_import",
+          "reflection_prompt": "基因 ID 类型是什么？是否需要转换？colData 是否与列名匹配？",
+          "required": true
+        },
+        {
+          "id": "s2_prepare",
+          "phase": "prepare",
+          "title": "第2步 · 归一化与过滤",
+          "instructions": "理解文库大小归一化与低表达过滤，通过测验后在 Prepare 完成相应设置并记录理由。",
+          "emp_page": "preparation",
+          "videos": ["rnaseq_prepare"],
+          "quiz": "quiz_rnaseq_prepare",
+          "reflection_prompt": "为何差异分析使用原始 count？你如何处理低表达基因与潜在批次效应？",
+          "required": true
+        },
+        {
+          "id": "s3_analysis",
+          "phase": "analysis",
+          "title": "第3步 · 差异表达分析",
+          "instructions": "理解设计矩阵与 log2FC/padj，通过测验后在 Analyze 运行 DESeq2/limma，设置分组与协变量。",
+          "emp_page": "analysis",
+          "videos": ["rnaseq_analysis"],
+          "quiz": "quiz_rnaseq_analysis",
+          "reflection_prompt": "你的对比与协变量如何设定？显著性与 log2FC 阈值的依据是什么？",
+          "required": true
+        },
+        {
+          "id": "s4_visualization",
+          "phase": "visualization",
+          "title": "第4步 · 火山图与热图",
+          "instructions": "学习火山图与热图的读图要点，通过测验后在 Visualize 生成火山图与 DEG 热图，挑选 3 个关注基因。",
+          "emp_page": "visualization",
+          "videos": ["rnaseq_viz"],
+          "quiz": "quiz_rnaseq_viz",
+          "reflection_prompt": "3 个关注基因的依据（统计量+已知功能，警惕过度解读）",
+          "required": true
+        },
+        {
+          "id": "s5_interpretation",
+          "phase": "interpretation",
+          "title": "第5步 · 功能富集与解读",
+          "instructions": "理解 ORA 与 GSEA、背景集，通过测验后运行 KEGG/GO 富集，并对结果做科学、克制的解读。",
+          "emp_page": "analysis",
+          "videos": ["rnaseq_interpret"],
+          "quiz": "quiz_rnaseq_interpret",
+          "reflection_prompt": "富集通路的科学解读 + 对 AI 解读的人工修正与声明",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "course_metabolomics",
+      "title": "代谢组分析全流程",
+      "subtitle": "从特征表导入到机制假设（5 步背景微课）",
+      "omics": "metabolomics",
+      "scientific_question": "两组之间有哪些差异代谢物？它们提示怎样的代谢通路改变与可验证机制假设？",
+      "background": "以 LC-MS 非靶向/靶向代谢组特征表为例，建立『导入→缺失与标度化→多元分析→可视化→通路与因果解读』的流程。每步先看背景微课并通过测验。",
+      "data_hint": "课程提供的代谢组特征表（样本×feature）+ 样本 metadata（含 QC 标注）。",
+      "tasks": [
+        {
+          "id": "s1_import",
+          "phase": "import",
+          "title": "第1步 · 数据导入",
+          "instructions": "理解代谢组特征表与靶向/非靶向区别，通过测验后导入特征表与 metadata，核对方向、QC 样本与缺失情况。",
+          "emp_page": "import",
+          "videos": ["metab_import"],
+          "quiz": "quiz_metab_import",
+          "reflection_prompt": "特征表行列方向是否正确？QC 样本与缺失值情况如何？",
+          "required": true
+        },
+        {
+          "id": "s2_prepare",
+          "phase": "prepare",
+          "title": "第2步 · 缺失/归一化/标度化",
+          "instructions": "理解缺失值类型、样本归一化与变量标度化的顺序，通过测验后在 Prepare 完成处理并记录策略。",
+          "emp_page": "preparation",
+          "videos": ["metab_prepare"],
+          "quiz": "quiz_metab_prepare",
+          "reflection_prompt": "你的缺失值处理、归一化与标度化方法分别是什么？为何这样排序？",
+          "required": true
+        },
+        {
+          "id": "s3_analysis",
+          "phase": "analysis",
+          "title": "第3步 · 多元与差异分析",
+          "instructions": "区分 PCA 与 PLS-DA、警惕过拟合，通过测验后在 Analyze/Clinical 完成多元分析与单变量差异检验。",
+          "emp_page": "analysis",
+          "videos": ["metab_analysis"],
+          "quiz": "quiz_metab_analysis",
+          "reflection_prompt": "你如何验证 PLS-DA 没有过拟合？多元与单变量结果是否一致？",
+          "required": true
+        },
+        {
+          "id": "s4_visualization",
+          "phase": "visualization",
+          "title": "第4步 · 可视化",
+          "instructions": "学习热图、火山图与得分/载荷图的配合，通过测验后在 Visualize 生成相应图形并解读。",
+          "emp_page": "visualization",
+          "videos": ["metab_viz"],
+          "quiz": "quiz_metab_viz",
+          "reflection_prompt": "得分图与载荷图分别告诉你什么？热图为何要先标度化？",
+          "required": true
+        },
+        {
+          "id": "s5_interpretation",
+          "phase": "interpretation",
+          "title": "第5步 · 通路与因果解读",
+          "instructions": "理解通路富集与相关/因果边界，通过测验后将差异代谢物解读为可验证机制假设并声明 AI 使用。",
+          "emp_page": "clinical",
+          "videos": ["metab_interpret"],
+          "quiz": "quiz_metab_interpret",
+          "reflection_prompt": "机制假设链条 + 混杂/反向因果讨论 + AI 使用声明",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "course_metagenomics",
+      "title": "宏基因组分析全流程",
+      "subtitle": "从谱表导入到功能假设（5 步背景微课）",
+      "omics": "metagenomics",
+      "scientific_question": "两组的微生物群落与功能潜力有何差异？哪些功能模块改变、可提出怎样的可验证假设？",
+      "background": "以鸟枪法宏基因组的物种谱与功能谱为例，建立『导入→过滤归一化→结构与差异分析→可视化→功能与因果解读』的流程。每步先看背景微课并通过测验。",
+      "data_hint": "课程提供的物种谱/功能谱（KO 或通路）+ 样本 metadata。",
+      "tasks": [
+        {
+          "id": "s1_import",
+          "phase": "import",
+          "title": "第1步 · 数据导入",
+          "instructions": "理解鸟枪法与 16S 区别、物种谱/功能谱结构，通过测验后导入谱表并核对类型、方向与对齐。",
+          "emp_page": "import",
+          "videos": ["mgx_import"],
+          "quiz": "quiz_mgx_import",
+          "reflection_prompt": "你导入的是物种谱还是功能谱？方向与样本 ID 是否对齐？",
+          "required": true
+        },
+        {
+          "id": "s2_prepare",
+          "phase": "prepare",
+          "title": "第2步 · 过滤与归一化",
+          "instructions": "理解谱表的稀疏性与组成型特征，通过测验后在 Prepare 完成流行度过滤与归一化（TSS/CLR）。",
+          "emp_page": "preparation",
+          "videos": ["mgx_prepare"],
+          "quiz": "quiz_mgx_prepare",
+          "reflection_prompt": "你的过滤阈值与归一化方法是什么？如何处理深度差异？",
+          "required": true
+        },
+        {
+          "id": "s3_analysis",
+          "phase": "analysis",
+          "title": "第3步 · 结构与差异分析",
+          "instructions": "理解排序/PERMANOVA 与组成型差异检验，通过测验后在 Analyze 完成多样性、排序与差异特征分析。",
+          "emp_page": "analysis",
+          "videos": ["mgx_analysis"],
+          "quiz": "quiz_mgx_analysis",
+          "reflection_prompt": "物种差异与功能差异分别说明什么？是否做了多重检验校正？",
+          "required": true
+        },
+        {
+          "id": "s4_visualization",
+          "phase": "visualization",
+          "title": "第4步 · 功能/物种可视化",
+          "instructions": "学习功能热图、组成图与排序图的读图要点，通过测验后在 Visualize 生成并解读。",
+          "emp_page": "visualization",
+          "videos": ["mgx_viz"],
+          "quiz": "quiz_mgx_viz",
+          "reflection_prompt": "功能热图聚类说明了什么？哪些是相对丰度的潜在误读？",
+          "required": true
+        },
+        {
+          "id": "s5_interpretation",
+          "phase": "interpretation",
+          "title": "第5步 · 功能与因果解读",
+          "instructions": "理解功能潜力与活性的区别、假因果谬误，通过测验后整合证据并写出可验证机制假设、声明 AI 使用。",
+          "emp_page": "export",
+          "videos": ["mgx_interpret"],
+          "quiz": "quiz_mgx_interpret",
+          "reflection_prompt": "功能潜力 vs 活性如何区分？机制假设 + 局限性 + AI 使用声明",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

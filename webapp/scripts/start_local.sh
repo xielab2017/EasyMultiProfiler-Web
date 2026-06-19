@@ -29,9 +29,12 @@ kill_if_running "${WEB_PID_FILE}"
 
 kill_port_if_running() {
   local port="$1"
-  local pids
-  pids="$(lsof -t -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
-  if [[ -n "${pids}" ]]; then
+  local attempt pids
+  for attempt in 1 2 3; do
+    pids="$(lsof -t -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -z "${pids}" ]]; then
+      return 0
+    fi
     # shellcheck disable=SC2086
     kill ${pids} 2>/dev/null || true
     sleep 1
@@ -39,7 +42,12 @@ kill_port_if_running() {
     if [[ -n "${pids}" ]]; then
       # shellcheck disable=SC2086
       kill -9 ${pids} 2>/dev/null || true
+      sleep 1
     fi
+  done
+  if lsof -t -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Port ${port} is still in use after cleanup. Try: lsof -iTCP:${port} -sTCP:LISTEN" >&2
+    return 1
   fi
 }
 
@@ -66,32 +74,59 @@ start_detached "${API_PID_FILE}" "${API_LOG}" \
 
 echo "Starting frontend on :${WEB_PORT} ..."
 start_detached "${WEB_PID_FILE}" "${WEB_LOG}" \
-  python -m http.server "${WEB_PORT}" --directory "webapp/frontend"
+  python webapp/scripts/static_server.py "${WEB_PORT}" "webapp/frontend"
 
-wait_for_url() {
-  local name="$1"
-  local url="$2"
-  local log_file="$3"
-  local max_attempts="${4:-90}"
-  local attempt
+web_pid="$(cat "${WEB_PID_FILE}" 2>/dev/null || true)"
+if [[ -z "${web_pid}" ]] || ! kill -0 "${web_pid}" 2>/dev/null; then
+  echo "Frontend process exited immediately. Recent log:" >&2
+  tail -n 40 "${WEB_LOG}" >&2 || true
+  exit 1
+fi
+
+curl_ok() {
+  curl --noproxy '*' -fsS --retry 2 --retry-connrefused --retry-delay 1 --max-time 5 "$1" >/dev/null 2>&1
+}
+
+api_failed_in_log() {
+  [[ -f "${API_LOG}" ]] && grep -Eiq '(^|[^a-z])(error in|execution halted|cannot open|failed to start)' "${API_LOG}"
+}
+
+wait_for_services() {
+  local max_attempts="${1:-120}"
+  local attempt api_ok web_ok
   for attempt in $(seq 1 "${max_attempts}"); do
-    if curl --noproxy '*' -fsS "${url}" >/dev/null 2>&1; then
+    api_ok=1
+    web_ok=1
+    curl_ok "http://127.0.0.1:${API_PORT}/api/health" && api_ok=0
+    curl_ok "http://127.0.0.1:${WEB_PORT}/" && web_ok=0
+    if [[ "${api_ok}" -eq 0 && "${web_ok}" -eq 0 ]]; then
       return 0
     fi
-    if [[ -f "${log_file}" ]] && grep -Eiq "error|halted|cannot|failed" "${log_file}"; then
-      echo "${name} failed while starting. Recent log:"
-      tail -n 80 "${log_file}" || true
+    if api_failed_in_log; then
+      echo "API failed while starting. Recent log:"
+      tail -n 80 "${API_LOG}" || true
+      return 1
+    fi
+    web_pid="$(cat "${WEB_PID_FILE}" 2>/dev/null || true)"
+    if [[ -z "${web_pid}" ]] || ! kill -0 "${web_pid}" 2>/dev/null; then
+      echo "Frontend process exited while starting. Recent log:"
+      tail -n 80 "${WEB_LOG}" || true
       return 1
     fi
     sleep 1
   done
-  echo "${name} did not become ready after ${max_attempts}s. Recent log:"
-  tail -n 80 "${log_file}" || true
+  if [[ "${api_ok}" -ne 0 ]]; then
+    echo "API did not become ready after ${max_attempts}s. Recent log:"
+    tail -n 80 "${API_LOG}" || true
+  fi
+  if [[ "${web_ok}" -ne 0 ]]; then
+    echo "Frontend did not become ready after ${max_attempts}s. Recent log:"
+    tail -n 80 "${WEB_LOG}" || true
+  fi
   return 1
 }
 
-wait_for_url "API" "http://127.0.0.1:${API_PORT}/api/health" "${API_LOG}" 120
-wait_for_url "Frontend" "http://127.0.0.1:${WEB_PORT}" "${WEB_LOG}" 30
+wait_for_services 120
 
 echo "Local services started."
 echo "- Frontend: http://127.0.0.1:${WEB_PORT}"

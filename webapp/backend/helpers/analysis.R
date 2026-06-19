@@ -174,8 +174,12 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
   # have attached state (e.g. class "EMP_dimension_analysis") that makes
   # EMP_diff_analysis mis-interpret the sample matrix.
   empt <- get_empt_fresh(session_id, experiment)
+  empt <- apply_merged_coldata(session_id, empt)
   cd_df <- as.data.frame(SummarizedExperiment::colData(empt))
 
+  if (is.null(group_var) || group_var == "") {
+    group_var <- .clinical_preferred_group_var(cd_df)
+  }
   if (is.null(group_var) || group_var == "") {
     cats <- names(cd_df)[sapply(cd_df, function(x) {
       ux <- unique(na.omit(as.character(x)))
@@ -183,6 +187,10 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
     })]
     if (length(cats) == 0) stop("No grouping variable available in sample metadata.")
     group_var <- cats[1]
+  }
+  if (!group_var %in% names(cd_df)) {
+    hit <- names(cd_df)[tolower(names(cd_df)) == tolower(group_var)]
+    if (length(hit)) group_var <- hit[1]
   }
   if (!group_var %in% names(cd_df)) {
     stop("Selected grouping variable is not present in sample metadata.")
@@ -493,23 +501,57 @@ run_correlation <- function(session_id, experiment, use = "spearman") {
 
 run_cluster <- function(session_id, experiment, method = "hclust", k = 3) {
   empt <- get_empt(session_id, experiment)
-  empt <- empt |> EasyMultiProfiler::EMP_cluster_analysis(method = method, k = k)
-  save_empt(session_id, experiment, empt)
+  empt <- apply_merged_coldata(session_id, empt)
 
-  result <- tryCatch(
-    as.data.frame(SummarizedExperiment::colData(empt)),
-    error = function(e) data.frame()
-  )
-  result
+  k <- suppressWarnings(as.integer(k))
+  if (is.na(k) || k < 2L) k <- 2L
+
+  mat <- tryCatch(as.matrix(SummarizedExperiment::assays(empt)[[1]]), error = function(e) NULL)
+  if (is.null(mat) || ncol(mat) < 2L) stop("Need at least 2 samples to cluster.")
+  # Samples as rows for sample-level clustering.
+  x <- t(mat)
+  x[!is.finite(x)] <- 0
+  # Drop zero-variance features to stabilise distances.
+  v <- apply(x, 2, stats::var)
+  if (any(v > 0)) x <- x[, v > 0, drop = FALSE]
+  k <- min(k, nrow(x) - 1L)
+  if (k < 2L) k <- 2L
+
+  meth <- tolower(trimws(as.character(method %||% "hclust")))
+  labels <- if (meth %in% c("kmeans", "km")) {
+    set.seed(42)
+    stats::kmeans(x, centers = k, nstart = 10)$cluster
+  } else if (meth %in% c("pam", "kmedoids") && requireNamespace("cluster", quietly = TRUE)) {
+    cluster::pam(stats::dist(x), k = k, cluster.only = TRUE)
+  } else {
+    hc <- stats::hclust(stats::dist(x), method = "ward.D2")
+    stats::cutree(hc, k = k)
+  }
+
+  cd <- as.data.frame(SummarizedExperiment::colData(empt))
+  lab <- labels
+  if (!is.null(names(lab)) && all(rownames(cd) %in% names(lab))) {
+    lab <- lab[rownames(cd)]
+  }
+  cluster_col <- factor(paste0("C", as.integer(lab)))
+  cd$cluster <- cluster_col
+  SummarizedExperiment::colData(empt)$cluster <- cluster_col
+  save_empt(session_id, experiment, empt)
+  cd
 }
 
 run_marker <- function(session_id, experiment, method = "randomForest", group_var = NULL,
                        ref_group = NULL, test_group = NULL) {
   empt <- get_empt(session_id, experiment)
+  empt <- apply_merged_coldata(session_id, empt)
   cd_df <- as.data.frame(SummarizedExperiment::colData(empt))
 
   if (!is.null(group_var) && nzchar(group_var) && !(group_var %in% names(cd_df))) {
-    group_var <- NULL
+    hit <- names(cd_df)[tolower(names(cd_df)) == tolower(group_var)]
+    if (length(hit)) group_var <- hit[1] else group_var <- NULL
+  }
+  if (is.null(group_var) || group_var == "") {
+    group_var <- .clinical_preferred_group_var(cd_df)
   }
   if (is.null(group_var) || group_var == "") {
     cats <- names(cd_df)[sapply(cd_df, function(x) {

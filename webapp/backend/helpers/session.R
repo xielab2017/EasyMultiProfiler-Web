@@ -31,6 +31,7 @@ prepare_snapshot_dir <- function(session_id, experiment) {
 }
 
 save_raw_empt <- function(session_id, experiment, empt) {
+  ensure_session_dir(session_id)
   saveRDS(empt, raw_empt_path(session_id, experiment))
 }
 
@@ -75,18 +76,42 @@ create_session <- function() {
   id
 }
 
+ensure_session_dir <- function(session_id) {
+  if (is.null(session_id) || !nzchar(session_id)) return(FALSE)
+  p <- session_path(session_id)
+  if (!dir.exists(p)) dir.create(p, recursive = TRUE, showWarnings = FALSE)
+  dir.exists(p)
+}
+
 session_exists <- function(session_id) {
   dir.exists(session_path(session_id))
 }
 
+# In-process MAE cache (mtime-keyed), mirroring the EMPT cache below. load_mae
+# is called on most prep/analyze/import paths; re-reading the RDS each time is
+# wasteful. The cache is invalidated automatically when save_mae() rewrites the
+# file (mtime changes). R copy-on-modify means callers that mutate the returned
+# object do not corrupt the cached copy.
+.MAE_CACHE <- new.env(parent = emptyenv())
+
 save_mae <- function(session_id, mae) {
-  saveRDS(mae, mae_path(session_id))
+  ensure_session_dir(session_id)
+  p <- mae_path(session_id)
+  saveRDS(mae, p)
+  assign(session_id, list(mae = mae, mtime = file.mtime(p)), envir = .MAE_CACHE)
 }
 
 load_mae <- function(session_id) {
   p <- mae_path(session_id)
   if (!file.exists(p)) stop("Session data not found. Please import data first.")
-  readRDS(p)
+  mtime <- file.mtime(p)
+  if (exists(session_id, envir = .MAE_CACHE, inherits = FALSE)) {
+    entry <- get(session_id, envir = .MAE_CACHE, inherits = FALSE)
+    if (identical(entry$mtime, mtime)) return(entry$mae)
+  }
+  mae <- readRDS(p)
+  assign(session_id, list(mae = mae, mtime = mtime), envir = .MAE_CACHE)
+  mae
 }
 
 # ------------------------------------------------------------------
@@ -126,9 +151,13 @@ load_mae <- function(session_id) {
   for (k in ks) {
     if (startsWith(k, prefix)) rm(list = k, envir = .EMPT_CACHE)
   }
+  if (exists(session_id, envir = .MAE_CACHE, inherits = FALSE)) {
+    rm(list = session_id, envir = .MAE_CACHE)
+  }
 }
 
 save_empt <- function(session_id, experiment, empt) {
+  ensure_session_dir(session_id)
   p <- empt_path(session_id, experiment)
   saveRDS(empt, p)
   .cache_put(session_id, experiment, empt, file.mtime(p))
@@ -162,18 +191,34 @@ load_empt <- function(session_id, experiment) {
     if (!is.null(cached)) return(cached)
     obj <- readRDS(p)
     if (.is_proper_empt(obj)) {
+      old_rn <- rownames(SummarizedExperiment::assays(obj)[[1]])
+      obj <- restore_feature_rownames(obj)
+      new_rn <- rownames(SummarizedExperiment::assays(obj)[[1]])
+      if (!identical(old_rn, new_rn)) save_empt(session_id, experiment, obj)
+      mtime <- file.mtime(p)
       .cache_put(session_id, experiment, obj, mtime)
       return(obj)
     }
   }
   mae <- load_mae(session_id)
   empt <- .promote_to_empt(mae, experiment)
+  empt <- restore_feature_rownames(empt)
   # Persist the promoted EMPT so the next call can hit the cache.
   tryCatch({
     saveRDS(empt, p)
     .cache_put(session_id, experiment, empt, file.mtime(p))
   }, error = function(e) invisible(NULL))
   empt
+}
+
+# Shared by /api/prepare/* routes and Code Lab preparation snippets.
+.prepare_load_base <- function(session_id, experiment, mode = "stack") {
+  m <- tolower(trimws(as.character(mode %||% "stack")))
+  if (identical(m, "single")) {
+    raw <- load_raw_empt(session_id, experiment)
+    if (!is.null(raw)) return(raw)
+  }
+  load_empt(session_id, experiment)
 }
 
 delete_session <- function(session_id) {

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<style>
+  :root { --accent:#2563eb; --accent2:#60a5fa; --glow:rgba(96,165,250,.45); }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1280px;height:720px;overflow:hidden;background:#060b18}
+  body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;color:#e2e8f0;position:relative}
+  .bg{position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 40%,#0f1f3d 0%,#060b18 70%)}
+  .grid{position:absolute;inset:0;opacity:.06;background-image:linear-gradient(#60a5fa 1px,transparent 1px),linear-gradient(90deg,#60a5fa 1px,transparent 1px);background-size:48px 48px}
+  #bio{position:absolute;inset:0;z-index:1}
+  header.bar{position:absolute;top:28px;left:48px;right:48px;display:flex;justify-content:space-between;align-items:center;z-index:10}
+  .chip{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-weight:700;font-size:20px;padding:7px 16px;border-radius:999px;box-shadow:0 0 24px var(--glow)}
+  .brand{color:#64748b;font-size:16px;font-weight:600}
+  .scene{position:absolute;inset:0;opacity:0;pointer-events:none;z-index:2}
+  .scene.in{animation:fadeIn .8s ease forwards}
+  .scene.out{animation:fadeOut .6s ease forwards}
+  @keyframes fadeIn{to{opacity:1}} @keyframes fadeOut{to{opacity:0}}
+  .lower{position:absolute;left:0;right:0;bottom:0;z-index:8;padding:0 48px 36px;background:linear-gradient(transparent,rgba(6,11,24,.92) 35%)}
+  .eyebrow{color:var(--accent2);font-size:18px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;opacity:0}
+  .scene.in .eyebrow{animation:up .5s .1s forwards}
+  h2{font-size:34px;font-weight:800;line-height:1.25;color:#f8fafc;opacity:0;text-shadow:0 2px 20px rgba(0,0,0,.5)}
+  .scene.in h2{animation:up .6s .2s forwards}
+  .caption{font-size:22px;color:#94a3b8;margin-top:10px;line-height:1.45;max-width:900px;opacity:0}
+  .scene.in .caption{animation:up .6s .35s forwards}
+  @keyframes up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+  .progress-wrap{position:absolute;left:0;bottom:0;width:100%;height:4px;background:rgba(255,255,255,.08);z-index:12}
+  .progress{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));box-shadow:0 0 12px var(--glow)}
+  .vignette{position:absolute;inset:0;pointer-events:none;z-index:6;box-shadow:inset 0 0 120px rgba(0,0,0,.55)}
+  .label-tag{position:absolute;font-size:14px;font-weight:600;color:#fff;background:rgba(37,99,235,.75);padding:4px 10px;border-radius:6px;opacity:0;z-index:9}
+  .scene.in .label-tag{animation:tagIn .4s forwards}
+  @keyframes tagIn{to{opacity:1}}
+</style>
+</head>
+<body>
+<div class="bg"></div><div class="grid"></div>
+<canvas id="bio" width="1280" height="720"></canvas>
+<div class="vignette"></div>
+<header class="bar"><span class="chip" id="chip">步骤</span><span class="brand">EasyMultiProfiler · 科普动画</span></header>
+<div class="progress-wrap"><div class="progress" id="prog"></div></div>
+<div id="stage"></div>
+<script>
+const DATA = /*__DATA__*/;
+const ACCENTS = {microbiome_16s:["#2563eb","#38bdf8"],transcriptomics:["#059669","#34d399"],metabolomics:["#a855f7","#e879f9"],metagenomics:["#ea580c","#fb923c"]};
+const canvas=document.getElementById("bio"), ctx=canvas.getContext("2d");
+let accent=ACCENTS.microbiome_16s, accent2=accent[1], animId=null;
+
+function lerp(a,b,t){return a+(b-a)*t}
+function ease(t){return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2}
+function clamp(t){return Math.max(0,Math.min(1,t))}
+
+/* ========== Biological canvas scenes (CNS / science-outreach style) ========== */
+const BIO = {
+  microbiome_ecosystem(p){
+    const n=18; ctx.clearRect(0,0,1280,720);
+    for(let i=0;i<n;i++){
+      const ph=i/n*6.28, r=180+Math.sin(ph*3+p*2)*40;
+      const x=640+Math.cos(ph+p*.3)*r, y=360+Math.sin(ph+p*.25)*r*.6;
+      const sz=22+Math.sin(i+p*4)*8, al=.5+.4*Math.sin(i*2+p*3);
+      ctx.globalAlpha=clamp(al);
+      ctx.fillStyle=i%3===0?"#38bdf8":i%3===1?"#818cf8":"#34d399";
+      ctx.beginPath(); ctx.ellipse(x,y,sz,sz*.65,ph,0,6.28); ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,.25)"; ctx.lineWidth=1.5; ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+    if(p>.2){ctx.fillStyle="rgba(255,255,255,.9)";ctx.font="600 16px sans-serif";ctx.fillText("肠道 / 环境样本中的微生物群落",480,580)}
+  },
+
+  gene_16s(p){
+    const y=320, x0=180, len=920, h=56;
+    ctx.clearRect(0,0,1280,720);
+    ctx.fillStyle="#1e293b"; ctx.strokeStyle="#475569"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.roundRect(x0,y-h/2,len,h,8); ctx.fill(); ctx.stroke();
+    const regions=[{s:.05,e:.18,c:"#2563eb",l:"保守区"},{s:.18,e:.28,c:"#f97316",l:"V1"},{s:.28,e:.38,c:"#2563eb",l:"保守"},{s:.38,e:.48,c:"#fb923c",l:"V2-V3"},{s:.48,e:.58,c:"#2563eb",l:"保守"},{s:.58,e:.72,c:"#ef4444",l:"V4-V5"},{s:.72,e:.85,c:"#2563eb",l:"保守"},{s:.85,e:.95,c:"#a855f7",l:"V6-V9"}];
+    regions.forEach((r,i)=>{
+      const rx=x0+len*r.s, rw=len*(r.e-r.s), show=clamp((p-i*.08)*4);
+      if(show<=0)return;
+      ctx.globalAlpha=show;
+      ctx.fillStyle=r.c; ctx.beginPath(); ctx.roundRect(rx,y-h/2+4,rw,h-8,4); ctx.fill();
+      if(rw>40&&show>.5){ctx.fillStyle="#fff";ctx.font="600 13px sans-serif";ctx.textAlign="center";ctx.fillText(r.l,rx+rw/2,y+5)}
+    });
+    ctx.globalAlpha=clamp((p-.3)*3);
+    ctx.strokeStyle="#fbbf24"; ctx.lineWidth=3; ctx.setLineDash([6,4]);
+    ctx.beginPath(); ctx.moveTo(x0+len*.18,y-h/2-20); ctx.lineTo(x0+len*.72,y-h/2-20); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle="#fbbf24"; ctx.font="700 15px sans-serif"; ctx.textAlign="center";
+    ctx.fillText("通用引物扩增区", x0+len*.45, y-h/2-28);
+    ctx.globalAlpha=1; ctx.textAlign="left";
+    ctx.fillStyle="#94a3b8"; ctx.font="600 18px sans-serif"; ctx.fillText("16S rRNA — 细菌的「分子身份证」", 420, 480);
+  },
+
+  pcr_sequencing(p){
+    ctx.clearRect(0,0,1280,720);
+    const stages=[{t:.35,label:"PCR 扩增"},{t:.7,label:"高通量测序"},{t:1,label:"原始 reads"}];
+    stages.forEach((st,i)=>{
+      const sp=clamp((p-st.t+.35)*2.5); if(sp<=0)return;
+      const x=280+i*280, y=360;
+      ctx.globalAlpha=sp;
+      if(i===0){
+        for(let j=0;j<4;j++){const off=Math.sin(p*8+j)*6;
+          ctx.strokeStyle="#38bdf8"; ctx.lineWidth=3;
+          ctx.beginPath(); ctx.moveTo(x-40,y+off); ctx.quadraticCurveTo(x,y-30+off,x+40,y+off); ctx.stroke();
+        }
+        ctx.fillStyle="#1e3a5f"; ctx.beginPath(); ctx.roundRect(x-50,y-60,100,120,10); ctx.fill();
+        ctx.fillStyle="#fff"; ctx.font="600 14px sans-serif"; ctx.textAlign="center"; ctx.fillText("DNA",x,y);
+      } else if(i===1){
+        ctx.fillStyle="#334155"; ctx.beginPath(); ctx.roundRect(x-70,y-50,140,100,8); ctx.fill();
+        ctx.fillStyle="#38bdf8"; for(let r=0;r<5;r++){ctx.fillRect(x-55+r*22,y-20+Math.sin(p*10+r)*8,8,40)}
+        ctx.fillStyle="#94a3b8"; ctx.font="600 13px sans-serif"; ctx.textAlign="center"; ctx.fillText("测序仪",x,y+55);
+      } else {
+        for(let r=0;r<12;r++){const ang=r/12*6.28+p*2, rad=50+Math.sin(r+p*5)*15;
+          ctx.fillStyle=`hsl(${200+r*8},70%,${50+Math.sin(r)*15}%)`;
+          ctx.beginPath(); ctx.arc(x+Math.cos(ang)*rad,y+Math.sin(ang)*rad*.5,5,0,6.28); ctx.fill();
+        }
+        ctx.fillStyle="#e2e8f0"; ctx.font="600 14px sans-serif"; ctx.textAlign="center"; ctx.fillText("reads",x,y+70);
+      }
+      ctx.globalAlpha=1;
+    });
+    if(p>.15){ctx.strokeStyle="rgba(96,165,250,.6)";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(420,360);ctx.lineTo(480,360);ctx.stroke();}
+    if(p>.45){ctx.beginPath();ctx.moveTo(700,360);ctx.lineTo(760,360);ctx.stroke();}
+  },
+
+  pipeline_dada2(p){
+    ctx.clearRect(0,0,1280,720);
+    const steps=["原始 reads","质量过滤","去噪 ASV","物种注释"];
+    steps.forEach((lb,i)=>{
+      const cx=220+i*240, cy=340, show=clamp(p*4-i*.8);
+      if(show<=0)return;
+      ctx.globalAlpha=show;
+      ctx.fillStyle="#1e293b"; ctx.strokeStyle=accent[0]; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.roundRect(cx-80,cy-50,160,100,12); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#f1f5f9"; ctx.font="600 16px sans-serif"; ctx.textAlign="center"; ctx.fillText(lb,cx,cy+6);
+      if(i<3&&show>.5){ctx.strokeStyle="#64748b";ctx.beginPath();ctx.moveTo(cx+80,cy);ctx.lineTo(cx+160,cy);ctx.stroke();
+        for(let d=0;d<5;d++){const dx=lerp(cx+85,cx+155,((p*3+d*.2)%1)); ctx.fillStyle=accent2; ctx.beginPath(); ctx.arc(dx,cy,4,0,6.28); ctx.fill();}
+      }
+      ctx.globalAlpha=1;
+    });
+    if(p>.6){ctx.fillStyle="#34d399"; ctx.font="700 18px sans-serif"; ctx.textAlign="center"; ctx.fillText("DADA2 / QIIME2 流程",640,520)}
+  },
+
+  abundance_matrix(p){
+    ctx.clearRect(0,0,1280,720);
+    const rows=5, cols=6, cw=72, ch=52, x0=380, y0=160;
+    const vals=[[0,63,17,71,45,52],[0,67,51,14,88,33],[0,81,43,53,29,61],[0,44,76,38,55,47],[0,58,22,69,41,36]];
+    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+      const delay=(r+c)*.06, show=clamp((p-delay)*3);
+      if(show<=0) continue;
+      const v=Math.sin(r*7+c*3)*.5+.5;
+      ctx.globalAlpha=show;
+      ctx.fillStyle=r===0||c===0?accent[0]:`rgba(${Math.floor(37+180*v)},${Math.floor(99+80*v)},235,${.3+.7*v})`;
+      ctx.beginPath(); ctx.roundRect(x0+c*cw,y0+r*ch,cw-6,ch-6,6); ctx.fill();
+      if(r===0&&c>0){ctx.fillStyle="#fff";ctx.font="600 13px sans-serif";ctx.textAlign="center";ctx.fillText("样本"+c,x0+c*cw+cw/2-3,y0+ch/2+4)}
+      if(c===0&&r>0){ctx.fillStyle="#fff";ctx.fillText("taxa"+r,x0+cw/2-3,y0+r*ch+ch/2+4)}
+      if(r>0&&c>0&&show>.7){ctx.fillStyle="#fff";ctx.font="600 14px sans-serif";ctx.fillText(String(vals[r][c]),x0+c*cw+cw/2-3,y0+r*ch+ch/2+4)}
+      ctx.globalAlpha=1;
+    }
+    ctx.fillStyle="#94a3b8"; ctx.font="600 17px sans-serif"; ctx.textAlign="center";
+    ctx.fillText("行 = 分类单元 (taxa)    列 = 样本    格子 = 丰度", 640, 520);
+  },
+
+  metadata_link(p){
+    ctx.clearRect(0,0,1280,720);
+    const drawTable=(tx,ty,title,rows,highlight)=>{
+      ctx.fillStyle="#1e293b"; ctx.strokeStyle=accent[0]; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.roundRect(tx,ty,220,rows*36+44,10); ctx.fill(); ctx.stroke();
+      ctx.fillStyle=accent[0]; ctx.fillRect(tx,ty,220,36);
+      ctx.fillStyle="#fff"; ctx.font="700 15px sans-serif"; ctx.textAlign="center"; ctx.fillText(title,tx+110,ty+24);
+      for(let i=0;i<rows;i++){
+        const yy=ty+44+i*36, on=highlight===i;
+        ctx.fillStyle=on?"rgba(56,189,248,.35)":"rgba(255,255,255,.04)";
+        ctx.fillRect(tx+4,yy,212,32);
+        ctx.fillStyle="#cbd5e1"; ctx.font="600 14px sans-serif"; ctx.textAlign="left";
+        ctx.fillText("Sample_"+(i+1), tx+16, yy+22);
+      }
+    };
+    drawTable(280,200,"丰度表",4,-1);
+    drawTable(780,200,"metadata",4,-1);
+    const links=[0,1,2,3];
+    links.forEach((i,idx)=>{
+      const show=clamp((p-.15-idx*.12)*4);
+      if(show<=0)return;
+      const y1=244+i*36+16, y2=244+i*36+16;
+      ctx.globalAlpha=show;
+      ctx.strokeStyle=accent2; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(500,y1);
+      const mx=640, my=(y1+y2)/2-30*Math.sin(show*3.14);
+      ctx.quadraticCurveTo(mx,my,780,y2); ctx.stroke();
+      ctx.fillStyle=accent2; ctx.beginPath(); ctx.arc(500,y1,6,0,6.28); ctx.fill();
+      ctx.beginPath(); ctx.arc(780,y2,6,0,6.28); ctx.fill();
+      ctx.globalAlpha=1;
+    });
+    ctx.fillStyle="#fbbf24"; ctx.font="700 16px sans-serif"; ctx.textAlign="center";
+    if(p>.5) ctx.fillText("样本 ID 必须严格对齐", 640, 480);
+  },
+
+  composition_shift(p){
+    ctx.clearRect(0,0,1280,720);
+    const bars=[{labels:["A","B","C","D"],vals:[.4,.25,.2,.15]},{labels:["A","B","C","D"],vals:[.55,.18,.15,.12]}];
+    bars.forEach((b,bi)=>{
+      const bx=220+bi*380, show=clamp(p*2-bi*.4);
+      if(show<=0)return;
+      ctx.globalAlpha=show;
+      ctx.fillStyle="#64748b"; ctx.font="600 15px sans-serif"; ctx.textAlign="center";
+      ctx.fillText(bi===0?"处理前":"一个菌升高后",bx+100,180);
+      let y=420; const colors=["#2563eb","#34d399","#f97316","#a855f7"];
+      b.vals.forEach((v,i)=>{const h=v*280;
+        ctx.fillStyle=colors[i]; ctx.beginPath(); ctx.roundRect(bx,y- h,200,h,4); ctx.fill();
+        ctx.fillStyle="#fff"; ctx.font="600 13px sans-serif"; ctx.fillText(b.labels[i]+" "+Math.round(v*100)+"%",bx+100,y-h/2+4);
+        y-=h;
+      });
+      ctx.globalAlpha=1;
+    });
+    if(p>.55){ctx.fillStyle="#ef4444";ctx.font="700 17px sans-serif";ctx.textAlign="center";ctx.fillText("组成型数据：此消彼长 → 伪相关",640,560)}
+  },
+
+  diversity_pcoa(p){
+    ctx.clearRect(0,0,1280,720);
+    ctx.strokeStyle="rgba(100,116,139,.4)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(340,520); ctx.lineTo(940,520); ctx.moveTo(340,520); ctx.lineTo(340,180); ctx.stroke();
+    const groups=[[380,380,"#2563eb"],[420,320,"#2563eb"],[460,400,"#2563eb"],[720,280,"#f97316"],[760,340,"#f97316"],[800,260,"#f97316"]];
+    groups.forEach((g,i)=>{const show=clamp((p-i*.06)*3); if(show<=0)return;
+      ctx.globalAlpha=show; ctx.fillStyle=g[2]; ctx.beginPath(); ctx.arc(g[0],g[1],14,0,6.28); ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,.3)"; ctx.stroke(); ctx.globalAlpha=1;
+    });
+    if(p>.4){ctx.fillStyle="#94a3b8";ctx.font="600 16px sans-serif";ctx.textAlign="center";ctx.fillText("PCoA — 样本间群落结构差异",640,580);
+      ctx.fillStyle="#2563eb";ctx.fillRect(520,600,14,14);ctx.fillStyle="#cbd5e1";ctx.font="600 14px sans-serif";ctx.textAlign="left";ctx.fillText("对照组",542,612);
+      ctx.fillStyle="#f97316";ctx.fillRect(640,600,14,14);ctx.fillStyle="#cbd5e1";ctx.fillText("实验组",662,612);
+    }
+  },
+
+  volcano_plot(p){
+    ctx.clearRect(0,0,1280,720);
+    ctx.strokeStyle="#475569"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(340,520); ctx.lineTo(940,520); ctx.moveTo(640,520); ctx.lineTo(640,160); ctx.stroke();
+    const pts=[[380,480,.02],[420,420,.05],[510,380,.12],[720,300,.08],[780,260,.15],[850,350,.06],[450,500,.01],[900,450,.04],[560,200,.2],[700,180,.18],[820,220,.14],[390,350,.07],[480,440,.03],[750,400,.09],[620,280,.11]];
+    pts.forEach((pt,i)=>{const show=clamp(p*2-i*.025); if(show<=0)return;
+      const x=pt[0], y=pt[1], d=(x-640)/300;
+      const sig=Math.abs(d)>.35&&y<320;
+      ctx.globalAlpha=show*.85;
+      ctx.fillStyle=sig?(d<0?"#2563eb":"#ef4444"):"#64748b";
+      ctx.beginPath(); ctx.arc(x,y,5+pt[2]*40,0,6.28); ctx.fill();
+    });
+    ctx.globalAlpha=1;
+    if(p>.5){ctx.strokeStyle="#fbbf24";ctx.setLineDash([8,4]);ctx.beginPath();ctx.moveTo(540,320);ctx.lineTo(940,320);ctx.moveTo(740,160);ctx.lineTo(740,520);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle="#94a3b8";ctx.font="600 15px sans-serif";ctx.textAlign="center";ctx.fillText("log2FC",640,550);ctx.save();ctx.translate(310,340);ctx.rotate(-1.57);ctx.fillText("-log10(padj)",0,0);ctx.restore();
+    }
+  },
+
+  rnaseq_cell(p){
+    ctx.clearRect(0,0,1280,720);
+    ctx.fillStyle="rgba(30,58,95,.6)"; ctx.beginPath(); ctx.ellipse(640,360,280,200,0,0,6.28); ctx.fill();
+    ctx.strokeStyle="#38bdf8"; ctx.lineWidth=3; ctx.stroke();
+    ctx.fillStyle="#1e3a5f"; ctx.beginPath(); ctx.arc(580,340,55,0,6.28); ctx.fill();
+    ctx.strokeStyle="#818cf8"; ctx.stroke();
+    ctx.fillStyle="#cbd5e1"; ctx.font="600 14px sans-serif"; ctx.textAlign="center"; ctx.fillText("细胞核",580,345);
+    const mrna=[[610,330,720,240],[620,350,740,260],[590,340,710,230],[630,360,750,250],[600,325,730,245]];
+    mrna.forEach((m,i)=>{const show=clamp((p-.1-i*.06)*3); if(show<=0) return;
+      ctx.globalAlpha=show; ctx.strokeStyle="#34d399"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(m[0],m[1]); ctx.quadraticCurveTo(m[0]+60,m[3]-20,m[2],m[3]); ctx.stroke();
+      ctx.fillStyle="#34d399"; ctx.beginPath(); ctx.arc(m[2],m[3],4,0,6.28); ctx.fill();
+    });
+    ctx.globalAlpha=1;
+    if(p>.35){ctx.fillStyle="#94a3b8";ctx.font="600 17px sans-serif";ctx.textAlign="center";ctx.fillText("mRNA 转录 → 测序 → count 矩阵",640,560)}
+  },
+
+  metabolite_ms(p){
+    ctx.clearRect(0,0,1280,720);
+    ctx.strokeStyle="#475569"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(280,520); ctx.lineTo(1000,520); ctx.stroke();
+    const peaks=[[.15,.7],[.35,.95],[.55,.6],[.72,.85],[.85,.5]];
+    peaks.forEach((pk,i)=>{const show=clamp((p-i*.1)*3); if(show<=0)return;
+      const x=280+pk[0]*720, h=80+pk[1]*120*show;
+      ctx.globalAlpha=show;
+      const g=ctx.createLinearGradient(x,520-h,x,520); g.addColorStop(0,"#e879f9"); g.addColorStop(1,"#a855f7");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(x-8,520); ctx.lineTo(x-8,520-h); ctx.lineTo(x+8,520-h); ctx.lineTo(x+8,520); ctx.fill();
+      ctx.globalAlpha=1;
+    });
+    if(p>.4){ctx.fillStyle="#94a3b8";ctx.font="600 16px sans-serif";ctx.textAlign="center";ctx.fillText("LC-MS 质谱峰 → 代谢物特征表",640,580)}
+  },
+
+  shotgun_dna(p){
+    ctx.clearRect(0,0,1280,720);
+    const frags=[[300,220,60,0],[450,280,55,1],[520,190,70,2],[680,310,50,3],[750,240,65,4],[820,350,45,5],[380,400,58,6],[590,450,52,7],[710,180,62,8],[850,270,48,9]];
+    frags.forEach((f,i)=>{const show=clamp((p-i*.04)*2.5); if(show<=0) return;
+      ctx.globalAlpha=show*.8; ctx.strokeStyle=`hsl(${20+f[3]*8},80%,55%)`; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.moveTo(f[0],f[1]); ctx.lineTo(f[0]+f[2],f[1]+Math.sin(i)*15); ctx.stroke();
+    });
+    ctx.globalAlpha=1;
+    if(p>.35){
+      ctx.fillStyle="#1e293b"; ctx.strokeStyle="#ea580c"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.roundRect(380,480,520,60,10); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#fb923c"; ctx.font="700 16px sans-serif"; ctx.textAlign="center";
+      ctx.fillText("鸟枪法：全部 DNA 被打碎测序 → 物种谱 + 功能谱",640,518);
+    }
+  },
+
+  pathway_network(p){
+    ctx.clearRect(0,0,1280,720);
+    const nodes=[[640,200],[480,320],[800,320],[400,440],[640,440],[880,440],[640,540]];
+    const edges=[[0,1],[0,2],[1,3],[1,4],[2,4],[2,5],[3,4],[4,5],[4,6]];
+    edges.forEach((e,i)=>{const show=clamp((p-i*.04)*3); if(show<=0)return;
+      ctx.globalAlpha=show; ctx.strokeStyle="rgba(96,165,250,.5)"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(nodes[e[0]][0],nodes[e[0]][1]); ctx.lineTo(nodes[e[1]][0],nodes[e[1]][1]); ctx.stroke();
+    });
+    nodes.forEach((n,i)=>{const show=clamp((p-.1-i*.05)*3); if(show<=0)return;
+      ctx.globalAlpha=show; ctx.fillStyle=accent[0]; ctx.beginPath(); ctx.arc(n[0],n[1],i===4?22:16,0,6.28); ctx.fill();
+      ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.stroke();
+    });
+    ctx.globalAlpha=1;
+    if(p>.55){ctx.fillStyle="#94a3b8";ctx.font="600 16px sans-serif";ctx.textAlign="center";ctx.fillText("通路 / 功能模块富集",640,600)}
+  },
+
+  hypothesis_card(p){
+    ctx.clearRect(0,0,1280,720);
+    const items=["发现：某菌属 / 代谢物与表型相关","表述：候选关联，非因果断言","验证：动物 / 细胞 / 队列实验"];
+    items.forEach((t,i)=>{const show=clamp((p-i*.2)*2); if(show<=0)return;
+      ctx.globalAlpha=show;
+      ctx.fillStyle="rgba(30,41,59,.85)"; ctx.strokeStyle=accent[0]; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.roundRect(320,200+i*100,640,72,12); ctx.fill(); ctx.stroke();
+      ctx.fillStyle=accent2; ctx.beginPath(); ctx.arc(360,236+i*100,18,0,6.28); ctx.fill();
+      ctx.fillStyle="#fff"; ctx.font="700 16px sans-serif"; ctx.textAlign="center"; ctx.fillText(String(i+1),360,242+i*100);
+      ctx.fillStyle="#e2e8f0"; ctx.font="600 18px sans-serif"; ctx.textAlign="left"; ctx.fillText(t,395,242+i*100);
+      ctx.globalAlpha=1;
+    });
+  }
+};
+
+function drawBio(type, progress){
+  const fn = BIO[type] || BIO.microbiome_ecosystem;
+  fn(ease(clamp(progress)));
+}
+
+function runBioAnim(type, durationMs){
+  if(animId) cancelAnimationFrame(animId);
+  const t0=performance.now();
+  function frame(){
+    const p=(performance.now()-t0)/durationMs;
+    drawBio(type, p);
+    if(p<1) animId=requestAnimationFrame(frame);
+  }
+  animId=requestAnimationFrame(frame);
+}
+
+function buildScene(sc, durMs){
+  const div=document.createElement("div"); div.className="scene";
+  const bioType = (sc.visual && sc.visual.scene) || "microbiome_ecosystem";
+  div.dataset.bio = bioType;
+  div.dataset.dur = durMs;
+  div.innerHTML=`<div class="lower">
+    ${sc.eyebrow?`<div class="eyebrow">${esc(sc.eyebrow)}</div>`:""}
+    <h2>${esc(sc.heading||"")}</h2>
+    ${sc.caption?`<p class="caption">${esc(sc.caption)}</p>`:""}
+  </div>`;
+  return div;
+}
+
+function esc(s){const d=document.createElement("div");d.textContent=s||"";return d.innerHTML;}
+
+function run(){
+  const acc=ACCENTS[DATA.omics]||ACCENTS.microbiome_16s;
+  document.documentElement.style.setProperty("--accent",acc[0]);
+  document.documentElement.style.setProperty("--accent2",acc[1]);
+  accent=acc; accent2=acc[1];
+  document.getElementById("chip").textContent=DATA.step_label||"";
+  const stage=document.getElementById("stage");
+  const scenes=DATA.scenes, durs=DATA.durations;
+  const total=durs.reduce((a,b)=>a+b,0);
+  const prog=document.getElementById("prog");
+  const t0=performance.now();
+  (function tick(){const e=(performance.now()-t0)/1000; prog.style.width=Math.min(100,e/total*100)+"%"; if(e<total)requestAnimationFrame(tick);})();
+  let i=0;
+  function show(idx){
+    const el=buildScene(scenes[idx], durs[idx]*1000);
+    stage.appendChild(el);
+    void el.offsetWidth; el.classList.add("in");
+    runBioAnim(el.dataset.bio, durs[idx]*1000);
+    setTimeout(()=>{
+      el.classList.remove("in"); el.classList.add("out");
+      setTimeout(()=>el.remove(),600);
+      i++; if(i<scenes.length) show(i); else setTimeout(()=>{window.__done=true},400);
+    }, durs[idx]*1000);
+  }
+  show(0);
+}
+document.fonts.ready.then(()=>{window.__ready=true;});
+window.START=run;
+</script>
+</body>
+</html>

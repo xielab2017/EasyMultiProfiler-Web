@@ -22,4 +22,25 @@ stop_pid_file() {
 stop_pid_file "${API_PID_FILE}"
 stop_pid_file "${WEB_PID_FILE}"
 
+kill_port_if_running() {
+  local port="$1"
+  local pids
+  pids="$(lsof -t -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "${pids}" ]]; then
+    # shellcheck disable=SC2086
+    kill ${pids} 2>/dev/null || true
+    sleep 1
+    pids="$(lsof -t -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -n "${pids}" ]]; then
+      # shellcheck disable=SC2086
+      kill -9 ${pids} 2>/dev/null || true
+    fi
+  fi
+}
+
+API_PORT="${API_PORT:-8000}"
+WEB_PORT="${WEB_PORT:-8080}"
+kill_port_if_running "${API_PORT}"
+kill_port_if_running "${WEB_PORT}"
+
 echo "Local services stopped."

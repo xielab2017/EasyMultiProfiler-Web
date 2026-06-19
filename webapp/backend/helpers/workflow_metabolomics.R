@@ -156,6 +156,9 @@ mbx_run_differential <- function(session_id, experiment, method = NULL, group_va
   session_id <- mbx_require_string(session_id, "session_id")
   experiment <- mbx_require_string(experiment, "experiment")
   empt <- load_empt(session_id, experiment)
+  if (exists("apply_merged_coldata", mode = "function", inherits = TRUE)) {
+    empt <- apply_merged_coldata(session_id, empt)
+  }
 
   default_norm <- mbx_default_normalize(empt)
   if (is.null(method) || trimws(method) == "") {

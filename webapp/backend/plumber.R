@@ -25,6 +25,11 @@ source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/clinical.R"))
 source(file.path(.BACKEND_DIR, "helpers/jobs.R"))
+source(file.path(.BACKEND_DIR, "helpers/user_exec.R"))
+source(file.path(.BACKEND_DIR, "helpers/llm.R"))
+source(file.path(.BACKEND_DIR, "helpers/ai_copilot.R"))
+source(file.path(.BACKEND_DIR, "helpers/teaching.R"))
+source(file.path(.BACKEND_DIR, "helpers/demo_data.R"))
 Sys.setenv(EMP_BACKEND_DIR = .BACKEND_DIR)
 
 #* @filter cors
@@ -32,7 +37,7 @@ Sys.setenv(EMP_BACKEND_DIR = .BACKEND_DIR)
 function(req, res) {
   res$setHeader("Access-Control-Allow-Origin",  "*")
   res$setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
-  res$setHeader("Access-Control-Allow-Headers", "Content-Type,X-Session-Id")
+  res$setHeader("Access-Control-Allow-Headers", "Content-Type,X-Session-Id,X-Teaching-Token")
   if (req$REQUEST_METHOD == "OPTIONS") {
     res$status <- 200
     return(list())
@@ -87,6 +92,10 @@ function(session_id, res) {
 #* @serializer unboxedJSON
 function(session_id, res) {
   safe_api({
+    ensure_session_dir(session_id)
+    if (!file.exists(mae_path(session_id))) {
+      return(list(success = TRUE, experiments = list()))
+    }
     mae  <- load_mae(session_id)
     exps <- names(mae)
     info <- lapply(exps, function(e) {
@@ -107,11 +116,21 @@ function(session_id, res) {
 # Helper: save a Plumber multipart file entry to a temp file, return path
 .save_upload <- function(file_entry, suffix = ".tmp") {
   if (is.null(file_entry)) return(NULL)
-  # Plumber stores file bytes in $value (raw vector)
-  raw_bytes <- file_entry$value
+  if (is.character(file_entry) && length(file_entry) == 1L && file.exists(file_entry)) {
+    return(file_entry)
+  }
+  raw_bytes <- NULL
+  orig <- ""
+  if (is.list(file_entry)) {
+    if (!is.null(file_entry$datapath) && nzchar(file_entry$datapath) && file.exists(file_entry$datapath)) {
+      return(file_entry$datapath)
+    }
+    raw_bytes <- file_entry$value
+    orig <- file_entry$filename %||% file_entry$name %||% ""
+  } else if (is.raw(file_entry)) {
+    raw_bytes <- file_entry
+  }
   if (is.null(raw_bytes) || length(raw_bytes) == 0) return(NULL)
-  # Try to preserve extension from original filename
-  orig <- file_entry$filename %||% ""
   ext  <- if (nzchar(orig)) paste0(".", tools::file_ext(orig)) else suffix
   tmp  <- tempfile(fileext = ext)
   writeBin(raw_bytes, tmp)
@@ -137,38 +156,65 @@ function(req, res,
 
     meta_file <- .save_upload(body$metadata_file, ".csv")
 
-    # Create session if not provided
-    if (is.null(session_id) || session_id == "") session_id <- create_session()
+    # Create session if not provided; otherwise ensure storage dir still exists
+    # (browser may keep an old session_id after /tmp was cleared on server restart).
+    if (is.null(session_id) || session_id == "") {
+      session_id <- create_session()
+    } else {
+      ensure_session_dir(session_id)
+    }
 
     # Check if MAE already exists → add experiment
     mae_exists <- file.exists(mae_path(session_id))
     if (data_type %in% c("clinical_meta", "clinical_raw")) {
       meta_upload <- read_metadata_table(data_file)
+      paired_meta_upload <- if (identical(data_type, "clinical_raw") && !is.null(meta_file)) {
+        read_metadata_table(meta_file)
+      } else {
+        NULL
+      }
       standalone_path <- if (identical(data_type, "clinical_meta")) {
         file.path(dirname(mae_path(session_id)), "clinical_uploaded_meta.csv")
       } else {
         file.path(dirname(mae_path(session_id)), "clinical_uploaded_raw.csv")
       }
+      standalone_meta_path <- file.path(dirname(mae_path(session_id)), "clinical_uploaded_meta.csv")
+      write_standalone_clinical <- function(meta, path) {
+        utils::write.csv(meta, path, row.names = FALSE)
+      }
       if (!mae_exists) {
         meta <- meta_upload
-        utils::write.csv(meta, standalone_path, row.names = FALSE)
+        write_standalone_clinical(meta, standalone_path)
+        if (!is.null(paired_meta_upload) && nrow(paired_meta_upload)) {
+          write_standalone_clinical(paired_meta_upload, standalone_meta_path)
+        }
         if (identical(data_type, "clinical_raw")) {
           # Backward compatibility for sessions created before split storage.
           p_legacy <- file.path(dirname(mae_path(session_id)), "clinical_uploaded.csv")
-          utils::write.csv(meta, p_legacy, row.names = FALSE)
+          write_standalone_clinical(meta, p_legacy)
         }
+        merged_preview <- tryCatch(.clin_merge_external_tables(meta, paired_meta_upload), error = function(e) meta)
         return(list(
           success = TRUE,
           session_id = session_id,
           import_mode = "clinical_standalone",
           updated_experiments = 0L,
-          columns = setdiff(names(meta), "primary"),
-          orientation = attr(meta, "orientation_note") %||% "samples in rows"
+          columns = setdiff(names(merged_preview), "primary"),
+          orientation = attr(meta, "orientation_note") %||% "samples in rows",
+          meta_columns = if (!is.null(paired_meta_upload)) setdiff(names(paired_meta_upload), "primary") else character()
         ))
       }
       mae <- load_mae(session_id)
       out <- tryCatch({
-        merged <- merge_metadata_into_mae(mae, data_file)
+        write_standalone_clinical(meta_upload, standalone_path)
+        if (!is.null(paired_meta_upload) && nrow(paired_meta_upload)) {
+          write_standalone_clinical(paired_meta_upload, standalone_meta_path)
+        }
+        if (identical(data_type, "clinical_raw")) {
+          p_legacy <- file.path(dirname(mae_path(session_id)), "clinical_uploaded.csv")
+          write_standalone_clinical(meta_upload, p_legacy)
+        }
+        merged <- merge_metadata_into_mae(mae, if (!is.null(paired_meta_upload)) meta_file else data_file)
         mae <- merged$mae
         save_mae(session_id, mae)
         exp_names <- names(as.list(MultiAssayExperiment::experiments(mae)))
@@ -181,24 +227,30 @@ function(req, res,
           import_mode = "clinical_merge",
           updated_experiments = merged$touched,
           columns = merged$columns,
-          orientation = attr(meta_upload, "orientation_note") %||% "samples in rows"
+          orientation = attr(if (!is.null(paired_meta_upload)) paired_meta_upload else meta_upload, "orientation_note") %||% "samples in rows",
+          meta_columns = if (!is.null(paired_meta_upload)) setdiff(names(paired_meta_upload), "primary") else character()
         )
       }, error = function(e) {
         msg <- as.character(conditionMessage(e))
         if (grepl("No matching sample IDs", msg, ignore.case = TRUE)) {
           meta <- meta_upload
-          utils::write.csv(meta, standalone_path, row.names = FALSE)
+          write_standalone_clinical(meta, standalone_path)
+          if (!is.null(paired_meta_upload) && nrow(paired_meta_upload)) {
+            write_standalone_clinical(paired_meta_upload, standalone_meta_path)
+          }
           if (identical(data_type, "clinical_raw")) {
             p_legacy <- file.path(dirname(mae_path(session_id)), "clinical_uploaded.csv")
-            utils::write.csv(meta, p_legacy, row.names = FALSE)
+            write_standalone_clinical(meta, p_legacy)
           }
+          merged_preview <- tryCatch(.clin_merge_external_tables(meta, paired_meta_upload), error = function(e) meta)
           list(
             success = TRUE,
             session_id = session_id,
             import_mode = "clinical_standalone",
             updated_experiments = 0L,
-            columns = setdiff(names(meta), "primary"),
-            orientation = attr(meta, "orientation_note") %||% "samples in rows"
+            columns = setdiff(names(merged_preview), "primary"),
+            orientation = attr(meta, "orientation_note") %||% "samples in rows",
+            meta_columns = if (!is.null(paired_meta_upload)) setdiff(names(paired_meta_upload), "primary") else character()
           )
         } else {
           stop(e)
@@ -231,6 +283,45 @@ function(req, res,
          samples         = ncol(ex),
          features        = nrow(ex),
          assay           = assay_name)
+  }, res)
+}
+
+#* List bundled demo datasets (16S / RNA-seq / clinical)
+#* @get /api/demo_datasets
+#* @serializer unboxedJSON
+function(res) {
+  safe_api({
+    ds <- demo_dataset_catalog()
+    list(success = TRUE, datasets = lapply(ds, function(d) {
+      list(
+        id = d$id,
+        label = d$label,
+        label_en = d$label_en,
+        omics = d$omics,
+        description = d$description,
+        available = isTRUE(d$available)
+      )
+    }))
+  }, res)
+}
+
+#* Import a bundled demo dataset by id
+#* Body: { session_id?, dataset_id, experiment_name? }
+#* @post /api/import/demo
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody)
+    dataset_id <- b$dataset_id
+    if (is.null(dataset_id) || !nzchar(as.character(dataset_id))) stop("dataset_id is required")
+    session_id <- b$session_id %||% NULL
+    out <- import_demo_dataset(
+      session_id = session_id,
+      dataset_id = dataset_id,
+      experiment_name = b$experiment_name %||% NULL,
+      assay_name = b$assay_name %||% NULL
+    )
+    out
   }, res)
 }
 
@@ -277,7 +368,7 @@ function(session_id, experiment, res) {
   safe_api({
     empt    <- load_empt(session_id, experiment)
     ad      <- SummarizedExperiment::assays(empt)[[1]]
-    cd      <- as.data.frame(SummarizedExperiment::colData(empt))
+    cd      <- merged_experiment_coldata(session_id, empt)
     rd      <- as.data.frame(SummarizedExperiment::rowData(empt))
 
     coldata_records <- lapply(seq_len(nrow(cd)), function(i) {
@@ -306,13 +397,8 @@ function(session_id, experiment, res) {
 function(session_id, experiment, res) {
   safe_api({
     empt <- load_empt(session_id, experiment)
-    cd   <- as.data.frame(SummarizedExperiment::colData(empt))
-    cols <- lapply(names(cd), function(col) {
-      vals <- unique(na.omit(cd[[col]]))
-      list(name   = col,
-           n_unique = length(vals),
-           values = as.character(vals[seq_len(min(20, length(vals)))]))
-    })
+    cd   <- merged_experiment_coldata(session_id, empt)
+    cols <- .coldata_column_summaries(cd)
     list(success = TRUE, columns = cols)
   }, res)
 }
@@ -459,17 +545,8 @@ function(session_id, experiment, result_name, res) {
 }
 
 # ══════════════════════════════════════════════════════════
-# DATA PREPARATION
+# DATA PREPARATION  (.prepare_load_base in helpers/session.R)
 # ══════════════════════════════════════════════════════════
-
-.prepare_load_base <- function(session_id, experiment, mode = "stack") {
-  m <- tolower(trimws(as.character(mode %||% "stack")))
-  if (identical(m, "single")) {
-    raw <- load_raw_empt(session_id, experiment)
-    if (!is.null(raw)) return(raw)
-  }
-  load_empt(session_id, experiment)
-}
 
 #* Filter features by count / prevalence
 #* @post /api/prepare/filter
@@ -1909,7 +1986,7 @@ function(session_id, experiment, res) {
       "Content-Disposition",
       paste0('attachment; filename="', experiment, '_metabolomics_differential.csv"')
     )
-    write.csv(df, row.names = FALSE)
+    .csv_response(df)
   }, error = function(e) {
     res$status <- 500
     paste("Error:", e$message)
@@ -1926,7 +2003,7 @@ function(session_id, experiment, res) {
       "Content-Disposition",
       paste0('attachment; filename="', experiment, '_metagenomics_differential.csv"')
     )
-    write.csv(df, row.names = FALSE)
+    .csv_response(df)
   }, error = function(e) {
     res$status <- 500
     paste("Error:", e$message)
@@ -1944,7 +2021,7 @@ function(session_id, experiment, res) {
     df   <- cbind(feature = rownames(df), df)
     res$setHeader("Content-Disposition",
                   paste0('attachment; filename="', experiment, '_assay.csv"'))
-    write.csv(df, row.names = FALSE)
+    .csv_response(df)
   }, error = function(e) {
     res$status <- 500
     paste("Error:", e$message)
@@ -2005,7 +2082,7 @@ function(session_id, experiment, res) {
     cd   <- cbind(sample = rownames(cd), cd)
     res$setHeader("Content-Disposition",
                   paste0('attachment; filename="', experiment, '_metadata.csv"'))
-    write.csv(cd, row.names = FALSE)
+    .csv_response(cd)
   }, error = function(e) {
     res$status <- 500
     paste("Error:", e$message)
@@ -2037,7 +2114,7 @@ function(session_id, experiment, analysis, res) {
     df     <- as.data.frame(result)
     res$setHeader("Content-Disposition",
                   paste0('attachment; filename="', experiment, '_', analysis, '.csv"'))
-    write.csv(df, row.names = FALSE)
+    .csv_response(df)
   }, error = function(e) {
     res$status <- 500
     paste("Error:", e$message)
@@ -2069,7 +2146,7 @@ function(session_id, experiment, res) {
     df <- mbx_export_diff_csv(session_id, experiment)
     res$setHeader("Content-Disposition",
                   paste0('attachment; filename="', experiment, '_metabolomics_differential.csv"'))
-    write.csv(df, row.names = FALSE)
+    .csv_response(df)
   }, error = function(e) {
     res$status <- 500
     paste("Error:", e$message)
@@ -2183,6 +2260,7 @@ function(req, res) {
     skip_high_cardinality <- if (is.null(b$skip_high_cardinality)) TRUE else isTRUE(b$skip_high_cardinality)
     max_levels <- as.integer(b$max_levels %||% 20L)
     table_engine <- b$table_engine %||% "gtsummary"
+    cohort_filter <- b$cohort_filter %||% NULL
     out <- run_clinical_systematic_summary(
       session_id = session_id,
       source = source,
@@ -2190,7 +2268,8 @@ function(req, res) {
       group_var = group_var,
       skip_high_cardinality = skip_high_cardinality,
       max_levels = max_levels,
-      table_engine = table_engine
+      table_engine = table_engine,
+      cohort_filter = cohort_filter
     )
     list(
       success = TRUE,
@@ -2200,7 +2279,11 @@ function(req, res) {
       n_baseline = nrow(out$baseline),
       n_within = nrow(out$within),
       n_between = nrow(out$between),
-      n_pairs = out$meta$n_pairs %||% 0L
+      n_pairs = out$meta$n_pairs %||% 0L,
+      design_type = out$meta$design_type %||% NULL,
+      group_var = out$meta$group_var %||% NULL,
+      n_groups = out$meta$n_groups %||% 0L,
+      analysis_note = out$meta$analysis_note %||% NULL
     )
   }, res)
 }
@@ -2338,6 +2421,190 @@ function(req, res) {
       n_edges = nrow(out$edges)
     )
   }, res)
+}
+
+#* Multi-omics + clinical marker diagnostic model.
+#* Body: { session_id, experiments:[..], outcome_var, positive_class, methods:[..],
+#*         clinical_source, include_clinical_numeric, max_features_per_omics,
+#*         top_n, validation_fraction, seed }
+#* @post /api/clinical/marker_model
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody)
+    session_id <- b$session_id
+    experiments <- if (length(b$experiments)) as.character(b$experiments) else character()
+    methods <- if (length(b$methods)) as.character(b$methods) else c("randomForest", "lasso", "xgboost")
+    out <- run_clinical_marker_model(
+      session_id = session_id,
+      experiments = experiments,
+      outcome_var = b$outcome_var %||% NULL,
+      positive_class = b$positive_class %||% NULL,
+      methods = methods,
+      clinical_source = b$clinical_source %||% "experiment",
+      include_clinical_numeric = if (is.null(b$include_clinical_numeric)) TRUE else isTRUE(b$include_clinical_numeric),
+      max_features_per_omics = as.integer(b$max_features_per_omics %||% 200L),
+      top_n = as.integer(b$top_n %||% 30L),
+      validation_fraction = as.numeric(b$validation_fraction %||% 0.3),
+      seed = as.integer(b$seed %||% 123L)
+    )
+    list(
+      success = TRUE,
+      performance = out$performance,
+      markers = out$markers,
+      sample_scores = out$sample_scores,
+      n_performance = nrow(out$performance),
+      n_markers = nrow(out$markers),
+      n_scores = nrow(out$sample_scores),
+      meta = out$meta
+    )
+  }, res)
+}
+
+# ══════════════════════════════════════════════════════════
+# USER R EXEC (local learning — arbitrary code in server process)
+# ══════════════════════════════════════════════════════════
+
+#* Execute user R snippet (Code Lab — canonical URL for browsers / proxies).
+#* @post /api/user_r/run
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_user_r_post(req, res)
+}
+
+#* Same as /api/user_r/run (legacy / alternate path).
+#* @post /api/exec/user_r
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_user_r_post(req, res)
+}
+
+#* Download a Code Lab execution package (script + outputs + manifest).
+#* @get /api/code_lab/artifacts/<session_id>/<artifact_name>
+#* @serializer contentType list(type="application/zip")
+function(session_id, artifact_name, res) {
+  plumber_code_lab_artifact_get(session_id, artifact_name, res)
+}
+
+# ══════════════════════════════════════════════════════════
+# LLM CODE OPTIMIZATION (Code Lab)
+# ══════════════════════════════════════════════════════════
+
+#* Optimize a Code Lab R snippet through a configured LLM provider.
+#* @post /api/llm/optimize_r
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_llm_optimize_r_post(req, res)
+}
+
+#* AI copilot: interpret an analysis result and suggest next steps
+#* Body: { context: {...}, provider?, config? }
+#* @post /api/ai/interpret
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_ai_interpret_post(req, res)
+}
+
+# ══════════════════════════════════════════════════════════
+# TEACHING (cases, prompts, learning trace)
+# ══════════════════════════════════════════════════════════
+
+#* List teaching cases
+#* @get /api/teaching/cases
+#* @serializer unboxedJSON
+function(res) {
+  plumber_teaching_cases_get(res)
+}
+
+#* Get one teaching case with task cards, videos, quiz (no answers), unlock state
+#* @get /api/teaching/cases/<case_id>
+#* @serializer unboxedJSON
+function(req, case_id, res) {
+  plumber_teaching_case_get(case_id, req, res)
+}
+
+#* Submit step quiz (all questions must be correct to unlock next step)
+#* @post /api/teaching/quiz
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_teaching_quiz_post(req, res)
+}
+
+#* Prompt template library
+#* @get /api/teaching/prompts
+#* @serializer unboxedJSON
+function(res) {
+  plumber_teaching_prompts_get(res)
+}
+
+#* Append learning trace event (requires X-Teaching-Token)
+#* @post /api/teaching/trace
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_teaching_trace_post(req, res)
+}
+
+#* List learning trace events
+#* @get /api/teaching/trace
+#* @serializer unboxedJSON
+function(req, res, user_id = NULL, limit = 200) {
+  plumber_teaching_trace_get(req, res, user_id, limit)
+}
+
+#* Submit task reflection / AI declaration
+#* @post /api/teaching/reflection
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_teaching_reflection_post(req, res)
+}
+
+#* Student progress (teacher may pass user_id)
+#* @get /api/teaching/progress
+#* @serializer unboxedJSON
+function(req, res, user_id = NULL) {
+  plumber_teaching_progress_get(req, res, user_id)
+}
+
+#* Pre-class question card template
+#* @get /api/teaching/preclass
+#* @serializer unboxedJSON
+function(res) {
+  plumber_teaching_preclass_get(res)
+}
+
+#* Submit pre-class question card
+#* @post /api/teaching/preclass
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_teaching_preclass_post(req, res)
+}
+
+#* AI critique training cases
+#* @get /api/teaching/critique
+#* @serializer unboxedJSON
+function(res) {
+  plumber_teaching_critique_get(res)
+}
+
+#* Submit AI critique exercise
+#* @post /api/teaching/critique
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_teaching_critique_post(req, res)
+}
+
+#* Save interpretation / hypothesis journal
+#* @post /api/teaching/journal
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_teaching_journal_post(req, res)
+}
+
+#* Build course project report (markdown)
+#* @get /api/teaching/report
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_teaching_report_get(req, res)
 }
 
 # ══════════════════════════════════════════════════════════
