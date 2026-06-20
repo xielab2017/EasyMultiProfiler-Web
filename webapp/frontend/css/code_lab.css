@@ -43,14 +43,14 @@
 }
 
 .code-lab-console-title {
-  font-size: 12px;
+  font-size: 0.857rem;
   font-weight: 600;
   color: #3730a3;
   letter-spacing: 0.02em;
 }
 
 .code-lab-console-clear {
-  font-size: 11px;
+  font-size: 0.786rem;
   padding: 4px 8px;
 }
 
@@ -67,13 +67,13 @@
   padding: 20px 12px;
   text-align: center;
   color: var(--muted-fg, #94a3b8);
-  font-size: 12px;
+  font-size: 0.857rem;
   line-height: 1.5;
 }
 
 .code-lab-exec-out h5 {
   margin: 12px 0 6px;
-  font-size: 12px;
+  font-size: 0.857rem;
   font-weight: 600;
   color: #334155;
 }
@@ -83,7 +83,7 @@
 }
 
 .code-lab-exec-pre {
-  font-size: 11px;
+  font-size: 0.786rem;
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
@@ -115,7 +115,7 @@
 .code-lab-result-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 0.786rem;
 }
 
 .code-lab-result-table th,
@@ -145,7 +145,7 @@
 }
 
 .code-lab-exec-meta {
-  font-size: 11px;
+  font-size: 0.786rem;
   color: #94a3b8;
   margin: 12px 0 0;
   padding-top: 8px;
@@ -191,7 +191,7 @@ body.code-lab-docked #global-progress {
 
 /* ── Right column: source editor only ── */
 #code-lab-root {
-  font-size: 13px;
+  font-size: 0.929rem;
   background: var(--card-bg, #fff);
   border: 1px solid var(--border, #e5e7eb);
   display: flex;
@@ -251,14 +251,14 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 
 .code-lab-head h4 {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.929rem;
   font-weight: 600;
   flex: 1;
   min-width: 0;
 }
 
 .code-lab-badge {
-  font-size: 11px;
+  font-size: 0.786rem;
   padding: 2px 8px;
   border-radius: 999px;
   background: #e0f2fe;
@@ -289,7 +289,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 .code-lab-pane-src-head {
   flex-shrink: 0;
   padding: 8px 10px;
-  font-size: 11px;
+  font-size: 0.786rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -301,7 +301,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 .code-lab-hint {
   margin: 0;
   padding: 8px 10px;
-  font-size: 10px;
+  font-size: 0.714rem;
   color: var(--muted-fg, #64748b);
   line-height: 1.4;
   border-bottom: 1px solid var(--border, #e5e7eb);
@@ -309,7 +309,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 }
 
 .code-lab-hint code {
-  font-size: 10px;
+  font-size: 0.714rem;
 }
 
 .code-lab-compare {
@@ -338,7 +338,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
   justify-content: space-between;
   gap: 8px;
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: 0.786rem;
   font-weight: 600;
   color: #334155;
   background: #f8fafc;
@@ -346,7 +346,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 }
 
 .code-lab-code-title .btn {
-  font-size: 10px;
+  font-size: 0.714rem;
   padding: 3px 7px;
 }
 
@@ -361,7 +361,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 }
 
 .code-lab-clinical-row label {
-  font-size: 11px;
+  font-size: 0.786rem;
   color: var(--muted-fg, #64748b);
 }
 
@@ -371,7 +371,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
   padding: 4px 8px;
   border-radius: 6px;
   border: 1px solid var(--border, #e5e7eb);
-  font-size: 11px;
+  font-size: 0.786rem;
 }
 
 .code-lab-editor {
@@ -380,7 +380,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
   min-height: 120px;
   max-height: none;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 0.857rem;
   line-height: 1.45;
   padding: 10px;
   border: none;
@@ -407,7 +407,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 
 .code-lab-llm-wrap summary {
   padding: 7px 10px;
-  font-size: 11px;
+  font-size: 0.786rem;
   cursor: pointer;
   color: #9a3412;
   font-weight: 600;
@@ -425,7 +425,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 10px;
+  font-size: 0.714rem;
   color: #7c2d12;
 }
 
@@ -437,7 +437,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
   border: 1px solid #fed7aa;
   border-radius: 6px;
   padding: 5px 7px;
-  font-size: 11px;
+  font-size: 0.786rem;
   background: #fff;
 }
 
@@ -459,12 +459,12 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 }
 
 .code-lab-llm-actions .btn {
-  font-size: 11px;
+  font-size: 0.786rem;
   padding: 5px 9px;
 }
 
 .code-lab-llm-status {
-  font-size: 10px;
+  font-size: 0.714rem;
   color: #64748b;
   line-height: 1.35;
 }
@@ -493,7 +493,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 }
 
 .code-lab-toolbar .btn {
-  font-size: 11px;
+  font-size: 0.786rem;
   padding: 5px 9px;
 }
 
@@ -507,7 +507,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 
 .code-lab-history-wrap summary {
   padding: 6px 10px;
-  font-size: 11px;
+  font-size: 0.786rem;
   cursor: pointer;
   color: var(--muted-fg, #64748b);
 }
@@ -522,7 +522,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
   align-items: flex-start;
   padding: 6px 4px;
   border-bottom: 1px dashed #e2e8f0;
-  font-size: 11px;
+  font-size: 0.786rem;
 }
 
 .code-lab-history-item:last-child {
@@ -532,7 +532,7 @@ body.code-lab-docked #code-lab-root.code-lab--open {
 .code-lab-history-meta {
   flex: 0 0 100px;
   color: #64748b;
-  font-size: 10px;
+  font-size: 0.714rem;
 }
 
 .code-lab-history-actions {

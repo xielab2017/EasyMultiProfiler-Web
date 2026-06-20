@@ -2,8 +2,9 @@
  * Code lab: reference snippets + optional **real** R execution via POST /api/user_r/run.
  * Drafts + edit history remain in localStorage.
  */
-import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-06-20-genz-v1";
-import { codeLabArtifactURL, execUserR, optimizeRCode } from "./api.js?v=2026-06-20-genz-v1";
+import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-06-20-v5.0.0";
+import { codeLabArtifactURL, execUserR, optimizeRCode } from "./api.js?v=2026-06-20-v5.0.0";
+import { t } from "./locale.js?v=2026-06-20-v5.0.0";
 
 const LS_KEY = "emp_code_lab_store_v1";
 const LLM_CFG_KEY = "emp_code_lab_llm_config_v1";
@@ -290,8 +291,7 @@ function ensureConsolePanel() {
   if (consoleEl.dataset.bound) return;
   consoleEl.dataset.bound = "1";
   document.getElementById("code-lab-console-clear")?.addEventListener("click", () => {
-    execOut.innerHTML =
-      "<p class=\"code-lab-exec-placeholder\">点击右侧「在 R 中执行」后，图形与输出将显示在此处。</p>";
+    execOut.innerHTML = `<p class="code-lab-exec-placeholder">${t("codelab.placeholder")}</p>`;
   });
 }
 
@@ -427,11 +427,11 @@ async function runCodeInR(code, label = "优化脚本", sourceCode = null) {
   if (!execOut) return;
   const canRunWithoutExperiment = state.workflow === "clinical" && CLINICAL_NO_EXPERIMENT_TABS.has(state.tab);
   if (!exp && !canRunWithoutExperiment) {
-    execOut.innerHTML = "<p class=\"code-lab-exec-err\">请先选择全局 Experiment（或先导入数据）。</p>";
+    execOut.innerHTML = `<p class="code-lab-exec-err">${t("codelab.noExperiment")}</p>`;
     consoleEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    return;
+    return { ok: false, error: "no experiment selected" };
   }
-  execOut.innerHTML = `<p class="code-lab-exec-wait">正在运行 ${escapeHtml(label)}…</p>`;
+  execOut.innerHTML = `<p class="code-lab-exec-wait">${t("codelab.running", null, { label })}</p>`;
   consoleEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   try {
     const res = await execUserR({
@@ -446,34 +446,37 @@ async function runCodeInR(code, label = "优化脚本", sourceCode = null) {
     });
     if (!res.success) {
       execOut.innerHTML = `<p class="code-lab-exec-err">${escapeHtml(res.error || "failed")}</p>`;
-      return;
+      return { ok: false, error: res.error || "failed" };
     }
     const bits = [];
     const plotSrc = execPlotImageSrc(res.plot) ?? execPlotImageSrc(res.png);
     if (plotSrc) {
-      bits.push(`<h5>${escapeHtml(label)} · 图形输出</h5><img class="code-lab-exec-img" alt="plot" src="${plotSrc.replace(/"/g, "&quot;")}" />`);
+      bits.push(`<h5>${escapeHtml(label)} · ${escapeHtml(t("codelab.plotOut"))}</h5><img class="code-lab-exec-img" alt="plot" src="${plotSrc.replace(/"/g, "&quot;")}" />`);
     }
     if (res.stdout && res.stdout.trim()) {
-      bits.push(`<h5>标准输出</h5><pre class="code-lab-exec-pre">${escapeHtml(res.stdout)}</pre>`);
+      bits.push(`<h5>${escapeHtml(t("codelab.stdout"))}</h5><pre class="code-lab-exec-pre">${escapeHtml(res.stdout)}</pre>`);
     }
     if (res.value_text && String(res.value_text).trim()) {
-      bits.push(`<h5>返回值（文本）</h5><pre class="code-lab-exec-pre">${escapeHtml(res.value_text)}</pre>`);
+      bits.push(`<h5>${escapeHtml(t("codelab.returnVal"))}</h5><pre class="code-lab-exec-pre">${escapeHtml(res.value_text)}</pre>`);
     }
     const tableBits = renderExecTables(res.tables);
     if (tableBits) bits.push(tableBits);
     if (res.artifact_name) {
-      bits.push(`<h5>可下载结果包</h5>
+      bits.push(`<h5>${escapeHtml(t("codelab.downloadBundle"))}</h5>
         <p><a class="btn btn-outline code-lab-download" href="${escapeAttr(codeLabArtifactURL(res.artifact_name))}" download>
-          下载本次 Code Lab 结果包（脚本 + 表格/图像 + manifest）
+          ${escapeHtml(t("codelab.downloadBundleBtn"))}
         </a></p>`);
     }
-    if (!bits.length) bits.push(`<p>${escapeHtml(label)} 执行完成（无额外输出）。</p>`);
+    if (!bits.length) bits.push(`<p>${escapeHtml(t("codelab.doneNoOutput", null, { label }))}</p>`);
     bits.push(`<p class="code-lab-exec-meta">${escapeHtml(`${label}; backend_ms=${res.backend_ms ?? "?"}`)}</p>`);
     execOut.innerHTML = bits.join("");
     consoleEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return { ok: true };
   } catch (err) {
-    execOut.innerHTML = `<p class="code-lab-exec-err">${escapeHtml(err.message || String(err))}</p>`;
+    const msg = err.message || String(err);
+    execOut.innerHTML = `<p class="code-lab-exec-err">${escapeHtml(msg)}</p>`;
     consoleEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return { ok: false, error: msg };
   }
 }
 
@@ -601,18 +604,69 @@ function escapeAttr(s) {
   return escapeHtml(s).replace(/\n/g, "&#10;");
 }
 
+function clinicalSnippetLabel(key) {
+  const i18n = {
+    three_line: "clinical.threeLine",
+    systematic: "clinical.systematic",
+    reorient: "clinical.reorient",
+    overview: "clinical.overview",
+  };
+  return i18n[key] ? t(i18n[key]) : (CLINICAL_SNIPPET_LABELS[key] || key);
+}
+
 function setHeadTitle() {
   const h = rootEl?.querySelector(".code-lab-head h4");
   if (!h) return;
   if (!state.workflow) {
-    h.textContent = "流程代码";
+    h.textContent = t("codelab.headTitle");
     return;
   }
   const tabLabel =
     state.workflow === "clinical"
-      ? CLINICAL_SNIPPET_LABELS[state.tab] || state.tab
+      ? clinicalSnippetLabel(state.tab) || state.tab
       : state.tab;
-  h.textContent = `流程代码 · ${state.workflow} · ${tabLabel}`;
+  h.textContent = `${t("codelab.workflowCode")} · ${state.workflow} · ${tabLabel}`;
+}
+
+export function applyCodeLabI18n() {
+  if (!rootEl) return;
+  const q = (sel) => rootEl.querySelector(sel);
+  const setText = (sel, key) => { const el = q(sel); if (el) el.textContent = t(key); };
+  setText(".code-lab-head h4", "codelab.headTitle");
+  const badge = q(".code-lab-badge");
+  if (badge) badge.textContent = t("codelab.badge");
+  const hint = q(".code-lab-hint");
+  if (hint) hint.innerHTML = t("codelab.intro");
+  setText("#code-lab-clinical-row label", "codelab.clinicalStep");
+  const srcTitle = q(".code-lab-code-block:first-of-type .code-lab-code-title span");
+  if (srcTitle) srcTitle.textContent = t("codelab.sourceLabel");
+  setText("#code-lab-use-source", "codelab.copyToOpt");
+  const optTitle = q(".code-lab-code-block:nth-of-type(2) .code-lab-code-title span");
+  if (optTitle) optTitle.textContent = t("codelab.optLabel");
+  setText("#code-lab-run-source", "codelab.runSource");
+  const llmSum = q("#code-lab-llm-wrap > summary");
+  if (llmSum) llmSum.textContent = t("codelab.llmConfig");
+  setText("#code-lab-exec", "codelab.runOptShort");
+  setText("#code-lab-llm-optimize", "codelab.optimize");
+  const hist = q(".code-lab-history summary");
+  if (hist) hist.textContent = t("codelab.history");
+  const instLab = q(".code-lab-llm-instruction");
+  if (instLab) {
+    for (const n of instLab.childNodes) {
+      if (n.nodeType === Node.TEXT_NODE && n.textContent.trim()) {
+        n.textContent = t("codelab.instruction");
+        break;
+      }
+    }
+  }
+  if (clinicalSel) {
+    const cur = clinicalSel.value;
+    [...clinicalSel.options].forEach((o) => {
+      o.textContent = clinicalSnippetLabel(o.value);
+    });
+    clinicalSel.value = cur;
+  }
+  setHeadTitle();
 }
 
 function applyContext(workflow, tab) {
@@ -645,6 +699,23 @@ function runallTabId() {
   const sel = document.getElementById("ra-pipeline");
   const v = sel?.value === "m16s" ? "m16s" : "rnaseq";
   return `runall-${v}`;
+}
+
+export function applyCopilotAction({ page, tab, instruction, autoOptimize = false } = {}) {
+  if (!rootEl) return;
+  const wf = page || state.workflow || "analysis";
+  if (PAGES.has(wf)) {
+    applyContext(wf, tab || detectActiveTabInPage(wf) || DEFAULT_TAB[wf]);
+    showDock();
+    rootEl.classList.add("code-lab--open");
+    syncDockLayout();
+  }
+  const inst = document.getElementById("code-lab-llm-instruction");
+  if (inst && instruction) inst.value = instruction;
+  if (autoOptimize && instruction) {
+    rootEl.querySelector("#code-lab-llm-optimize")?.click();
+  }
+  rootEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 export function openCodeLabPanel(page) {
@@ -842,7 +913,7 @@ export async function initCodeLab() {
   for (const [val, lab] of Object.entries(CLINICAL_SNIPPET_LABELS)) {
     const o = document.createElement("option");
     o.value = val;
-    o.textContent = lab;
+    o.textContent = clinicalSnippetLabel(val);
     clinicalSel.appendChild(o);
   }
   clinicalSel.addEventListener("change", () => {
@@ -883,6 +954,25 @@ export async function initCodeLab() {
     await runCodeInR(sourceCodeForCurrent(), "系统原始脚本", sourceCodeForCurrent());
   });
 
+function collectUiContext() {
+  const ctx = {};
+  if (window._emp?.currentExp) ctx.experiment = window._emp.currentExp;
+  const omics = document.getElementById("omics-pipeline")?.value;
+  if (omics) ctx.omics = omics;
+  for (const id of ["tx-group", "m16s-group", "mbx-group", "mgx-group"]) {
+    const el = document.getElementById(id);
+    if (el?.value) { ctx.group_var = el.value; break; }
+  }
+  for (const [id, key] of [
+    ["tx-fc", "fc_cutoff"], ["tx-padj", "padj_cutoff"],
+    ["diff-fc", "fc_cutoff"], ["diff-padj", "padj_cutoff"],
+  ]) {
+    const el = document.getElementById(id);
+    if (el?.value) ctx[key] = el.value;
+  }
+  return Object.keys(ctx).length ? ctx : null;
+}
+
   rootEl.querySelector("#code-lab-llm-optimize").addEventListener("click", async (e) => {
     e.stopPropagation();
     if (!state.workflow || !state.tab) return;
@@ -897,6 +987,7 @@ export async function initCodeLab() {
         tab: state.tab,
         source_code: sourceCodeForCurrent(),
         instruction,
+        ui_context: collectUiContext(),
       });
       const code = res.optimized_code || res.code || "";
       if (!code.trim()) throw new Error("LLM 未返回可用 R 代码");
@@ -940,11 +1031,57 @@ export async function initCodeLab() {
 
   rootEl.querySelector("#code-lab-exec").addEventListener("click", async (e) => {
     e.stopPropagation();
-    await runCodeInR(taEl.value, "优化脚本", sourceCodeForCurrent());
+    const first = await runCodeInR(taEl.value, "优化脚本", sourceCodeForCurrent());
+    if (first?.ok || !first?.error) return;
+    await autoRepairAndRerun(first.error);
   });
+
+  // AI auto-repair: when the optimized script fails, ask the LLM to fix it
+  // (feeding back the exact R error) and re-run once. Best-effort; silently
+  // gives up if no LLM is reachable.
+  async function autoRepairAndRerun(errorMessage) {
+    if (!state.workflow || !state.tab) return;
+    const repairErrors = [
+      "no experiment selected", "请先选择全局",
+      "session", "code is empty",
+    ];
+    if (repairErrors.some((s) => String(errorMessage || "").includes(s))) return;
+    let cfg;
+    try { cfg = collectLlmConfig(); } catch { return; }
+    if (!cfg?.provider) return;
+    setLlmStatus("脚本运行报错，AI 正在尝试自动修复并重跑…", "wait");
+    try {
+      const res = await optimizeRCode({
+        provider: cfg.provider,
+        config: cfg.config,
+        workflow: state.workflow,
+        tab: state.tab,
+        source_code: taEl.value,
+        instruction:
+          `上一版脚本运行报错，请仅修复使其能在当前会话内成功运行，` +
+          `保持分析意图与发表级出图风格（emp_pub_theme）。报错信息：\n${errorMessage}`,
+        ui_context: collectUiContext(),
+      });
+      const fixed = res.optimized_code || res.code || "";
+      if (!fixed.trim()) throw new Error("AI 未返回修复后的代码");
+      setOptimizedCode(fixed, `repair:${res.provider || cfg.provider}`);
+      setLlmStatus("AI 已生成修复版脚本，正在重跑…", "wait");
+      const second = await runCodeInR(taEl.value, "AI 修复后脚本", sourceCodeForCurrent());
+      if (second?.ok) {
+        setLlmStatus("AI 自动修复成功，脚本已正常运行。", "ok");
+      } else {
+        setLlmStatus(`AI 自动修复后仍报错，请手动检查：${second?.error || ""}`, "error");
+      }
+    } catch (err) {
+      setLlmStatus(`AI 自动修复失败：${err.message || String(err)}`, "error");
+    }
+  }
 
   const ra = document.getElementById("ra-pipeline");
   ra?.addEventListener("change", () => {
     if (state.workflow === "runall") applyContext("runall", runallTabId());
   });
+
+  applyCodeLabI18n();
+  window.addEventListener("emp:locale-change", () => applyCodeLabI18n());
 }

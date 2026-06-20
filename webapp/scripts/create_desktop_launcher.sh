@@ -9,8 +9,13 @@ if [[ "${OS_NAME}" == "Darwin" ]]; then
   TARGET="${DESKTOP}/EasyMultiProfiler-Web.command"
   cat > "${TARGET}" <<EOF
 #!/usr/bin/env bash
-cd "${ROOT_DIR}"
-bash "${ROOT_DIR}/webapp/scripts/bootstrap_and_start.sh"
+set -euo pipefail
+ROOT="${ROOT_DIR}"
+cd "\${ROOT}"
+echo "EasyMultiProfiler Web — starting from Desktop shortcut…"
+bash "\${ROOT}/webapp/scripts/launch_emp_web.sh" "\$@"
+echo ""
+read -r -p "按回车键关闭… " _ || sleep 8
 EOF
   chmod +x "${TARGET}"
   echo "Created desktop launcher: ${TARGET}"

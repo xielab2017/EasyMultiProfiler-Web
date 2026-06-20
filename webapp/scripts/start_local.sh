@@ -73,8 +73,19 @@ start_detached "${API_PID_FILE}" "${API_LOG}" \
   env API_PORT="${API_PORT}" NO_PROXY='*' no_proxy='*' Rscript "webapp/backend/run_api.R"
 
 echo "Starting frontend on :${WEB_PORT} ..."
+PY=""
+for _py in python3 python; do
+  if command -v "${_py}" >/dev/null 2>&1; then
+    PY="${_py}"
+    break
+  fi
+done
+if [[ -z "${PY}" ]]; then
+  echo "Python 3 not found. Mac: brew install python@3.12" >&2
+  exit 1
+fi
 start_detached "${WEB_PID_FILE}" "${WEB_LOG}" \
-  python webapp/scripts/static_server.py "${WEB_PORT}" "webapp/frontend"
+  "${PY}" webapp/scripts/static_server.py "${WEB_PORT}" "webapp/frontend"
 
 web_pid="$(cat "${WEB_PID_FILE}" 2>/dev/null || true)"
 if [[ -z "${web_pid}" ]] || ! kill -0 "${web_pid}" 2>/dev/null; then

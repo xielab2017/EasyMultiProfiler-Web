@@ -3,7 +3,7 @@
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
 // this value in lock-step with the one used in index.html (app.js ?v=).
-import * as API from "./api.js?v=2026-06-20-v5.0.0";
+import * as API from "./api.js?v=2026-06-20-v5.0.1";
 import {
   initCodeLab,
   notifyCodeLabNavigate,
@@ -22,6 +22,7 @@ import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=202
 import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-06-20-v5.0.0";
 import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=2026-06-20-v5.0.0";
 import { initFontScale } from "./font_scale.js?v=2026-06-20-v5.0.0";
+import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-06-20-v5.0.0";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -490,6 +491,36 @@ function deriveTableStats(rows, cols) {
   return stats;
 }
 
+const INTERPRET_CARD_KEYS = [
+  { key: "interpretation", titleKey: "copilot.card.interpretation" },
+  { key: "limitations", titleKey: "copilot.card.limitations" },
+  { key: "figure_optimization", titleKey: "copilot.card.figure" },
+  { key: "downstream_guidance", titleKey: "copilot.card.downstream" },
+  { key: "manuscript_panel", titleKey: "copilot.card.manuscript" },
+];
+
+function renderInterpretCards(sections, promptButtons, baseContext) {
+  const sec = sections || {};
+  const cards = INTERPRET_CARD_KEYS.filter(({ key }) => sec[key] && String(sec[key]).trim())
+    .map(({ key, titleKey }) => {
+      const isFigure = key === "figure_optimization";
+      const btnHtml = isFigure && Array.isArray(promptButtons) && promptButtons.length
+        ? `<div class="ai-copilot-prompt-btns">${
+            promptButtons.map((b, i) => `
+              <button type="button" class="btn btn-outline btn-sm ai-prompt-btn"
+                data-prompt-idx="${i}">${escapeHtml(b.label || t("copilot.action.default"))}</button>`).join("")
+          }</div>`
+        : "";
+      return `<article class="ai-interpret-card ai-interpret-card--${key}">
+        <h4 class="ai-interpret-card-title">${escapeHtml(t(titleKey))}</h4>
+        <div class="ai-interpret-card-body">${renderMiniMarkdown(sec[key])}</div>
+        ${btnHtml}
+      </article>`;
+    }).join("");
+  if (cards) return `<div class="ai-interpret-cards">${cards}</div>`;
+  return `<div class="ai-copilot-body">${renderMiniMarkdown(sec.interpretation || "")}</div>`;
+}
+
 function attachAiCopilot(container, baseContext) {
   if (!container || container.querySelector(".ai-copilot")) return;
   const wrap = document.createElement("div");
@@ -549,8 +580,13 @@ function attachAiCopilot(container, baseContext) {
         ? `<span class="ai-copilot-src ai-src-llm">${t("copilot.src.llm")}</span>${
             res.vision ? `<span class="ai-copilot-src ai-src-vision">${t("copilot.src.vision")}</span>` : ""}`
         : `<span class="ai-copilot-src ai-src-offline">${t("copilot.src.offline")}</span>`;
+      const sections = res.sections || {};
+      const promptButtons = res.prompt_buttons || [];
       const actions = res.actions || [];
       const checklist = res.visual_checklist || [];
+      const bodyHtml = (sections.interpretation || sections.limitations)
+        ? renderInterpretCards(sections, promptButtons, baseContext)
+        : `<div class="ai-copilot-body">${renderMiniMarkdown(res.interpretation)}</div>`;
       const checklistHtml = (baseContext.kind === "plot" && checklist.length)
         ? `<details class="ai-copilot-checklist"><summary class="hint">${t("copilot.checklist.summary")} (${checklist.length})</summary><ol class="ai-checklist-ol">${
             checklist.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
@@ -570,9 +606,28 @@ function attachAiCopilot(container, baseContext) {
         <div class="ai-copilot-head">${sourceBadge}
           <span class="ai-copilot-hint">${t("copilot.disclaimer")}</span>
         </div>
-        <div class="ai-copilot-body">${renderMiniMarkdown(res.interpretation)}</div>
+        ${bodyHtml}
         ${checklistHtml}
         ${actionsHtml}`;
+      const wfPage = baseContext.kind === "plot" ? "visualization" : "analysis";
+      const wfTab = baseContext.analysis_type === "heatmap" ? "viz-heatmap" : null;
+      panel.querySelectorAll(".ai-prompt-btn").forEach((pb) => {
+        pb.addEventListener("click", () => {
+          const idx = Number(pb.dataset.promptIdx);
+          const item = promptButtons[idx];
+          if (!item?.prompt) return;
+          trackPromptButtonClick(item.label || "", { analysis_type: ctx.analysis_type });
+          window.dispatchEvent(new CustomEvent("emp:apply-copilot-action", {
+            detail: {
+              page: wfPage,
+              tab: wfTab,
+              instruction: item.prompt,
+              autoOptimize: false,
+            },
+          }));
+          toast(t("copilot.toast.applied"), "success");
+        });
+      });
       panel.querySelectorAll(".ai-copilot-action").forEach((btn) => {
         btn.addEventListener("click", () => {
           const page = btn.dataset.workflow || "analysis";
@@ -588,7 +643,9 @@ function attachAiCopilot(container, baseContext) {
         });
       });
       if (window.lucide) lucide.createIcons({ nodes: [panel] });
-      window.dispatchEvent(new CustomEvent("emp:ai-interpret", { detail: { analysis_type: ctx.analysis_type, source: res.source } }));
+      window.dispatchEvent(new CustomEvent("emp:ai-interpret", {
+        detail: { analysis_type: ctx.analysis_type, source: res.source, locale: ctx.locale },
+      }));
     } catch (e) {
       panel.innerHTML = `<p class="ai-copilot-error">${escapeHtml(t("copilot.error"))}${escapeHtml(e.message)}</p>`;
     } finally {
@@ -691,6 +748,7 @@ function navigateTo(page) {
   document.getElementById("page-title").textContent = t(pageTitleKey(page), getLocale()) || page;
   updateWorkflowStepper(page);
   try { localStorage.setItem("emp_last_page", page); } catch { /* quota */ }
+  window.dispatchEvent(new CustomEvent("emp:page-view", { detail: { page, locale: getLocale() } }));
 
   // Refresh dynamic content on navigation
   if (page === "summary") loadSummary();
@@ -3720,6 +3778,7 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
     }
   });
   await initCodeLab();
+  initEvolution();
   await initTeaching();
   setupTeachingTraceHooks();
   await loadWorkflowBlueprint();

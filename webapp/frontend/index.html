@@ -3,10 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EasyMultiProfiler – Multi-Omics Web Platform</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-06-20-genz-v1">
-  <link rel="stylesheet" href="css/code_lab.css?v=2026-06-20-genz-v1">
-  <link rel="stylesheet" href="css/teaching.css?v=2026-06-20-genz-v1">
+  <title>EasyMultiProfiler Web v5.0.0</title>
+  <link rel="stylesheet" href="css/style.css?v=2026-06-20-v5.0.0">
+  <link rel="stylesheet" href="css/code_lab.css?v=2026-06-20-v5.0.0">
+  <link rel="stylesheet" href="css/teaching.css?v=2026-06-20-v5.0.0">
+  <script>
+    (function () {
+      var s = parseFloat(localStorage.getItem("emp_font_scale"));
+      if (s >= 0.85 && s <= 1.25) {
+        document.documentElement.style.setProperty("--font-scale", String(s));
+        document.documentElement.dataset.fontScale = String(Math.round(s * 100));
+      }
+    })();
+  </script>
   <!-- Lucide icons via CDN (MIT license, no build step) -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
@@ -42,39 +51,64 @@
     </select>
   </div>
 
+  <div class="locale-switch" id="locale-switch" title="Auto-detect or choose UI language">
+    <label class="locale-switch-label" data-i18n="locale.label">界面语言</label>
+    <div class="locale-toggle">
+      <button type="button" class="locale-btn active" data-locale-mode="auto" title="Browser + region auto-detect">
+        <i data-lucide="sparkles"></i> <span data-i18n="locale.auto">自动</span>
+      </button>
+      <button type="button" class="locale-btn" data-locale-mode="zh">中文</button>
+      <button type="button" class="locale-btn" data-locale-mode="en">EN</button>
+    </div>
+    <div id="locale-mode-hint" class="locale-mode-hint"></div>
+  </div>
+
+  <div class="font-scale-switch" id="font-scale-switch">
+    <label class="locale-switch-label" data-i18n="fontScale.label">字号</label>
+    <div class="font-scale-controls">
+      <button type="button" class="font-scale-btn" id="btn-font-smaller" aria-label="Smaller text">A−</button>
+      <span id="font-scale-value" class="font-scale-value" aria-live="polite">100%</span>
+      <button type="button" class="font-scale-btn" id="btn-font-larger" aria-label="Larger text">A+</button>
+      <button type="button" class="font-scale-btn font-scale-reset" id="btn-font-reset" aria-label="Reset text size" title="Reset">↺</button>
+    </div>
+  </div>
+
   <ul class="nav-list">
+    <li class="nav-item" data-page="guide" title="User Guide · 使用指南">
+      <i data-lucide="book-open"></i><span data-i18n="nav.guide">指南</span>
+    </li>
     <li class="nav-item active" data-page="course" title="Course · 课程">
-      <i data-lucide="graduation-cap"></i><span>Course</span>
+      <i data-lucide="graduation-cap"></i><span data-i18n="nav.course">课程</span>
     </li>
     <li class="nav-item" data-page="prompts" title="AI Prompts">
-      <i data-lucide="sparkles"></i><span>AI Prompts</span>
+      <i data-lucide="sparkles"></i><span data-i18n="nav.prompts">AI 提示</span>
     </li>
     <li class="nav-item" data-page="import" title="Import Data · 导入数据">
-      <i data-lucide="upload-cloud"></i><span>Data</span>
+      <i data-lucide="upload-cloud"></i><span data-i18n="nav.data">数据</span>
     </li>
     <li class="nav-item" data-page="summary" title="Summary">
-      <i data-lucide="bar-chart-2"></i><span>Summary</span>
+      <i data-lucide="bar-chart-2"></i><span data-i18n="nav.summary">概览</span>
     </li>
     <li class="nav-item" data-page="inspector" title="Inspector">
-      <i data-lucide="table-properties"></i><span>Inspector</span>
+      <i data-lucide="table-properties"></i><span data-i18n="nav.inspector">检查</span>
     </li>
     <li class="nav-item" data-page="preparation" title="Prepare · 预处理">
-      <i data-lucide="sliders"></i><span>Prepare</span>
+      <i data-lucide="sliders"></i><span data-i18n="nav.prepare">预处理</span>
     </li>
     <li class="nav-item" data-page="analysis" title="Analyze · 分析">
-      <i data-lucide="activity"></i><span>Analyze</span>
+      <i data-lucide="activity"></i><span data-i18n="nav.analyze">分析</span>
     </li>
     <li class="nav-item" data-page="clinical" title="Clinical">
-      <i data-lucide="stethoscope"></i><span>Clinical</span>
+      <i data-lucide="stethoscope"></i><span data-i18n="nav.clinical">临床</span>
     </li>
     <li class="nav-item" data-page="runall" title="Run All">
-      <i data-lucide="zap"></i><span>Run All</span>
+      <i data-lucide="zap"></i><span data-i18n="nav.runall">一键运行</span>
     </li>
     <li class="nav-item" data-page="visualization" title="Visualize">
-      <i data-lucide="image"></i><span>Visualize</span>
+      <i data-lucide="image"></i><span data-i18n="nav.visualize">可视化</span>
     </li>
     <li class="nav-item" data-page="export" title="Export">
-      <i data-lucide="download"></i><span>Export</span>
+      <i data-lucide="download"></i><span data-i18n="nav.export">导出</span>
     </li>
   </ul>
 
@@ -88,8 +122,10 @@
       <div id="perf-last" class="perf-last">—</div>
     </div>
     <div id="locale-note" class="locale-note">
-      <button type="button" class="btn-link" id="btn-help-course">📘 新手？从 Course 开始</button>
-      · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/issues" target="_blank" rel="noopener">Help / Issues</a>
+      <span class="version-badge">v5.0.0</span>
+      <button type="button" class="btn-link" id="btn-help-guide" data-i18n="footer.guide">安装与使用指南</button>
+      · <button type="button" class="btn-link" id="btn-help-course" data-i18n="footer.course">Course 入门</button>
+      · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/master/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
     </div>
   </div>
 </nav>
@@ -99,36 +135,37 @@
 
   <!-- HEADER -->
   <header id="topbar">
-    <div class="topbar-left">
+    <div class="topbar-head">
       <h1 id="page-title">Course Cases</h1>
-      <nav id="workflow-stepper" class="workflow-stepper" aria-label="Analysis workflow">
-        <span class="wf-step" data-wf="course">Course</span>
-        <span class="wf-arrow">→</span>
-        <span class="wf-step" data-wf="import">Data</span>
-        <span class="wf-arrow">→</span>
-        <span class="wf-step" data-wf="preparation">Prepare</span>
-        <span class="wf-arrow">→</span>
-        <span class="wf-step" data-wf="analysis">Analyze</span>
-        <span class="wf-arrow">→</span>
-        <span class="wf-step" data-wf="visualization">Visualize</span>
-        <span class="wf-arrow">→</span>
-        <span class="wf-step" data-wf="export">Export</span>
-      </nav>
-    </div>
-    <div class="topbar-right">
-      <div id="exp-selector-wrap" class="hidden">
-        <label for="global-experiment">Experiment:</label>
-        <select id="global-experiment"></select>
+      <div class="topbar-right">
+        <div id="exp-selector-wrap" class="hidden">
+          <label for="global-experiment">Experiment:</label>
+          <select id="global-experiment"></select>
+        </div>
+        <button class="btn btn-outline hidden" id="btn-topbar-clear"
+                title="Clear all loaded data and analysis results from memory">
+          <i data-lucide="trash-2"></i> Clear All
+        </button>
+        <div id="step-timing" class="step-timing hidden" title="Last step backend / total time">
+          <span id="step-timing-label">—</span>
+        </div>
+        <div id="loading-spinner" class="spinner hidden"></div>
       </div>
-      <button class="btn btn-outline hidden" id="btn-topbar-clear"
-              title="Clear all loaded data and analysis results from memory">
-        <i data-lucide="trash-2"></i> Clear All
-      </button>
-      <div id="step-timing" class="step-timing hidden" title="Last step backend / total time">
-        <span id="step-timing-label">—</span>
-      </div>
-      <div id="loading-spinner" class="spinner hidden"></div>
     </div>
+    <nav id="workflow-stepper" class="workflow-stepper" aria-label="Analysis workflow">
+      <span class="wf-step" data-wf="guide" data-i18n="wf.guide" data-i18n-title="nav.guide">Guide</span>
+      <span class="wf-step" data-wf="course" data-i18n="wf.course" data-i18n-title="nav.course">Course</span>
+      <span class="wf-step" data-wf="prompts" data-i18n="wf.prompts" data-i18n-title="nav.prompts">AI</span>
+      <span class="wf-step" data-wf="import" data-i18n="wf.import" data-i18n-title="nav.data">Data</span>
+      <span class="wf-step" data-wf="summary" data-i18n="wf.summary" data-i18n-title="nav.summary">Summary</span>
+      <span class="wf-step" data-wf="inspector" data-i18n="wf.inspector" data-i18n-title="nav.inspector">Inspect</span>
+      <span class="wf-step" data-wf="preparation" data-i18n="wf.preparation" data-i18n-title="nav.prepare">Prep</span>
+      <span class="wf-step" data-wf="analysis" data-i18n="wf.analysis" data-i18n-title="nav.analyze">Analyze</span>
+      <span class="wf-step" data-wf="clinical" data-i18n="wf.clinical" data-i18n-title="nav.clinical">Clinical</span>
+      <span class="wf-step" data-wf="runall" data-i18n="wf.runall" data-i18n-title="nav.runall">Run</span>
+      <span class="wf-step" data-wf="visualization" data-i18n="wf.visualization" data-i18n-title="nav.visualize">Visualize</span>
+      <span class="wf-step" data-wf="export" data-i18n="wf.export" data-i18n-title="nav.export">Export</span>
+    </nav>
   </header>
 
   <!-- R 执行输出：Code Lab 展开时显示在当前页面下方（中间栏） -->
@@ -144,6 +181,12 @@
 
   <!-- ── PAGE: IMPORT ─────────────────────────────────── -->
   <section id="page-course" class="page active">
+    <div class="card guide-course-banner">
+      <p class="hint" style="margin:0">
+        <strong>v5.0.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
+        （Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」
+      </p>
+    </div>
     <div class="teaching-subnav">
       <button type="button" class="btn btn-outline teaching-tab active" data-teaching-tab="cases">任务卡案例</button>
       <button type="button" class="btn btn-outline teaching-tab" data-teaching-tab="critique">AI 纠错 Lab</button>
@@ -165,12 +208,21 @@
     <div id="teaching-prompt-root"></div>
   </section>
 
+  <!-- ── PAGE: USER GUIDE (v5.0.0) ─────────────────────── -->
+  <section id="page-guide" class="page">
+    <div id="guide-root"></div>
+  </section>
+
   <section id="page-import" class="page">
     <div class="card welcome-card" id="welcome-card">
-      <h2>👋 欢迎使用 EasyMultiProfiler</h2>
-      <p class="hint">第一次来？建议先打开左侧 <strong>Course</strong> 跟着视频学；也可以一键加载课程示例数据直接体验分析流程。</p>
+      <h2>👋 欢迎使用 EasyMultiProfiler v5.0.0</h2>
+      <p class="hint">
+        <strong>还没安装？</strong> 左侧点 <strong>Guide</strong> 查看 Mac / Windows 分平台安装步骤（两条路径不同，请勿混用）。
+        <strong>已装好？</strong> 从 <strong>Course</strong> 学，或下方一键加载 16S / RNA-seq / Clinical 示例数据。
+      </p>
       <div class="btn-row">
-        <button type="button" class="btn btn-primary" id="btn-welcome-course">从 Course 开始</button>
+        <button type="button" class="btn btn-primary" id="btn-welcome-guide">打开安装指南</button>
+        <button type="button" class="btn btn-outline" id="btn-welcome-course">从 Course 开始</button>
         <button type="button" class="btn btn-outline" id="btn-welcome-dismiss">我知道了</button>
       </div>
     </div>
@@ -367,6 +419,13 @@
         <strong>Preparation quick guide:</strong> Filter = remove low-information features; Normalize = make samples comparable;
         Impute = handle missing values; Rarefy = depth equalization for count-like microbiome data; Collapse/16S Taxonomy = aggregate taxa levels.
       </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <button class="btn btn-outline" id="btn-prep-recommended" type="button"
+                title="按当前组学类型套用 tests/ 数据验证过的过滤/归一化/差异分析推荐阈值">
+          <i data-lucide="wand-2"></i> 推荐参数（当前组学）
+        </button>
+        <span class="hint" style="margin:0">导入示例数据后会自动套用；也可随时手动点击。</span>
+      </div>
       <div class="form-grid">
         <div class="form-group">
           <label>Prepare mode</label>
@@ -375,9 +434,9 @@
             <option value="single">Single (always start from raw upload)</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group form-group--full">
           <label>Prepared snapshot</label>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div class="form-inline-actions">
             <select id="prep-snapshot-select"></select>
             <button class="btn btn-outline" id="btn-prep-refresh-snapshots" type="button">Refresh</button>
             <button class="btn btn-outline" id="btn-prep-use-snapshot" type="button">Use selected</button>
@@ -543,8 +602,8 @@
         <div class="form-group">
           <label>Normalize (one-step)</label>
           <select id="m16s-normalize-method">
-            <option value="none" selected>None</option>
-            <option value="rclr">rclr</option>
+            <option value="none">None</option>
+            <option value="rclr" selected>rclr</option>
             <option value="clr">clr</option>
             <option value="hellinger">hellinger</option>
             <option value="total">relative abundance</option>
@@ -643,7 +702,7 @@
         For bulk RNAseq, <strong>DESeq2 / edgeR / limma</strong> finish in seconds.
         Wilcoxon on 10k+ genes can take ~100s – use it only for small matrices.
       </p>
-      <div class="form-grid">
+      <div class="form-grid form-grid--analysis">
         <div class="form-group">
           <label>Method</label>
           <select id="diff-method">
@@ -659,10 +718,18 @@
           <select id="diff-group"></select>
         </div>
         <div class="form-group">
+          <label>Comparison mode</label>
+          <select id="diff-comparison-mode">
+            <option value="pairwise" selected>Pairwise (ref vs test)</option>
+            <option value="all_pairwise">All pairwise (DESeq2 / edgeR)</option>
+            <option value="multi_lrt">Multi-group LRT + all pairwise (log2FC)</option>
+          </select>
+        </div>
+        <div class="form-group diff-pairwise-only">
           <label>Reference Group</label>
           <select id="diff-ref"></select>
         </div>
-        <div class="form-group">
+        <div class="form-group diff-pairwise-only">
           <label>Test Group</label>
           <select id="diff-test"></select>
         </div>
@@ -1614,13 +1681,13 @@
         <div class="form-group">
           <label title="Use adjusted p-value (BH) when available; automatic fallback to raw p if none pass">Threshold</label>
           <select id="deg-use-padj">
-            <option value="true">padj (auto-fallback)</option>
-            <option value="false" selected>p-value</option>
+            <option value="true" selected>padj (auto-fallback)</option>
+            <option value="false">p-value</option>
           </select>
         </div>
         <div class="form-group">
           <label title="Drop low-expression genes (rowSum across samples)">Min rowSum</label>
-          <input type="number" id="deg-min-rowsum" value="0" min="0" step="1">
+          <input type="number" id="deg-min-rowsum" value="10" min="0" step="1">
         </div>
         <div class="form-group">
           <label>Max genes</label>
@@ -2025,6 +2092,9 @@
         <button class="btn btn-primary" id="btn-run-all">
           <i data-lucide="zap"></i> Run all
         </button>
+        <button class="btn btn-outline" id="btn-run-all-smart" title="根据当前数据自动选择分组、对比组、物种与推荐阈值">
+          <i data-lucide="wand-2"></i> Smart defaults
+        </button>
         <button class="btn btn-outline" id="btn-run-all-cancel" disabled>
           <i data-lucide="stop-circle"></i> Cancel (client-side)
         </button>
@@ -2128,7 +2198,7 @@
     else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
   }
 </script>
-<script type="module" src="js/app.js?v=2026-06-20-genz-v1"></script>
+<script type="module" src="js/app.js?v=2026-06-20-v5.0.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script>
   // Initialise Lucide icons after all content is ready

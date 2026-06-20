@@ -1,104 +1,117 @@
+# EasyMultiProfiler Web v5.0.0
 
+**多组学下游分析与可视化 — 浏览器版（R 后端 + 静态前端）**
 
-## EasyMultiProfiler: An Efficient and Convenient R package in Multi-omics Downstream Analysis and Visualization
-<a href="man/figures/logo.png"><img src="man/figures/logo.png" width=150 align="right" ></a>
-![](https://img.shields.io/badge/R%20language->=4.3.3-brightgreen.svg)
-![](https://img.shields.io/badge/Mac%20OSX%20&%20Windows-Available-brightgreen.svg)
-![](https://img.shields.io/badge/Release%20version-0.2.8-brightgreen.svg)
+![](https://img.shields.io/badge/version-5.0.0-blue)
+![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
+![](https://img.shields.io/badge/macOS%20%7C%20Windows-Web%20install-brightgreen)
 
-The EasyMultiProfiler package aims to offer a user-friendly and efficient multi-omics data analysis tool on the R platform. It facilitates various essential tasks related to microbiome, genome, and metabolite downstream analysis, providing a seamless workflow from start to finish.
+面向学生与零基础用户：**无需事先安装 EMP R 包**，按平台运行一键脚本即可（会自动安装 R 依赖并启动网页）。
 
-### What Can EasyMultiProfiler Offer?
+---
 
-- **Quick Screening**: Simplify sample selection across multiple omics for efficient research.
-- **Dynamic Processing**: Effortlessly switch between standardization, differential analysis, correlation, enrichment analysis, etc.
-- **One-Step Analysis**: Effortlessly execute complex methods like WGCNA and GSEA in a single step.
-- **Streamlined Workflow**: Experience a clear, organized data analysis process that enhances productivity and clarity.
-- **Caching Technology**: Leverage built-in caching to save time and computational resources during data exploration.
+## 三种使用方式（选一条即可）
 
-**Let EMP enhance your research and transform your data analysis experience!**
+| 方式 | 适合谁 | 安装入口 | 详细文档 |
+|------|--------|----------|----------|
+| **macOS Web** | Mac 用户、课程上机 | 终端一行命令 或 双击 `Run-EMP-Web.command` | [docs/INSTALL_MAC.md](docs/INSTALL_MAC.md) |
+| **Windows Web** | Windows 10/11 用户 | PowerShell 一行命令 或 `.bat` 双击 | [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) |
+| **仅 R 包** | 已有 RStudio 的研究者 | R 控制台 `pak::pak(...)` | 下方「R 包 only」 |
 
-**Example below**
+> **Mac 与 Windows 使用不同的脚本与命令，请勿混用。**  
+> 打开网页后，左侧 **Guide** 页有完整分平台说明（v5.0.0 内置指南）。
 
-![example-1](tutorial_related/tutorial_figs/example-1.jpg)
+---
 
-### Install
+## 快速安装
 
-For Web users, use the one-line installer in `GitHub download + one-click start` below.
+### macOS（推荐）
 
-If you only need the R package in RStudio:
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v5.0.0/webapp/scripts/install_from_github.sh)"
+```
 
-```R
-if (!requireNamespace("pak", quietly=TRUE)) install.packages("pak")
+或克隆/解压仓库后双击 **`Run-EMP-Web.command`**。
+
+### Windows（推荐）
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
+irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v5.0.0/webapp/scripts/install_from_github.ps1 | iex
+```
+
+或解压后：**首次**双击 `Repair-and-Start-EMP-Web.bat`，**日常**双击 `Start-EMP-Web.bat`。
+
+### 成功标志
+
+- 网页：**http://127.0.0.1:8080**（默认 **Course** 页）  
+- API：**http://127.0.0.1:8000/api/health** → `"status":"ok"`
+
+---
+
+## v5.0.0 亮点
+
+- **分平台安装**：Mac（bash / Homebrew R）与 Windows（PowerShell / winget / bat）独立路径  
+- **内置 Guide 页**：安装步骤、分析流程、FAQ（无需离开浏览器）  
+- **一键示例数据**：16S / RNA-seq / Clinical（tests/ 官方数据）  
+- **组学推荐参数**：Prepare / Run All 智能默认值  
+- **AI 助手**：结果解读、图表 vision、Code Lab 脚本优化与失败自动修复  
+- **Run All**：RNA-seq / 16S 端到端 zip 结果包  
+- **Course 教学**：任务卡、Prompt 库、期末 Markdown 报告  
+
+完整用户指南：[docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md)
+
+---
+
+## 网页内推荐流程
+
+```
+Course → Data（或 demo）→ Prepare（推荐参数）→ Analyze → Run All → Visualize → Export
+```
+
+没有自己的数据？Course 或 Data 页 **一键加载示例数据** 即可。
+
+---
+
+## 仅 R 包（不使用 Web UI）
+
+```r
+if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")
 pak::pak("liubingdong/EasyMultiProfiler")
 library(EasyMultiProfiler)
 ```
 
-### Usage and tutorial
-For more details, please refer to the tutorial:
+教程：https://liubingdong.github.io/EasyMultiProfiler_tutorial/
 
-Website:  [**Source 1**](http://easymultiprofiler.xielab.net)  [**Source 2**](https://liubingdong.github.io/EasyMultiProfiler_tutorial/)  [**Source 3**](https://main--gorgeous-smakager-db1548.netlify.app/) 
+---
 
-### Web deployment (without Shiny UI)
+## 架构
 
-This repository includes a web architecture that does **not** require Shiny as the UI layer:
+| 组件 | 路径 |
+|------|------|
+| R API（Plumber） | `webapp/backend` |
+| 前端 UI | `webapp/frontend` |
+| 安装脚本 | `webapp/scripts` |
+| 测试数据 | `tests/` |
 
-- Backend API: `webapp/backend` (R + plumber)
-- Frontend UI: `webapp/frontend` (HTML/CSS/JavaScript)
-- Migration checklist: `webapp/WEB_MIGRATION.md`
+---
 
-Quick start:
-
-```bash
-# One-step install + start (recommended)
-bash webapp/scripts/bootstrap_and_start.sh
-```
-
-Open:
-
-- `http://localhost:8080` (Web UI)
-- `http://localhost:8000/api/health` (API health check)
-
-### GitHub download + one-click start (recommended for end users)
-
-Use this single command:
+## 开发与回归
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"
+bash webapp/scripts/check_prerequisites.sh
+bash webapp/scripts/launch_emp_web.sh          # 日常
+bash webapp/scripts/launch_emp_web.sh --repair # 强制重装依赖
+Rscript webapp/scripts/smoke_v5_pipeline.R     # 16S + RNA-seq + Clinical
 ```
 
-This command will automatically:
+工作流文档：[webapp/V5_AGENT_WORKFLOW.md](webapp/V5_AGENT_WORKFLOW.md)
 
-1. Clone `https://github.com/xielab2017/EasyMultiProfiler-Web.git`
-2. Install all required dependencies
-3. Start backend/frontend and open browser
+---
 
-Then open:
+## 关于 EasyMultiProfiler R 包
 
-- `http://127.0.0.1:8080` (frontend)
-- `http://127.0.0.1:8000/api/health` (backend health)
+EasyMultiProfiler 提供微生物组、转录组、代谢组等多组学下游分析（过滤、差异、富集、WGCNA、可视化等）。  
+本仓库 **Web 版** 在 R 包之上提供零基础安装、Course 教学与 AI 增强体验。
 
-No separate manual package installation steps are required.
-
-#### Maintainer release packaging
-
-```bash
-bash webapp/scripts/package_release.sh
-```
-
-The zip package is generated under `webapp/dist/` and can be uploaded to a GitHub Release for users to download directly.
-
-### Acknowledge
-This package integrates multiple widely used tools, and we sincerely acknowledge their authors for their valuable contributions. Special thanks to [**Prof. Guangchuang Yu**](https://github.com/YuLab-SMU)  (Southern Medical University, China) for his guidance. If EMP contributes to your research, please consider citing the following papers. Your recognition is invaluable to our continued work.
-
-- EasyMultiProfiler: An Efficient Multi-Omics Data Integration and Analysis Workflow for Microbiome Research doi: https://doi.org/10.1007/s11427-025-3035-0
-
-- EasyMicroPlot : An Efficient and Convenient R Package in Microbiome Downstream Analysis and Visualization for Clinical Study. Frontiers in Genetics. doi:  https://doi.org/10.3389/fgene.2021.803627
-
-### More Awesome Tools
-- aplot: Simplifying the creation of complex graphs to visualize associations across diverse data types. doi: https://doi.org/10.1016/j.xinn.2025.100958
-- Using clusterProfiler to characterize multiomics data. Nature protocols doi: https://doi.org/10.1038/s41596-024-01020-z
-
-### Contributing
-We welcome any contribution, including but not limited to code, ideas, and tutorials. Please report errors and questions on GitHub [**Issues**](https://github.com/liubingdong/EasyMultiProfiler/issues). 
-
+原 R 包说明与示例图见 `tutorial_related/` 及 [官网教程](http://easymultiprofiler.xielab.net)。

@@ -1,7 +1,0 @@
-sampleID	group
-A1	tax_1
-A2	tax_1
-A3	tax_1
-A4	tax_2
-A5	tax_2
-A6	tax_2

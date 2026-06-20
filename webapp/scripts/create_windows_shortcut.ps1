@@ -10,7 +10,7 @@ if (-not $Root -or -not (Test-Path $Root)) {
 $desktop = [Environment]::GetFolderPath("Desktop")
 if (-not $desktop -or -not (Test-Path $desktop)) { exit 0 }
 
-$targetBat = Join-Path $Root "Start-EMP-Web.bat"
+$targetBat = Join-Path $Root "Run-EMP-Web-Windows.bat"
 if (-not (Test-Path $targetBat)) { exit 0 }
 
 $lnk = Join-Path $desktop "EasyMultiProfiler-Web.lnk"

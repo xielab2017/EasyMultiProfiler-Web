@@ -29,7 +29,7 @@
 .llm_campus_builtin_cfg <- function() {
   list(
     base_url = Sys.getenv("EMP_CAMPUS_LLM_URL", "http://10.22.18.12:9901/v1"),
-    api_key = Sys.getenv("EMP_CAMPUS_LLM_API_KEY", unset = "")
+    api_key = Sys.getenv("EMP_CAMPUS_LLM_API_KEY", unset = ""),
     models = list(
       fast = "deepseek-v4-flash",
       accurate = "Qwen3.6-35B-A3B",
@@ -64,13 +64,13 @@
   )
 }
 
-.llm_campus_optimize_once <- function(cfg, model, code, workflow, tab, instruction) {
+.llm_campus_optimize_once <- function(cfg, model, code, workflow, tab, instruction, ui_context = NULL) {
   cfg <- .llm_campus_merge_cfg(cfg)
   cfg$model <- model
-  .llm_optimize_once("campus", cfg, code, workflow, tab, instruction)
+  .llm_optimize_once("campus", cfg, code, workflow, tab, instruction, ui_context)
 }
 
-.llm_campus_optimize <- function(cfg, code, workflow = NULL, tab = NULL, instruction = NULL) {
+.llm_campus_optimize <- function(cfg, code, workflow = NULL, tab = NULL, instruction = NULL, ui_context = NULL) {
   cfg <- .llm_campus_merge_cfg(cfg)
   task <- tolower(trimws(.llm_chr(cfg$task_type %||% cfg$task, "code_optimize")))
   models <- unique(.llm_campus_task_models(task, cfg))
@@ -82,7 +82,7 @@
   for (model in models) {
     if (!nzchar(model)) next
     out <- tryCatch(
-      .llm_campus_optimize_once(cfg, model, code, workflow, tab, instruction %||% ""),
+      .llm_campus_optimize_once(cfg, model, code, workflow, tab, instruction %||% "", ui_context),
       error = function(e) {
         errors <<- c(errors, sprintf("%s: %s", model, conditionMessage(e)))
         NULL
@@ -187,21 +187,26 @@
   code
 }
 
-.llm_prompt <- function(code, workflow, tab, instruction) {
+.llm_prompt <- function(code, workflow, tab, instruction, ui_context = NULL) {
+  ctx_lines <- character(0)
+  if (!is.null(ui_context) && length(ui_context)) {
+    ctx_lines <- vapply(names(ui_context), function(k) {
+      paste0("- ", k, ": ", paste(as.character(ui_context[[k]]), collapse = ", "))
+    }, character(1))
+  }
   paste(
-    "You are optimizing an EasyMultiProfiler Code Lab R script.",
+    "You are an expert bioinformatics engineer optimizing EasyMultiProfiler Code Lab R scripts.",
     "Return ONLY executable R code, with no markdown fences and no explanation.",
+    "Preserve the student's analysis intent; make minimal, high-impact edits unless asked to refactor.",
     "The returned code must be pure R and compatible with POST /api/user_r/run.",
     "Do not use JavaScript, browser APIs, Python, shell commands, network calls, or package installation.",
-    "Keep the existing session variables available in the execution environment: session_id and experiment.",
-    "In Code Lab, experiment is usually a character experiment name or NULL — not a phyloseq/MAE object.",
-    "For standalone clinical analysis (source='standalone'), filter cohorts via run_clinical_systematic_summary(cohort_filter='IBS') or cohort_filter=c('UC','IBS'); do not subset experiment$meta or phyloseq objects.",
-    "Standalone clinical uploads may have two files: clinical_uploaded_raw.csv for measurements and clinical_uploaded_meta.csv for Group/Subgroup/patient metadata; backend helpers merge them by SampleID/primary.",
-    "For clinical systematic analysis, use run_clinical_systematic_summary() rather than manually reading session files. It auto-detects Group/Subgroup/patient columns, cross-sectional groups, and before/after longitudinal pairs.",
-    "Clinical longitudinal cohorts can be inferred from Group values such as UC_before/UC_after or IBS_before/IBS_after, or from sample IDs: AK/BK=UC before/after and CJ/DJ=IBS before/after.",
-    "If the user requests a grouped three-line table, pass group_var='Group' when available; do not let gender/patient ID become the grouping variable unless explicitly requested.",
+    "Keep session_id and experiment (character name) available; do not replace with phyloseq objects.",
+    "For publication-quality plots use emp_pub_theme(), emp_pub_palette(), emp_set_color_panel() from EasyMultiProfiler.",
+    "Prefer ggrepel for crowded labels; ensure axis titles, legend, and readable base_size (10-12).",
     "If producing a plot, make the last expression a ggplot object, a base64 PNG string, or list(plot = <base64_png>).",
+    "For clinical standalone: use run_clinical_systematic_summary() and cohort_filter; do not manually read CSVs.",
     sprintf("Workflow: %s; Tab: %s.", .llm_chr(workflow, "unknown"), .llm_chr(tab, "unknown")),
+    if (length(ctx_lines)) paste("Current UI / analysis context:\n", paste(ctx_lines, collapse = "\n")) else "",
     if (nzchar(trimws(.llm_chr(instruction)))) paste("User instruction:", instruction) else "",
     "Original R code:",
     code,
@@ -291,13 +296,13 @@
   parsed
 }
 
-.llm_optimize_once <- function(provider, cfg, code, workflow, tab, instruction) {
+.llm_optimize_once <- function(provider, cfg, code, workflow, tab, instruction, ui_context = NULL) {
   if (identical(tolower(trimws(.llm_chr(provider))), "campus")) {
     cfg <- .llm_campus_merge_cfg(cfg)
   }
   d <- .llm_provider_defaults(provider, cfg)
   provider <- d$provider
-  prompt <- .llm_prompt(code, workflow, tab, instruction)
+  prompt <- .llm_prompt(code, workflow, tab, instruction, ui_context)
   key <- trimws(.llm_chr(cfg$api_key))
   timeout <- suppressWarnings(as.numeric(cfg$timeout %||% 120))
   if (is.na(timeout) || timeout <= 0) timeout <- 120
@@ -352,12 +357,12 @@
   stop(sprintf("Unsupported LLM provider: %s", provider))
 }
 
-optimize_r_with_llm <- function(provider, cfg, code, workflow = NULL, tab = NULL, instruction = NULL) {
+optimize_r_with_llm <- function(provider, cfg, code, workflow = NULL, tab = NULL, instruction = NULL, ui_context = NULL) {
   code <- paste(as.character(code), collapse = "\n")
   if (!nzchar(trimws(code))) stop("source_code is empty")
   provider <- tolower(trimws(.llm_chr(provider, "chatgpt")))
   if (identical(provider, "campus")) {
-    return(.llm_campus_optimize(cfg, code, workflow, tab, instruction))
+    return(.llm_campus_optimize(cfg, code, workflow, tab, instruction, ui_context))
   }
   providers <- cfg$providers %||% provider
   if (identical(provider, "auto")) {
@@ -370,7 +375,7 @@ optimize_r_with_llm <- function(provider, cfg, code, workflow = NULL, tab = NULL
   errors <- character(0)
   for (p in providers) {
     out <- tryCatch(
-      .llm_optimize_once(p, cfg, code, workflow, tab, instruction %||% ""),
+      .llm_optimize_once(p, cfg, code, workflow, tab, instruction %||% "", ui_context),
       error = function(e) {
         errors <<- c(errors, sprintf("%s: %s", p, conditionMessage(e)))
         NULL
@@ -393,7 +398,8 @@ plumber_llm_optimize_r_post <- function(req, res) {
       code = b$source_code %||% b$code %||% "",
       workflow = b$workflow %||% NULL,
       tab = b$tab %||% NULL,
-      instruction = b$instruction %||% NULL
+      instruction = b$instruction %||% NULL,
+      ui_context = b$ui_context %||% NULL
     )
   }, res)
 }
