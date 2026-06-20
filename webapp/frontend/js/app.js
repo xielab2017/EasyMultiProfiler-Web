@@ -3,7 +3,7 @@
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
 // this value in lock-step with the one used in index.html (app.js ?v=).
-import * as API from "./api.js?v=2026-06-20-genz-v1";
+import * as API from "./api.js?v=2026-06-20-v5.0.0";
 import {
   initCodeLab,
   notifyCodeLabNavigate,
@@ -11,12 +11,17 @@ import {
   notifyCodeLabClinicalStep,
   refreshCodeLabContext,
   openCodeLabPanel,
-} from "./code_lab.js?v=2026-06-20-genz-v1";
+  applyCopilotAction,
+} from "./code_lab.js?v=2026-06-20-v5.0.0";
 import {
   initTeaching,
   onTeachingPage,
   setupTeachingTraceHooks,
-} from "./teaching.js?v=2026-06-20-genz-v1";
+} from "./teaching.js?v=2026-06-20-v5.0.0";
+import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=2026-06-20-v5.0.0";
+import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-06-20-v5.0.0";
+import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=2026-06-20-v5.0.0";
+import { initFontScale } from "./font_scale.js?v=2026-06-20-v5.0.0";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -491,7 +496,7 @@ function attachAiCopilot(container, baseContext) {
   wrap.className = "ai-copilot";
   wrap.innerHTML = `
     <button type="button" class="btn btn-outline ai-copilot-btn">
-      <i data-lucide="sparkles"></i> AI 解读结果
+      <i data-lucide="sparkles"></i> <span class="ai-copilot-btn-label">${t("copilot.btn")}</span>
     </button>
     <div class="ai-copilot-panel hidden"></div>
   `;
@@ -502,7 +507,7 @@ function attachAiCopilot(container, baseContext) {
 
   btn.addEventListener("click", async () => {
     panel.classList.remove("hidden");
-    panel.innerHTML = `<p class="ai-copilot-loading">AI 正在解读结果…</p>`;
+    panel.innerHTML = `<p class="ai-copilot-loading">${t("copilot.loading")}</p>`;
     btn.disabled = true;
     try {
       const ctx = { ...baseContext };
@@ -527,19 +532,65 @@ function attachAiCopilot(container, baseContext) {
       }
       const dsExp = (window._emp?.experiments || []).find((e) => e.name === window._emp?.currentExp);
       if (dsExp) ctx.dataset = { n_samples: dsExp.samples, n_features: dsExp.features };
+      const gSel = document.getElementById("global-experiment")?.closest("#main") &&
+        (document.querySelector("#tx-group, #m16s-group, #mbx-group, [id$='-group']")?.value);
+      if (gSel) ctx.group = gSel;
+      const plotImg = container.querySelector("img[src^='data:image']");
+      if (plotImg) {
+        ctx.plot_present = true;
+        // Send the actual PNG so vision-capable models can critique the figure.
+        const src = plotImg.getAttribute("src") || "";
+        if (src.length <= 6_000_000) ctx.plot_image = src;
+      }
+      ctx.locale = getLocale();
+      ctx.lang = ctx.locale;
       const res = await API.aiInterpret(ctx);
       const sourceBadge = res.source === "llm"
-        ? `<span class="ai-copilot-src ai-src-llm">AI 模型</span>`
-        : `<span class="ai-copilot-src ai-src-offline">本地解读</span>`;
+        ? `<span class="ai-copilot-src ai-src-llm">${t("copilot.src.llm")}</span>${
+            res.vision ? `<span class="ai-copilot-src ai-src-vision">${t("copilot.src.vision")}</span>` : ""}`
+        : `<span class="ai-copilot-src ai-src-offline">${t("copilot.src.offline")}</span>`;
+      const actions = res.actions || [];
+      const checklist = res.visual_checklist || [];
+      const checklistHtml = (baseContext.kind === "plot" && checklist.length)
+        ? `<details class="ai-copilot-checklist"><summary class="hint">${t("copilot.checklist.summary")} (${checklist.length})</summary><ol class="ai-checklist-ol">${
+            checklist.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+          }</ol></details>`
+        : "";
+      const actionsHtml = actions.length
+        ? `<div class="ai-copilot-actions"><p class="hint">${t("copilot.actions.hint")}</p>${
+            actions.map((a) => `
+              <button type="button" class="btn btn-outline btn-sm ai-copilot-action"
+                data-workflow="${escapeHtml(a.workflow || "")}"
+                data-tab="${escapeHtml(a.tab || "")}"
+                data-instruction="${escapeHtml(a.instruction || "")}"
+                data-auto="${a.auto_optimize ? "1" : "0"}">${escapeHtml(a.label || t("copilot.action.default"))}</button>`).join("")
+          }</div>`
+        : "";
       panel.innerHTML = `
         <div class="ai-copilot-head">${sourceBadge}
-          <span class="ai-copilot-hint">AI 生成内容仅供学习参考，请结合统计与生物学知识判断。</span>
+          <span class="ai-copilot-hint">${t("copilot.disclaimer")}</span>
         </div>
-        <div class="ai-copilot-body">${renderMiniMarkdown(res.interpretation)}</div>`;
+        <div class="ai-copilot-body">${renderMiniMarkdown(res.interpretation)}</div>
+        ${checklistHtml}
+        ${actionsHtml}`;
+      panel.querySelectorAll(".ai-copilot-action").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const page = btn.dataset.workflow || "analysis";
+          window.dispatchEvent(new CustomEvent("emp:apply-copilot-action", {
+            detail: {
+              page,
+              tab: btn.dataset.tab || null,
+              instruction: btn.dataset.instruction || "",
+              autoOptimize: btn.dataset.auto === "1",
+            },
+          }));
+          toast(t("copilot.toast.applied"), "success");
+        });
+      });
       if (window.lucide) lucide.createIcons({ nodes: [panel] });
       window.dispatchEvent(new CustomEvent("emp:ai-interpret", { detail: { analysis_type: ctx.analysis_type, source: res.source } }));
     } catch (e) {
-      panel.innerHTML = `<p class="ai-copilot-error">AI 解读失败：${escapeHtml(e.message)}</p>`;
+      panel.innerHTML = `<p class="ai-copilot-error">${escapeHtml(t("copilot.error"))}${escapeHtml(e.message)}</p>`;
     } finally {
       btn.disabled = false;
     }
@@ -600,6 +651,7 @@ async function ensureWorkflowReady(workflowId, exp, opts = {}) {
 // ── Navigation ────────────────────────────────────
 const pageTitles = {
   course: "Course Cases",
+  guide: "User Guide · 使用指南",
   prompts: "AI Prompt Library",
   import: "Import Data",
   summary: "Data Summary",
@@ -612,20 +664,20 @@ const pageTitles = {
   export: "Export Results",
 };
 
-const WORKFLOW_PAGES = new Set(["course", "import", "preparation", "analysis", "visualization", "export"]);
+const WORKFLOW_ORDER = [
+  "guide", "course", "prompts", "import", "summary", "inspector",
+  "preparation", "analysis", "clinical", "runall", "visualization", "export",
+];
 
 function updateWorkflowStepper(page) {
   const stepper = document.getElementById("workflow-stepper");
   if (!stepper) return;
-  const wfPage = page === "summary" || page === "inspector" ? "import"
-    : page === "runall" ? "analysis"
-    : page === "clinical" ? "analysis"
-    : page === "prompts" ? "course"
-    : page;
+  const activeIdx = WORKFLOW_ORDER.indexOf(page);
   stepper.querySelectorAll(".wf-step").forEach(el => {
-    el.classList.toggle("is-active", el.dataset.wf === wfPage);
-    el.classList.toggle("is-done", WORKFLOW_PAGES.has(wfPage) &&
-      Array.from(WORKFLOW_PAGES).indexOf(el.dataset.wf) < Array.from(WORKFLOW_PAGES).indexOf(wfPage));
+    const stepIdx = WORKFLOW_ORDER.indexOf(el.dataset.wf);
+    const isActive = el.dataset.wf === page;
+    el.classList.toggle("is-active", isActive);
+    el.classList.toggle("is-done", activeIdx >= 0 && stepIdx >= 0 && stepIdx < activeIdx);
   });
 }
 
@@ -636,7 +688,7 @@ function navigateTo(page) {
   document.querySelectorAll(".page").forEach(el => el.classList.remove("active"));
   const target = document.getElementById(`page-${page}`);
   if (target) target.classList.add("active");
-  document.getElementById("page-title").textContent = pageTitles[page] || page;
+  document.getElementById("page-title").textContent = t(pageTitleKey(page), getLocale()) || page;
   updateWorkflowStepper(page);
   try { localStorage.setItem("emp_last_page", page); } catch { /* quota */ }
 
@@ -647,6 +699,7 @@ function navigateTo(page) {
   if (page === "preparation" && window._emp.currentExp) refreshPrepareSnapshots();
   if (page === "clinical") refreshClinicalVars();
   if (page === "course" || page === "prompts") onTeachingPage(page);
+  if (page === "guide") initGuide();
   notifyCodeLabNavigate(page);
 }
 
@@ -655,6 +708,12 @@ window.__empNavigate = navigateTo;
 window.addEventListener("emp:toast", (e) => {
   const { msg, type } = e.detail || {};
   if (msg) toast(msg, type || "info");
+});
+
+window.addEventListener("emp:apply-copilot-action", (e) => {
+  const { page, tab, instruction, autoOptimize } = e.detail || {};
+  if (page) navigateTo(page);
+  applyCopilotAction({ page, tab, instruction, autoOptimize });
 });
 
 window.addEventListener("emp:open-code-lab", (e) => {
@@ -674,6 +733,12 @@ window.addEventListener("emp:import-demo", (e) => {
   if (datasetId) importDemoById(datasetId, omics);
 });
 
+document.getElementById("btn-help-guide")?.addEventListener("click", () => navigateTo("guide"));
+document.getElementById("btn-welcome-guide")?.addEventListener("click", () => {
+  document.getElementById("welcome-card")?.classList.add("hidden");
+  navigateTo("guide");
+});
+document.getElementById("btn-course-to-guide")?.addEventListener("click", () => navigateTo("guide"));
 document.getElementById("btn-help-course")?.addEventListener("click", () => navigateTo("course"));
 document.getElementById("btn-welcome-course")?.addEventListener("click", () => {
   document.getElementById("welcome-card")?.classList.add("hidden");
@@ -713,7 +778,7 @@ async function loadDemoDatasetButtons() {
     const datasets = await API.listDemoDatasets();
     const available = datasets.filter(d => d.available);
     if (!available.length) {
-      root.innerHTML = '<span class="hint">示例数据暂不可用（请确认 webapp/tests 目录存在）。</span>';
+      root.innerHTML = `<span class="hint">${t("demo.unavailable")}</span>`;
       return;
     }
     root.innerHTML = available.map(d => `
@@ -724,7 +789,7 @@ async function loadDemoDatasetButtons() {
       btn.addEventListener("click", () => importDemoById(btn.dataset.demoId, btn.dataset.omics));
     });
   } catch (e) {
-    root.innerHTML = `<span class="hint">无法加载示例列表：${escapeHtml(e.message)}</span>`;
+    root.innerHTML = `<span class="hint">${t("demo.loadFail")}${escapeHtml(e.message)}</span>`;
   }
 }
 
@@ -748,14 +813,15 @@ async function importDemoById(datasetId, omics) {
           orientation: res.orientation || "samples in rows",
         };
       }
-      toast("Clinical 示例数据已就绪，可前往 Clinical 页分析。", "success");
+      toast(t("demo.clinicalReady"), "success");
       navigateTo("clinical");
     } else {
       showAlert("import-result",
         `✓ 已加载「${res.experiment_name}」：${res.samples} 样本 · ${res.features} 特征`,
         "success");
-      toast(`${res.experiment_name} 示例已导入！`, "success");
+      toast(t("demo.imported", null, { name: res.experiment_name }), "success");
       await refreshExperimentList();
+      applyOmicsDefaults(omics || document.getElementById("omics-pipeline")?.value, { silent: false });
       navigateTo("summary");
     }
     document.getElementById("btn-topbar-clear")?.classList.remove("hidden");
@@ -978,7 +1044,9 @@ async function refreshGroupSelectors() {
     "group", "subgroup", "cohort", "condition", "disease", "diagnosis", "treatment",
   ]);
   const groupColumnOptions = (cols) => {
+    const isInternal = (name) => /(_safe|__emp)$/i.test(String(name || ""));
     const usable = (cols || []).filter((c) => {
+      if (isInternal(c.name)) return false;
       const n = Number(c.n_unique) || 0;
       if (n < 2) return false;
       const key = String(c.name || "").toLowerCase();
@@ -1047,6 +1115,8 @@ async function refreshGroupSelectors() {
   bindGroupChange("mbx-group", updateMbxGroups);
   bindGroupChange("tx-group", updateTxGroups);
   bindGroupChange("ra-group", updateRaGroups);
+  bindGroupChange("diff-method", updateDiffComparisonUI);
+  bindGroupChange("diff-comparison-mode", updateDiffComparisonUI);
   updateDiffGroups();
   updateMarkerGroups();
   updateMgxGroups();
@@ -1080,6 +1150,17 @@ function updateRaGroups() {
     el.innerHTML = '<option value="">(auto)</option>' +
       vals.map(v => `<option value="${v}">${v}</option>`).join("");
   });
+  // Pre-fill a sensible 2-group contrast so Run All works on the first click.
+  // Prefer a control-looking level (DMSO/Control/...) as reference.
+  if (vals.length >= 2) {
+    const ctrlRe = /^(dmso|control|ctrl|ctl|wt|wildtype|healthy|normal|baseline|veh(icle)?|untreated|pbs|mock|sham|hc)$/i;
+    const ref = vals.find(v => ctrlRe.test(String(v))) || vals[0];
+    const test = vals.find(v => v !== ref) || vals[1];
+    const refEl = document.getElementById("ra-ref");
+    const testEl = document.getElementById("ra-test");
+    if (refEl) refEl.value = ref;
+    if (testEl) testEl.value = test;
+  }
 }
 
 function updateDiffGroups() {
@@ -1094,6 +1175,29 @@ function updateDiffGroups() {
   });
   if (vals.length >= 2) {
     document.getElementById("diff-test").value = vals[1];
+  }
+  updateDiffComparisonUI();
+}
+
+function updateDiffComparisonUI() {
+  const modeEl = document.getElementById("diff-comparison-mode");
+  const methodEl = document.getElementById("diff-method");
+  if (!modeEl) return;
+  const method = methodEl?.value || "DESeq2";
+  const multiCapable = method === "DESeq2" || method === "edgeR";
+  [...modeEl.options].forEach(opt => {
+    if (opt.value !== "pairwise") opt.disabled = !multiCapable;
+  });
+  if (!multiCapable && modeEl.value !== "pairwise") modeEl.value = "pairwise";
+  const showPair = modeEl.value === "pairwise";
+  document.querySelectorAll(".diff-pairwise-only").forEach(el => {
+    el.classList.toggle("hidden", !showPair);
+  });
+  const subsetEl = document.getElementById("diff-subset");
+  if (subsetEl) {
+    const multi = modeEl.value !== "pairwise";
+    if (multi) subsetEl.value = "false";
+    subsetEl.disabled = multi;
   }
 }
 
@@ -1533,6 +1637,19 @@ function currentPrepareMode() {
   return document.getElementById("prep-mode")?.value || "stack";
 }
 
+document.getElementById("btn-prep-recommended")?.addEventListener("click", () => {
+  const omics = document.getElementById("omics-pipeline")?.value;
+  if (!window._emp.currentExp && omics !== "clinical") {
+    toast(t("toast.importFirst"), "error");
+    return;
+  }
+  applyOmicsDefaults(omics);
+});
+
+window.addEventListener("emp:apply-omics-defaults", (e) => {
+  applyOmicsDefaults(e.detail?.omics, { silent: !!e.detail?.silent });
+});
+
 prepAction("btn-filter", "filter-result", exp => API.filterData(exp, {
   min_count:   +document.getElementById("filter-min-count").value,
   min_detect_rate: +document.getElementById("filter-min-detect-rate").value,
@@ -1813,28 +1930,32 @@ document.getElementById("btn-diff").addEventListener("click", async () => {
   const opts = {
     filter_low:        document.getElementById("diff-filter-low")?.value === "true",
     subset_two_groups: document.getElementById("diff-subset")?.value === "true",
+    comparison_mode:   document.getElementById("diff-comparison-mode")?.value || "pairwise",
     cores:             document.getElementById("diff-cores")?.value || "auto",
   };
+  const method = document.getElementById("diff-method").value;
+  const grp    = document.getElementById("diff-group").value;
+  const refG   = document.getElementById("diff-ref").value;
+  const testG  = document.getElementById("diff-test").value;
+  const cmpMode = opts.comparison_mode;
+
   const resultEl = document.getElementById("diff-result");
   resultEl.innerHTML = '<p style="padding:12px">Running…</p>';
   resultEl.classList.remove("hidden");
   updateDiffProgress(1, "Submitting");
 
-  const method = document.getElementById("diff-method").value;
-  const grp    = document.getElementById("diff-group").value;
-  const refG   = document.getElementById("diff-ref").value;
-  const testG  = document.getElementById("diff-test").value;
-
   setLoading(true);
   const t0 = performance.now();
   try {
     if (runMode === "sync") {
+      updateDiffProgress(5, `Mode: ${cmpMode}`);
       const res = await API.analyzeDiff(exp, method, grp, refG, testG, opts);
       updateDiffProgress(100, "Done");
       showResultTable("diff-result", res.data);
       reportLastRun("Differential (sync)", performance.now() - t0, res.backend_ms);
       toast(`Differential done in ${((performance.now()-t0)/1000).toFixed(1)}s`, "success");
     } else {
+      updateDiffProgress(3, `Mode: ${cmpMode}`);
       const { job_id } = await API.analyzeDiffAsync(exp, method, grp, refG, testG, opts);
       const { result } = await API.pollJobUntilDone(job_id, (job) => {
         updateDiffProgress(job.progress, job.message);
@@ -1846,6 +1967,7 @@ document.getElementById("btn-diff").addEventListener("click", async () => {
     }
   } catch(e) {
     resultEl.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${e.message}</p>`;
+    updateDiffProgress(100, `Failed: ${e.message}`);
     toast(e.message, "error");
   } finally {
     setLoading(false);
@@ -2756,6 +2878,53 @@ window.addEventListener("emp:timing", (ev) => {
     } catch(_) { el.innerHTML = "—"; }
   }
 
+  // Guess the model organism from feature (gene) naming convention:
+  //   human gene symbols are ALL-CAPS (TP53), mouse are Title-case (Trp53),
+  //   rat similar to mouse. Falls back to mouse when ambiguous.
+  function guessOrganism() {
+    const feats = (window._emp?.features || []).filter(f => /^[A-Za-z][A-Za-z0-9.\-]+$/.test(f)).slice(0, 400);
+    if (feats.length < 10) return null;
+    let allCaps = 0, titleCase = 0;
+    for (const f of feats) {
+      if (/^[A-Z0-9.\-]+$/.test(f) && /[A-Z]/.test(f)) allCaps++;
+      else if (/^[A-Z][a-z]/.test(f)) titleCase++;
+    }
+    if (allCaps > titleCase * 1.5) return "hsa";
+    if (titleCase > allCaps * 1.5) return "mmu";
+    return null;
+  }
+
+  document.getElementById("btn-run-all-smart")?.addEventListener("click", () => {
+    const exp = window._emp.currentExp;
+    if (!exp) { toast("先导入数据再使用智能默认值。", "error"); return; }
+    const pipeline = document.getElementById("ra-pipeline")?.value || "rnaseq";
+    // Group + ref/test come from refreshGroupSelectors()/updateRaGroups() heuristics.
+    refreshGroupSelectors().then(() => {
+      updateRaGroups();
+      if (pipeline === "rnaseq") {
+        const org = guessOrganism();
+        if (org) {
+          const orgEl = document.getElementById("ra-organism");
+          if (orgEl) orgEl.value = org;
+        }
+        // Recommended thresholds for the bundled RNA-seq demo.
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        set("ra-fc", "1");
+        set("ra-p", "0.05");
+        set("ra-use-padj", "true");
+        set("ra-min-rowsum", "10");
+        const orgName = document.getElementById("ra-organism")?.value || "mmu";
+        toast(`已套用推荐参数：物种=${orgName}，|log2FC|≥1，padj≤0.05，min rowSum=10。`, "success");
+      } else {
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        set("ra-tax-level", "Genus");
+        set("ra-alpha", "shannon");
+        set("ra-ord", "PCoA");
+        toast("已套用 16S 推荐参数：Genus 层级，Shannon 多样性，PCoA 排序。", "success");
+      }
+    });
+  });
+
   document.getElementById("btn-run-all")?.addEventListener("click", async () => {
     const exp = window._emp.currentExp;
     if (!exp) { toast("Import data first.", "error"); return; }
@@ -2915,11 +3084,12 @@ function updateClinicalPrecheck() {
   const rows = Array.isArray(_clinVarCache) ? _clinVarCache : [];
   const num = rows.filter((r) => r.type === "numeric").length;
   const status = num > 0 ? "ok" : (rows.length > 0 ? "risk" : "missing");
-  const tag = status === "ok" ? "OK" : (status === "risk" ? "COUNT-ONLY RISK" : "NO CLINICAL VARIABLES");
+  const tag = status === "ok" ? t("clinical.precheckOk")
+    : (status === "risk" ? t("clinical.precheckRisk") : t("clinical.precheckMissing"));
   el.classList.remove("hidden");
   el.classList.remove("alert-error", "alert-info", "alert-success");
   el.classList.remove("precheck-ok", "precheck-risk", "precheck-missing");
-  el.innerHTML = `<strong>Precheck</strong>: source=${source} | numeric=${num} | engine=${engine} | status=${tag}`;
+  el.innerHTML = `<strong>${t("clinical.precheck")}</strong>: source=${source} | numeric=${num} | engine=${engine} | status=${tag}`;
 
   if (status === "ok") {
     el.classList.add("alert-success", "precheck-ok");
@@ -3537,34 +3707,21 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
 });
 
 // ── INITIALISE ────────────────────────────────────
-async function detectPreferredLocale() {
-  const navLang = (navigator.language || "").toLowerCase();
-  let locale = navLang.startsWith("zh") ? "zh" : "en";
-  try {
-    const ctl = new AbortController();
-    const tm = setTimeout(() => ctl.abort(), 1200);
-    const r = await fetch("https://ipapi.co/json/", { signal: ctl.signal });
-    clearTimeout(tm);
-    if (r.ok) {
-      const j = await r.json();
-      const c = String(j?.country_code || "").toUpperCase();
-      if (["CN", "HK", "MO", "TW"].includes(c)) locale = "zh";
-    }
-  } catch (_) {
-    // Keep browser-language fallback when IP lookup is unavailable.
-  }
-  return locale;
-}
-
-async function renderLocaleNote() {
-  /* Student-facing footer: help link only (install command moved to docs). */
-}
-
 (async () => {
+  await initLocale();
+  initFontScale();
+  if (window.lucide) window.lucide.createIcons({ nodes: [document.getElementById("locale-switch")].filter(Boolean) });
+  window.addEventListener("emp:locale-change", () => {
+    document.querySelectorAll(".ai-copilot-btn-label").forEach((el) => {
+      el.textContent = t("copilot.btn");
+    });
+    if (document.getElementById("page-clinical")?.classList.contains("active")) {
+      updateClinicalPrecheck();
+    }
+  });
   await initCodeLab();
   await initTeaching();
   setupTeachingTraceHooks();
-  renderLocaleNote();
   await loadWorkflowBlueprint();
   await loadDemoDatasetButtons();
   await refreshExperimentList();

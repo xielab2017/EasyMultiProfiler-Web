@@ -160,9 +160,345 @@ run_alpha <- function(session_id, experiment, method = "shannon", source = "curr
   )
 }
 
+# S4Vectors owns DataFrame; newer SummarizedExperiment no longer re-exports it.
+.diff_as_coldata <- function(cd) {
+  if (requireNamespace("S4Vectors", quietly = TRUE)) {
+    return(S4Vectors::DataFrame(cd, check.names = FALSE))
+  }
+  as.data.frame(cd, stringsAsFactors = FALSE)
+}
+
+.diff_filter_counts <- function(empt, group_col, filter_low = TRUE) {
+  ad <- SummarizedExperiment::assays(empt)[[1]]
+  if (is.null(ad)) stop("Assay matrix is missing.")
+  cd <- as.data.frame(SummarizedExperiment::colData(empt))
+  if (!group_col %in% names(cd)) stop("Grouping variable not found in sample metadata.")
+  counts <- round(as.matrix(ad))
+  storage.mode(counts) <- "integer"
+  if (isTRUE(filter_low)) {
+    min_present <- max(3L, ceiling(ncol(counts) * 0.1))
+    keep_f <- rowSums(!is.na(counts) & counts > 0) >= min_present
+    if (sum(keep_f) >= 50) counts <- counts[keep_f, , drop = FALSE]
+  }
+  list(counts = counts, coldata = cd)
+}
+
+.diff_prepare_group_column <- function(empt, group_var) {
+  cd <- as.data.frame(SummarizedExperiment::colData(empt))
+  if (!group_var %in% names(cd)) stop("Grouping variable not found in sample metadata.")
+  raw <- as.character(cd[[group_var]])
+  if (any(is.na(raw) | !nzchar(raw))) {
+    stop("Grouping variable contains missing or empty labels.")
+  }
+  uniq <- sort(unique(raw))
+  safe <- make.names(uniq, unique = TRUE)
+  if (any(duplicated(safe))) safe <- paste0("G", seq_along(uniq))
+  mapped <- stats::setNames(safe, uniq)[raw]
+  col_use <- paste0(group_var, "__emp")
+  cd[[col_use]] <- factor(mapped, levels = safe)
+  SummarizedExperiment::colData(empt) <- .diff_as_coldata(cd)
+  list(
+    empt = empt,
+    group_col = col_use,
+    group_var_orig = group_var,
+    n_groups = length(uniq),
+    label_display = paste(uniq, collapse = " | "),
+    safe_to_orig = stats::setNames(uniq, safe)
+  )
+}
+
+.diff_format_native_result <- function(feature, group_var, method, vs, pvalue, log2fc = NA_real_,
+                                        sign_group = NA_character_, padj = NULL,
+                                        comparison_mode = NA_character_, n_groups = NA_integer_) {
+  pvalue <- suppressWarnings(as.numeric(pvalue))
+  log2fc <- suppressWarnings(as.numeric(log2fc))
+  n <- max(length(feature), length(pvalue), length(log2fc), 1L)
+  if (is.null(padj)) {
+    padj <- stats::p.adjust(pvalue, method = "fdr")
+  } else {
+    padj <- suppressWarnings(as.numeric(padj))
+    miss <- is.na(padj) & is.finite(pvalue)
+    if (any(miss)) padj[miss] <- stats::p.adjust(pvalue[miss], method = "fdr")
+  }
+  fc <- ifelse(is.finite(log2fc), 2^log2fc, NA_real_)
+  if (length(sign_group) == 1L && (is.na(sign_group) || !nzchar(sign_group))) {
+    sign_group <- rep(NA_character_, n)
+    up <- is.finite(log2fc) & log2fc >= 0
+    down <- is.finite(log2fc) & log2fc < 0
+    if (any(up)) sign_group[up] <- sub(" vs .*", "", vs)
+    if (any(down)) sign_group[down] <- sub(".* vs ", "", vs)
+  }
+  data.frame(
+    feature = feature,
+    Estimate_group = group_var,
+    pvalue = pvalue,
+    fdr = padj,
+    sign_group = sign_group,
+    method = method,
+    vs = vs,
+    fold_change = fc,
+    log2FC = log2fc,
+    comparison_mode = comparison_mode,
+    n_groups = n_groups,
+    stringsAsFactors = FALSE
+  )
+}
+
+.diff_native_deseq2_pairwise <- function(empt, group_var, ref_group, test_group, filter_low = TRUE) {
+  if (!requireNamespace("DESeq2", quietly = TRUE)) stop("DESeq2 package is required.")
+  prep_g <- .diff_prepare_group_column(empt, group_var)
+  empt <- prep_g$empt
+  prep <- .diff_filter_counts(empt, prep_g$group_col, filter_low = filter_low)
+  orig_to_safe <- stats::setNames(names(prep_g$safe_to_orig), prep_g$safe_to_orig)
+  ref_safe <- unname(orig_to_safe[ref_group])
+  test_safe <- unname(orig_to_safe[test_group])
+  if (length(ref_safe) != 1L || length(test_safe) != 1L ||
+      any(is.na(c(ref_safe, test_safe)))) {
+    stop("Reference or test group not found in sample metadata.")
+  }
+  sub_idx <- which(as.character(prep$coldata[[prep_g$group_col]]) %in% c(ref_safe, test_safe))
+  if (length(sub_idx) < 2) stop("Not enough samples for DESeq2 pairwise comparison.")
+  counts <- prep$counts[, sub_idx, drop = FALSE]
+  coldat <- prep$coldata[sub_idx, , drop = FALSE]
+  coldat[[prep_g$group_col]] <- factor(as.character(coldat[[prep_g$group_col]]),
+                                       levels = c(ref_safe, test_safe))
+  keep_r <- rowSums(counts > 0) >= max(3L, ceiling(ncol(counts) * 0.1))
+  if (!any(keep_r)) stop("All features filtered out for DESeq2 run.")
+  counts <- counts[keep_r, , drop = FALSE]
+  dds <- DESeq2::DESeqDataSetFromMatrix(
+    countData = counts, colData = coldat,
+    design = stats::as.formula(paste0("~", prep_g$group_col))
+  )
+  dds <- DESeq2::DESeq(dds, parallel = FALSE, quiet = TRUE)
+  res <- DESeq2::results(dds, contrast = c(prep_g$group_col, test_safe, ref_safe))
+  vs <- paste0(test_group, " vs ", ref_group)
+  .diff_format_native_result(
+    feature = rownames(res),
+    group_var = group_var,
+    method = "DESeq2",
+    vs = vs,
+    pvalue = res$pvalue,
+    log2fc = res$log2FoldChange,
+    padj = res$padj,
+    comparison_mode = "pairwise",
+    n_groups = 2L
+  )
+}
+
+.diff_native_deseq2_lrt <- function(empt, group_var, filter_low = TRUE) {
+  if (!requireNamespace("DESeq2", quietly = TRUE)) stop("DESeq2 package is required.")
+  prep_g <- .diff_prepare_group_column(empt, group_var)
+  if (prep_g$n_groups < 3L) {
+    stop("Multi-group LRT requires at least 3 groups. Use pairwise or all-pairwise mode for fewer groups.")
+  }
+  prep <- .diff_filter_counts(prep_g$empt, prep_g$group_col, filter_low = filter_low)
+  counts <- prep$counts
+  coldat <- prep$coldata
+  keep_r <- rowSums(counts > 0) >= max(3L, ceiling(ncol(counts) * 0.1))
+  if (!any(keep_r)) stop("All features filtered out for DESeq2 LRT.")
+  counts <- counts[keep_r, , drop = FALSE]
+  dds <- DESeq2::DESeqDataSetFromMatrix(
+    countData = counts, colData = coldat,
+    design = stats::as.formula(paste0("~", prep_g$group_col))
+  )
+  reduced_form <- stats::as.formula("~1")
+  dds <- DESeq2::DESeq(
+    dds, test = "LRT", reduced = reduced_form,
+    parallel = FALSE, quiet = TRUE
+  )
+  res <- DESeq2::results(dds)
+  .diff_format_native_result(
+    feature = rownames(res),
+    group_var = group_var,
+    method = "DESeq2",
+    vs = prep_g$label_display,
+    pvalue = res$pvalue,
+    log2fc = NA_real_,
+    padj = res$padj,
+    sign_group = "multi-group LRT",
+    comparison_mode = "multi_lrt",
+    n_groups = prep_g$n_groups
+  )
+}
+
+.diff_native_edger_pairwise <- function(empt, group_var, ref_group, test_group, filter_low = TRUE) {
+  if (!requireNamespace("edgeR", quietly = TRUE)) stop("edgeR package is required.")
+  prep_g <- .diff_prepare_group_column(empt, group_var)
+  prep <- .diff_filter_counts(prep_g$empt, prep_g$group_col, filter_low = filter_low)
+  orig_to_safe <- stats::setNames(names(prep_g$safe_to_orig), prep_g$safe_to_orig)
+  ref_safe <- unname(orig_to_safe[ref_group])
+  test_safe <- unname(orig_to_safe[test_group])
+  if (length(ref_safe) != 1L || length(test_safe) != 1L ||
+      any(is.na(c(ref_safe, test_safe)))) {
+    stop("Reference or test group not found in sample metadata.")
+  }
+  sub_idx <- which(as.character(prep$coldata[[prep_g$group_col]]) %in% c(ref_safe, test_safe))
+  if (length(sub_idx) < 2) stop("Not enough samples for edgeR pairwise comparison.")
+  counts <- prep$counts[, sub_idx, drop = FALSE]
+  grp <- factor(as.character(prep$coldata[[prep_g$group_col]][sub_idx]), levels = c(ref_safe, test_safe))
+  y <- edgeR::DGEList(counts = counts, group = grp)
+  y <- edgeR::calcNormFactors(y)
+  y <- edgeR::estimateDisp(y)
+  if (is.na(y$common.dispersion)) {
+    stop("Cannot estimate edgeR dispersion for this pair — need at least 2 replicates per group.")
+  }
+  et <- edgeR::exactTest(y, pair = c(2L, 1L))
+  tt <- edgeR::topTags(et, n = Inf, sort.by = "none")$table
+  vs <- paste0(test_group, " vs ", ref_group)
+  .diff_format_native_result(
+    feature = rownames(tt),
+    group_var = group_var,
+    method = "edgeR",
+    vs = vs,
+    pvalue = tt$PValue,
+    log2fc = tt$logFC,
+    padj = tt$FDR,
+    comparison_mode = "pairwise",
+    n_groups = 2L
+  )
+}
+
+.diff_native_edger_lrt <- function(empt, group_var, filter_low = TRUE) {
+  if (!requireNamespace("edgeR", quietly = TRUE)) stop("edgeR package is required.")
+  prep_g <- .diff_prepare_group_column(empt, group_var)
+  if (prep_g$n_groups < 3L) {
+    stop("Multi-group LRT requires at least 3 groups. Use pairwise or all-pairwise mode for fewer groups.")
+  }
+  prep <- .diff_filter_counts(prep_g$empt, prep_g$group_col, filter_low = filter_low)
+  grp <- prep$coldata[[prep_g$group_col]]
+  y <- edgeR::DGEList(counts = prep$counts, group = grp)
+  y <- edgeR::calcNormFactors(y)
+  design <- stats::model.matrix(~ grp)
+  y <- edgeR::estimateDisp(y, design)
+  if (is.na(y$common.dispersion) || all(is.na(y$tagwise.dispersion))) {
+    stop("Cannot estimate edgeR dispersion for multi-group LRT — need more replicates per group.")
+  }
+  fit <- edgeR::glmFit(y, design)
+  coef_cols <- seq(2L, ncol(design))
+  if (length(coef_cols) < 1L) {
+    stop("Not enough group coefficients for edgeR multi-group LRT.")
+  }
+  lrt <- edgeR::glmLRT(fit, coef = coef_cols)
+  tt <- edgeR::topTags(lrt, n = Inf, sort.by = "none")$table
+  .diff_format_native_result(
+    feature = rownames(tt),
+    group_var = group_var,
+    method = "edgeR",
+    vs = prep_g$label_display,
+    pvalue = tt$PValue,
+    log2fc = NA_real_,
+    padj = tt$FDR,
+    sign_group = "multi-group LRT",
+    comparison_mode = "multi_lrt",
+    n_groups = prep_g$n_groups
+  )
+}
+
+.diff_all_pairwise_native <- function(empt, group_var, method = "DESeq2", filter_low = TRUE,
+                                      on_progress = NULL) {
+  prep_g <- .diff_prepare_group_column(empt, group_var)
+  groups_orig <- sort(unique(prep_g$safe_to_orig))
+  if (length(groups_orig) < 2) stop("Need at least 2 groups for all-pairwise comparisons.")
+  pairs <- utils::combn(groups_orig, 2, simplify = FALSE)
+  chunks <- vector("list", length(pairs))
+  for (i in seq_along(pairs)) {
+    if (!is.null(on_progress) && is.function(on_progress)) {
+      pct <- 20 + floor(70 * (i - 1) / max(1L, length(pairs)))
+      tryCatch(on_progress(pct, paste0("Pair ", i, "/", length(pairs), ": ",
+                                       pairs[[i]][2], " vs ", pairs[[i]][1])),
+               error = function(e) NULL)
+    }
+    ref_g <- pairs[[i]][1]
+    test_g <- pairs[[i]][2]
+    chunks[[i]] <- if (identical(method, "edgeR")) {
+      .diff_native_edger_pairwise(prep_g$empt, group_var, ref_g, test_g, filter_low)
+    } else {
+      .diff_native_deseq2_pairwise(prep_g$empt, group_var, ref_g, test_g, filter_low)
+    }
+    chunks[[i]]$comparison_mode <- "all_pairwise"
+    chunks[[i]]$n_groups <- prep_g$n_groups
+  }
+  out <- do.call(rbind, chunks)
+  rownames(out) <- NULL
+  out
+}
+
+.diff_run_native_multi <- function(session_id, experiment, empt, group_var, method_raw,
+                                   comparison_mode, filter_low, on_progress) {
+  bump <- function(pct, msg = NULL) {
+    if (!is.null(on_progress) && is.function(on_progress)) {
+      tryCatch(on_progress(pct, msg), error = function(e) NULL)
+    }
+  }
+  native_method <- if (tolower(method_raw) %in% c("edger")) "edgeR" else "DESeq2"
+  already_filtered <- isTRUE(filter_low)
+  fl <- if (already_filtered) FALSE else filter_low
+  if (comparison_mode == "multi_lrt") {
+    bump(12, paste0("Running ", native_method, " multi-group LRT (overall)"))
+    lrt_df <- tryCatch(
+      if (native_method == "edgeR") {
+        .diff_native_edger_lrt(empt, group_var, filter_low = fl)
+      } else {
+        .diff_native_deseq2_lrt(empt, group_var, filter_low = fl)
+      },
+      error = function(e) {
+        bump(16, paste0("LRT skipped: ", conditionMessage(e)))
+        NULL
+      }
+    )
+    bump(22, paste0("Running ", native_method, " all-pairwise comparisons (log2FC)"))
+    pair_df <- .diff_all_pairwise_native(
+      empt, group_var, method = native_method, filter_low = fl, on_progress = on_progress
+    )
+    if (is.null(lrt_df)) {
+      result <- pair_df
+      result$comparison_mode <- "multi_lrt"
+    } else {
+      lrt_cols <- lrt_df[, c("feature", "pvalue", "fdr"), drop = FALSE]
+      names(lrt_cols) <- c("feature", "lrt_pvalue", "lrt_fdr")
+      result <- merge(pair_df, lrt_cols, by = "feature", all.x = TRUE, sort = FALSE)
+      result$comparison_mode <- "multi_lrt"
+      rownames(result) <- NULL
+    }
+  } else {
+    bump(20, paste0("Running ", native_method, " all-pairwise comparisons"))
+    result <- .diff_all_pairwise_native(
+      empt, group_var, method = native_method, filter_low = fl, on_progress = on_progress
+    )
+  }
+  empt <- .diff_store_result(empt, result, group_var, native_method)
+  bump(90, "Saving results")
+  save_empt(session_id, experiment, empt)
+  bump(100, "Done")
+  result
+}
+
+.diff_strip_internal_group_cols <- function(empt) {
+  cd <- as.data.frame(SummarizedExperiment::colData(empt))
+  drop <- grep("(_safe|__emp)$", names(cd), ignore.case = TRUE, value = TRUE)
+  if (length(drop)) {
+    cd <- cd[, setdiff(names(cd), drop), drop = FALSE]
+    SummarizedExperiment::colData(empt) <- .diff_as_coldata(cd)
+  }
+  empt
+}
+
+.diff_store_result <- function(empt, result, group_var, method_label) {
+  empt <- .diff_strip_internal_group_cols(empt)
+  empt@deposit[["diff_analysis_result"]] <- result
+  if (!is.null(empt@metadata)) {
+    tryCatch({
+      empt@metadata$estimate_group <- group_var
+      empt@metadata$method <- method_label
+    }, error = function(e) NULL)
+  }
+  empt
+}
+
 run_diff <- function(session_id, experiment, method = "DESeq2",
                      group_var = NULL, ref_group = NULL, test_group = NULL,
                      filter_low = TRUE, subset_two_groups = TRUE,
+                     comparison_mode = "pairwise",
                      cores = "auto", on_progress = NULL) {
   bump <- function(pct, msg = NULL) {
     if (!is.null(on_progress) && is.function(on_progress)) {
@@ -199,11 +535,35 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
   if (length(group_vals) < 2) {
     stop("Grouping variable must contain at least two categories.")
   }
-  if (is.null(ref_group) || ref_group == "") ref_group <- group_vals[1]
-  if (is.null(test_group) || test_group == "") test_group <- group_vals[2]
-  if (identical(ref_group, test_group)) stop("Reference and test groups must be different.")
 
-  method_use <- if (is.null(method) || method == "") "wilcox.test" else method
+  method_raw <- if (is.null(method) || method == "") "wilcox.test" else as.character(method)[1]
+  comparison_mode <- tolower(trimws(as.character(comparison_mode %||% "pairwise")))
+  if (!comparison_mode %in% c("pairwise", "all_pairwise", "multi_lrt")) {
+    comparison_mode <- "pairwise"
+  }
+  multi_capable <- tolower(method_raw) %in% c("deseq2", "edger")
+  if (comparison_mode != "pairwise" && !multi_capable) {
+    stop("All-pairwise and multi-group LRT are only supported for DESeq2 and edgeR.")
+  }
+  if (comparison_mode %in% c("all_pairwise", "multi_lrt")) {
+    subset_two_groups <- FALSE
+  }
+  # Safety: UI may send subset=false with 3+ groups while comparison_mode was lost in transit.
+  if (comparison_mode == "pairwise" && multi_capable && !isTRUE(subset_two_groups) &&
+      length(group_vals) >= 3L) {
+    comparison_mode <- "all_pairwise"
+    bump(4, paste0("Using all-pairwise (", length(group_vals), " groups, with log2FC)"))
+  } else {
+    bump(4, paste0("Comparison mode: ", comparison_mode))
+  }
+
+  if (comparison_mode == "pairwise") {
+    if (is.null(ref_group) || ref_group == "") ref_group <- group_vals[1]
+    if (is.null(test_group) || test_group == "") test_group <- group_vals[2]
+    if (identical(ref_group, test_group)) stop("Reference and test groups must be different.")
+  }
+
+  method_use <- method_raw
   alias_map <- c(
     "wilcox" = "wilcox.test",
     "t.test" = "t.test",
@@ -257,6 +617,14 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
   gv_eff <- group_var
   ref_eff <- ref_group
   test_eff <- test_group
+
+  if (comparison_mode %in% c("multi_lrt", "all_pairwise") && multi_capable) {
+    return(.diff_run_native_multi(
+      session_id, experiment, empt, group_var, method_raw,
+      comparison_mode, filter_low, on_progress
+    ))
+  }
+
   if (using_tidybulk) {
     san <- .diff_sanitize_groups(empt, group_var, ref_group, test_group)
     empt <- san$empt
@@ -287,9 +655,22 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
     }
   }
 
+  no_fallback <- c(
+    "DESeq2", "edgeR_quasi_likelihood", "edgeR_likelihood_ratio",
+    "edger_robust_likelihood_ratio", "limma_voom", "limma_voom_sample_weights"
+  )
+
   empt <- tryCatch(
     run_selected(method_use),
     error = function(e) {
+      if (method_use %in% no_fallback) {
+        msg <- conditionMessage(e)
+        if (length(group_vals) >= 3L && !isTRUE(subset_two_groups) &&
+            tolower(method_raw) %in% c("deseq2", "edger")) {
+          stop(msg, " Select Comparison mode = Multi-group LRT or All pairwise.", call. = FALSE)
+        }
+        stop("Differential analysis failed for '", method_use, "': ", msg, call. = FALSE)
+      }
       if (!identical(method_use, "wilcox.test")) {
         bump(60, "Falling back to wilcox.test")
         tryCatch(run_selected("wilcox.test"),
@@ -303,6 +684,7 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
   )
 
   bump(90, "Saving results")
+  empt <- .diff_strip_internal_group_cols(empt)
   save_empt(session_id, experiment, empt)
 
   result <- tryCatch(
@@ -981,7 +1363,8 @@ run_enrichment <- function(session_id, experiment,
       } else {
         p <- clusterProfiler::barplot(res, showCategory = min(as.integer(top_n), 20)) +
           ggplot2::labs(title = paste0(toupper(method_use), " enrichment (",
-                                          direction, " DEGs, ", org_use, ")"))
+                                          direction, " DEGs, ", org_use, ")")) +
+          emp_pub_theme(base_size = 11)
         plot_to_base64(p, width = 9, height = 7)
       }
     }, error = function(e) NA_character_)
