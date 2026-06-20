@@ -46,6 +46,39 @@ function Resolve-EMPRscriptExe {
   return $null
 }
 
+# Resolve a usable Python launcher for the static web server:
+#   1. EMPI_PYTHON = full path to python.exe
+#   2. `py -3` launcher (official python.org installer ships it)
+#   3. python.exe on PATH (skips the Windows Store alias stub)
+# Returns a string you can invoke, e.g. "py -3" or "C:\...\python.exe".
+function Resolve-EMPPython {
+  if ($env:EMPI_PYTHON -and (Test-Path -LiteralPath $env:EMPI_PYTHON)) {
+    return ('"' + (Resolve-Path -LiteralPath $env:EMPI_PYTHON).Path + '"')
+  }
+  $py = Get-Command py.exe -ErrorAction SilentlyContinue
+  if ($py -and $py.Source) {
+    # Confirm a 3.x interpreter is actually registered with the launcher.
+    try {
+      $v = & $py.Source -3 --version 2>&1
+      if ($LASTEXITCODE -eq 0 -and "$v" -match "Python 3") { return "py -3" }
+    } catch {}
+  }
+  $python = Get-Command python.exe -ErrorAction SilentlyContinue
+  if ($python -and $python.Source) {
+    # The Windows Store "python.exe" alias lives under WindowsApps and only
+    # opens the Store; skip it so we don't silently fail to serve the UI.
+    if ($python.Source -notmatch "WindowsApps") {
+      try {
+        $v = & $python.Source --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and "$v" -match "Python 3") {
+          return ('"' + $python.Source + '"')
+        }
+      } catch {}
+    }
+  }
+  return $null
+}
+
 # Kill processes in Listen state on these ports (repeat: some stacks expose IPv4/IPv6 separately).
 function Stop-EMPListenersOnPorts {
   param([Parameter(Mandatory)][int[]]$Ports)

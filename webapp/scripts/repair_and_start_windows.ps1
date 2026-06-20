@@ -16,6 +16,9 @@ Rscript.exe not found.
 "@
 }
 
+Write-Host "=== [0/2] Prerequisites ==="
+& "$PSScriptRoot\check_prerequisites.ps1"
+
 Write-Host "=== [1/2] Repair: install_runtime.R ==="
 Write-Host "Using Rscript: $RscriptExe"
 $installR = Join-Path $Root "webapp\scripts\install_runtime.R"

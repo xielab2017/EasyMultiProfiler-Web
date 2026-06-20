@@ -195,8 +195,14 @@ apply_merged_coldata <- function(session_id, empt) {
   )
 }
 
+.coldata_is_internal_column <- function(nm) {
+  grepl("(_safe|__emp)$", nm, ignore.case = TRUE)
+}
+
 .coldata_column_summaries <- function(cd, max_values = 100L) {
-  lapply(names(cd), function(col) {
+  nms <- names(cd)
+  nms <- nms[!vapply(nms, .coldata_is_internal_column, logical(1))]
+  lapply(nms, function(col) {
     vals <- unique(na.omit(as.character(cd[[col]])))
     vals <- vals[nzchar(vals)]
     list(

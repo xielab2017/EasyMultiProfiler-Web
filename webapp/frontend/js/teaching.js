@@ -1,22 +1,26 @@
 /**
  * Teaching mode: video-gated cases, prompts, learning trace.
  */
-import * as API from "./api.js?v=2026-06-20-genz-v1";
+import * as API from "./api.js?v=2026-06-20-v5.0.0";
+import { omicsDefaultsHint } from "./omics_defaults.js?v=2026-06-20-v5.0.0";
+import { getLocale, t } from "./locale.js?v=2026-06-20-v5.0.0";
 
 const LS_CASE = "emp_teaching_active_case";
 
-const EMP_PAGE_LABELS = {
-  import: "导入数据 Data",
-  summary: "数据概览 Summary",
-  inspector: "数据检查 Inspector",
-  preparation: "预处理 Prepare",
-  analysis: "分析 Analyze",
-  clinical: "临床 Clinical",
-  runall: "一键运行 Run All",
-  visualization: "可视化 Visualize",
-  export: "导出 Export",
-  prompts: "AI Prompt 库",
-};
+const EMP_PAGE_LABELS = () => ({
+  course: t("page.course"),
+  guide: t("page.guide"),
+  import: t("page.import"),
+  summary: t("page.summary"),
+  inspector: t("page.inspector"),
+  preparation: t("page.preparation"),
+  analysis: t("page.analysis"),
+  clinical: t("page.clinical"),
+  runall: t("page.runall"),
+  visualization: t("page.visualization"),
+  export: t("page.export"),
+  prompts: t("page.prompts"),
+});
 
 function teachToast(msg, type = "info") {
   window.dispatchEvent(new CustomEvent("emp:toast", { detail: { msg, type } }));
@@ -29,16 +33,16 @@ const OMICS_PATHS = {
   metagenomics: "Import → Prepare → Analyze → Visualize",
 };
 
-const PHASE_LABELS = {
-  import: "数据导入",
-  prepare: "质控与预处理",
-  analysis: "核心分析",
-  visualization: "可视化",
-  interpretation: "结果解读与假设",
-  question: "科学问题",
-  method: "方法 / 数据",
-  hypothesis: "假设 / 表达",
-};
+const PHASE_LABELS = () => ({
+  import: t("teach.phase.import"),
+  prepare: t("teach.phase.prepare"),
+  analysis: t("teach.phase.analysis"),
+  visualization: t("teach.phase.visualization"),
+  interpretation: t("teach.phase.interpretation"),
+  question: t("teach.phase.question"),
+  method: t("teach.phase.method"),
+  hypothesis: t("teach.phase.hypothesis"),
+});
 
 export function activeCaseId() {
   return localStorage.getItem(LS_CASE);
@@ -92,7 +96,7 @@ function renderStoryboard(items) {
   if (!rows) return "";
   return `
     <details class="teaching-storyboard">
-      <summary>分镜脚本 / 画面提示</summary>
+      <summary>${t("teach.storyboard")}</summary>
       <ul class="teaching-sb-list">${rows}</ul>
     </details>`;
 }
@@ -102,7 +106,7 @@ function renderTakeaways(items) {
   if (!lis) return "";
   return `
     <div class="teaching-takeaways">
-      <h5>关键要点</h5>
+      <h5>${t("teach.takeaways")}</h5>
       <ul>${lis}</ul>
     </div>`;
 }
@@ -120,9 +124,9 @@ function renderReferenceLink(v) {
   if (!v.youtube_id) return "";
   const start = v.clip_start != null && v.clip_start !== "" ? `&t=${Number(v.clip_start)}` : "";
   const url = `https://www.youtube.com/watch?v=${encodeURIComponent(v.youtube_id)}${start}`;
-  const note = v.source_note ? esc(v.source_note) : "外部参考视频";
+  const note = v.source_note ? esc(v.source_note) : t("teach.extRef");
   return `
-    <p class="teaching-refsource hint">延伸参考：<a href="${url}" target="_blank" rel="noopener noreferrer">${note} ↗</a></p>`;
+    <p class="teaching-refsource hint">${t("teach.refVideo")}<a href="${url}" target="_blank" rel="noopener noreferrer">${note} ↗</a></p>`;
 }
 
 function renderVideoBlock(v) {
@@ -132,13 +136,13 @@ function renderVideoBlock(v) {
         <span class="tag teaching-video-aspect">${esc(v.step_label || v.aspect_label || v.aspect)}</span>
         <strong>${esc(v.title)}</strong>
         <span class="hint">${esc(v.duration || "")}</span>
-        <span class="tag teaching-orig-tag">科普动画 · 中文配音</span>
+        <span class="tag teaching-orig-tag">${t("teach.lessonTag")}</span>
       </div>
-      ${v.objective ? `<p class="teaching-lesson-objective"><span class="teaching-lesson-tag">学习目标</span>${esc(v.objective)}</p>` : ""}
+      ${v.objective ? `<p class="teaching-lesson-objective"><span class="teaching-lesson-tag">${t("teach.objective")}</span>${esc(v.objective)}</p>` : ""}
       ${renderLocalVideo(v)}
       ${v.description ? `<p class="hint teaching-video-desc">${esc(v.description)}</p>` : ""}
       <details class="teaching-script-fold">
-        <summary>讲解文稿（视频字幕全文）</summary>
+        <summary>${t("teach.script")}</summary>
         <div class="teaching-lesson-script">${renderScript(v.script)}</div>
       </details>
       ${renderTakeaways(v.takeaways)}
@@ -147,63 +151,63 @@ function renderVideoBlock(v) {
     </div>`;
 }
 
-function renderQuizBlock(t, caseId) {
-  if (!t.quiz?.questions?.length) return "";
-  if (t.quiz_passed) {
-    return '<p class="teaching-quiz-passed">✓ 测验已通过，可进行实操与反思。</p>';
+function renderQuizBlock(task, caseId) {
+  if (!task.quiz?.questions?.length) return "";
+  if (task.quiz_passed) {
+    return `<p class="teaching-quiz-passed">${t("teach.quizPassed")}</p>`;
   }
-  const qs = t.quiz.questions.map((q, qi) => `
+  const qs = task.quiz.questions.map((q, qi) => `
     <fieldset class="teaching-quiz-q" data-qid="${esc(q.id)}">
       <legend>${qi + 1}. ${esc(q.question)}</legend>
       ${(q.options || []).map((opt, oi) => `
         <label class="teaching-quiz-opt">
-          <input type="radio" name="quiz-${esc(t.id)}-${esc(q.id)}" value="${oi}">
+          <input type="radio" name="quiz-${esc(task.id)}-${esc(q.id)}" value="${oi}">
           ${esc(opt)}
         </label>`).join("")}
     </fieldset>`).join("");
   return `
-    <div class="teaching-quiz" data-case="${esc(caseId)}" data-task="${esc(t.id)}">
-      <h4>步骤测验（需全部答对才能解锁下一步）</h4>
-      <p class="hint">请先学习上方背景微课，再完成 ${t.quiz.questions.length} 道选择题。</p>
+    <div class="teaching-quiz" data-case="${esc(caseId)}" data-task="${esc(task.id)}">
+      <h4>${t("teach.quizTitle")}</h4>
+      <p class="hint">${t("teach.quizHint", null, { n: task.quiz.questions.length })}</p>
       ${qs}
       <div class="teaching-quiz-actions">
-        <button type="button" class="btn btn-primary btn-submit-quiz">提交测验</button>
+        <button type="button" class="btn btn-primary btn-submit-quiz">${t("teach.submitQuiz")}</button>
         <span class="teaching-quiz-feedback hint"></span>
       </div>
     </div>`;
 }
 
-function renderTaskCard(t, i, caseId) {
-  const locked = !t.unlocked;
-  const videos = (t.videos || []).map(renderVideoBlock).join("");
-  const quiz = locked ? "" : renderQuizBlock(t, caseId);
-  const canPractice = t.quiz_passed;
-  const done = t.reflection_done;
+function renderTaskCard(task, i, caseId) {
+  const locked = !task.unlocked;
+  const videos = (task.videos || []).map(renderVideoBlock).join("");
+  const quiz = locked ? "" : renderQuizBlock(task, caseId);
+  const canPractice = task.quiz_passed;
+  const done = task.reflection_done;
 
-  const empLabel = t.emp_page ? (EMP_PAGE_LABELS[t.emp_page] || t.emp_page) : "";
+  const empLabel = task.emp_page ? (EMP_PAGE_LABELS()[task.emp_page] || task.emp_page) : "";
   return `
-    <article class="teaching-task-card ${done ? "is-done" : ""} ${locked ? "is-locked" : ""} ${t.quiz_passed ? "quiz-done" : ""}" data-task-id="${esc(t.id)}">
-      ${locked ? '<div class="teaching-lock-banner">🔒 请先完成上一步视频测验以解锁</div>' : ""}
+    <article class="teaching-task-card ${done ? "is-done" : ""} ${locked ? "is-locked" : ""} ${task.quiz_passed ? "quiz-done" : ""}" data-task-id="${esc(task.id)}">
+      ${locked ? `<div class="teaching-lock-banner">${t("teach.lockBanner")}</div>` : ""}
       <header>
         <span class="teaching-task-num">${i + 1}</span>
-        <span class="tag">${esc(PHASE_LABELS[t.phase] || t.phase)}</span>
-        ${t.quiz_passed ? '<span class="tag tag-ok">测验通过</span>' : ""}
-        ${done ? '<span class="tag tag-ok">反思已提交</span>' : ""}
-        <h3>${esc(t.title)}</h3>
+        <span class="tag">${esc(PHASE_LABELS()[task.phase] || task.phase)}</span>
+        ${task.quiz_passed ? `<span class="tag tag-ok">${t("teach.quizOk")}</span>` : ""}
+        ${done ? `<span class="tag tag-ok">${t("teach.reflectionDone")}</span>` : ""}
+        <h3>${esc(task.title)}</h3>
       </header>
-      <p>${esc(t.instructions)}</p>
+      <p>${esc(task.instructions)}</p>
       ${videos ? `<div class="teaching-videos">${videos}</div>` : ""}
       ${quiz}
       <div class="teaching-practice ${canPractice ? "" : "is-disabled"}">
-        ${t.emp_page ? `<button type="button" class="btn btn-outline btn-goto-emp" data-page="${esc(t.emp_page)}" ${canPractice ? "" : "disabled"}>前往实操：${esc(empLabel)}</button>` : ""}
-        <label class="teaching-reflection-label">${esc(t.reflection_prompt || "学习反思")}
-          <textarea class="teaching-reflection" rows="3" data-case="${esc(caseId)}" data-task="${esc(t.id)}" ${canPractice ? "" : "disabled"}></textarea>
+        ${task.emp_page ? `<button type="button" class="btn btn-outline btn-goto-emp" data-page="${esc(task.emp_page)}" ${canPractice ? "" : "disabled"}>${t("teach.gotoEmp")}${esc(empLabel)}</button>` : ""}
+        <label class="teaching-reflection-label">${esc(task.reflection_prompt || t("teach.reflection"))}
+          <textarea class="teaching-reflection" rows="3" data-case="${esc(caseId)}" data-task="${esc(task.id)}" ${canPractice ? "" : "disabled"}></textarea>
         </label>
-        <label class="teaching-reflection-label">AI 使用声明（可选）
-          <input type="text" class="teaching-ai-decl" data-case="${esc(caseId)}" data-task="${esc(t.id)}" placeholder="例：仅用 AI 解释参数，结果解读为本人修改" ${canPractice ? "" : "disabled"}>
+        <label class="teaching-reflection-label">${t("teach.aiDecl")}
+          <input type="text" class="teaching-ai-decl" data-case="${esc(caseId)}" data-task="${esc(task.id)}" placeholder="${esc(t("teach.aiDeclPh"))}" ${canPractice ? "" : "disabled"}>
         </label>
-        <button type="button" class="btn btn-primary btn-save-reflection" data-case="${esc(caseId)}" data-task="${esc(t.id)}" ${canPractice ? "" : "disabled"}>提交反思</button>
-        ${!canPractice && !locked ? '<p class="hint">通过本步测验后可进行 EMP 实操与反思提交。</p>' : ""}
+        <button type="button" class="btn btn-primary btn-save-reflection" data-case="${esc(caseId)}" data-task="${esc(task.id)}" ${canPractice ? "" : "disabled"}>${t("teach.saveReflection")}</button>
+        ${!canPractice && !locked ? `<p class="hint">${t("teach.practiceHint")}</p>` : ""}
       </div>
     </article>`;
 }
@@ -237,7 +241,7 @@ async function renderCaseList() {
         <h3>${esc(c.title)}</h3>
         <p class="hint">${esc(c.subtitle || "")}</p>
         <span class="tag">${esc(c.omics || "")}</span>
-        <span class="tag">${tasks.length} 个步骤</span>
+        <span class="tag">${tasks.length}${t("course.steps")}</span>
       </button>`;
     }).join("");
     list.querySelectorAll(".teaching-case-card").forEach((btn) => {
@@ -245,9 +249,9 @@ async function renderCaseList() {
     });
     const saved = activeCaseId();
     if (saved) loadCaseDetail(saved);
-    else if (detail) detail.innerHTML = '<p class="hint">选择左侧组学，按步骤学习 3-5 分钟背景微课并通过测验解锁下一步。</p>';
+    else if (detail) detail.innerHTML = `<p class="hint">${t("course.selectHint")}</p>`;
   } catch (e) {
-    list.innerHTML = `<p class="hint">无法加载案例：${esc(e.message)}</p>`;
+    list.innerHTML = `<p class="hint">${t("course.loadFail")}${esc(e.message)}</p>`;
   }
 }
 
@@ -354,9 +358,11 @@ async function loadCaseDetail(caseId) {
         <p>${esc(c.background)}</p>
         <p class="hint"><strong>数据提示：</strong>${esc(c.data_hint)}</p>
         <p class="hint"><strong>推荐路径：</strong>${esc(OMICS_PATHS[c.omics] || "Import → Prepare → Analyze → Visualize")}</p>
+        <p class="hint"><strong>推荐参数：</strong>${esc(omicsDefaultsHint(c.omics))}</p>
         <p class="hint"><strong>学习流程：</strong>观看教学视频 → 完成测验（全部正确）→ 解锁下一步 → EMP 实操与反思</p>
         <div class="btn-row teaching-case-actions">
           <button type="button" class="btn btn-primary btn-load-case-demo" data-omics="${esc(c.omics || "")}">一键加载本课示例数据</button>
+          <button type="button" class="btn btn-outline btn-apply-case-defaults" data-omics="${esc(c.omics || "")}">套用推荐参数</button>
         </div>
       </div>
       <div class="teaching-task-list">
@@ -377,6 +383,11 @@ async function loadCaseDetail(caseId) {
       window.dispatchEvent(new CustomEvent("emp:import-demo", { detail: { datasetId: demoId, omics } }));
       teachToast("正在加载课程示例数据…", "info");
     });
+    detail.querySelector(".btn-apply-case-defaults")?.addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("emp:apply-omics-defaults", {
+        detail: { omics: c.omics || "" },
+      }));
+    });
     await traceEvent({ event_type: "case_open", case_id: caseId });
   } catch (e) {
     detail.innerHTML = `<p class="hint">加载失败：${esc(e.message)}</p>`;
@@ -394,14 +405,14 @@ async function renderPromptLibrary() {
       <div class="card teaching-prompt-cat">
         <h3>${esc(cat.title)}</h3>
         <p class="hint">${esc(cat.description)}</p>
-        ${(cat.templates || []).map((t) => `
+        ${(cat.templates || []).map((tpl) => `
           <details class="teaching-prompt-item">
-            <summary>${esc(t.title)}</summary>
-            <p class="hint"><strong>用途：</strong>${esc(t.usage)}</p>
-            <p class="hint"><strong>常见错误：</strong>${(t.pitfalls || []).map(esc).join("；")}</p>
-            <pre class="teaching-prompt-text">${esc(t.prompt)}</pre>
-            <button type="button" class="btn btn-outline btn-copy-prompt">复制 Prompt</button>
-            <button type="button" class="btn btn-primary btn-use-prompt">填入 LLM 优化说明</button>
+            <summary>${esc(tpl.title)}</summary>
+            <p class="hint"><strong>${t("prompts.usage")}</strong>${esc(tpl.usage)}</p>
+            <p class="hint"><strong>${t("prompts.pitfalls")}</strong>${(tpl.pitfalls || []).map(esc).join(getLocale() === "en" ? "; " : "；")}</p>
+            <pre class="teaching-prompt-text">${esc(tpl.prompt)}</pre>
+            <button type="button" class="btn btn-outline btn-copy-prompt">${t("prompts.copy")}</button>
+            <button type="button" class="btn btn-primary btn-use-prompt">${t("prompts.use")}</button>
           </details>
         `).join("")}
       </div>`).join("");
@@ -411,18 +422,18 @@ async function renderPromptLibrary() {
       item.querySelector(".btn-copy-prompt")?.addEventListener("click", async () => {
         await navigator.clipboard.writeText(pre.textContent);
         traceEvent({ event_type: "prompt_copy", template: item.querySelector("summary")?.textContent });
-        teachToast("Prompt 已复制到剪贴板", "success");
+        teachToast(t("prompts.copied"), "success");
       });
       item.querySelector(".btn-use-prompt")?.addEventListener("click", () => {
         const inst = document.getElementById("code-lab-llm-instruction");
         if (inst) inst.value = pre.textContent;
         traceEvent({ event_type: "prompt_use", template: item.querySelector("summary")?.textContent });
         window.dispatchEvent(new CustomEvent("emp:open-code-lab", { detail: { page: "analysis" } }));
-        teachToast("已填入 Code Lab 并打开面板", "success");
+        teachToast(t("prompts.applied"), "success");
       });
     });
   } catch (e) {
-    root.innerHTML = `<p class="hint">无法加载 Prompt 库：${esc(e.message)}</p>`;
+    root.innerHTML = `<p class="hint">${t("prompts.loadFail")}${esc(e.message)}</p>`;
   }
 }
 
@@ -436,19 +447,19 @@ async function renderCritiqueLab() {
       <div class="card teaching-critique-card" data-case-id="${esc(c.id)}">
         <h3>${esc(c.title)}</h3>
         <p class="teaching-ai-error">${esc(c.ai_text)}</p>
-        <p class="hint">提示：${(c.hints || []).map(esc).join("；")}</p>
+        <p class="hint">${t("teach.critiqueHint")}${(c.hints || []).map(esc).join(getLocale() === "en" ? "; " : "；")}</p>
         <fieldset>
-          <legend>错误类型（多选）</legend>
+          <legend>${t("teach.errorTypes")}</legend>
           ${(c.error_types || []).map((t) => `
             <label class="teaching-check"><input type="checkbox" value="${esc(t)}"> ${esc(t)}</label>`).join("")}
         </fieldset>
-        <label>正确解读
+        <label>${t("teach.correctInterp")}
           <textarea class="teaching-critique-correction" rows="4" placeholder="${esc(c.correction_guide || "")}"></textarea>
         </label>
-        <label>如何改进 Prompt
-          <input type="text" class="teaching-critique-prompt" placeholder="例：要求仅基于给定统计量解读，禁止推断因果">
+        <label>${t("teach.improvePrompt")}
+          <input type="text" class="teaching-critique-prompt" placeholder="${esc(t("teach.improvePromptPh"))}">
         </label>
-        <button type="button" class="btn btn-primary btn-submit-critique">提交纠错</button>
+        <button type="button" class="btn btn-primary btn-submit-critique">${t("teach.submitCritique")}</button>
       </div>`).join("");
 
     root.querySelectorAll(".teaching-critique-card").forEach((card) => {
@@ -464,7 +475,7 @@ async function renderCritiqueLab() {
             correction,
             prompt_reflection,
           });
-          teachToast("纠错练习已记录。", "success");
+          teachToast(t("teach.critiqueSaved"), "success");
         } catch (err) {
           teachToast(err.message || String(err), "error");
         }
@@ -530,6 +541,12 @@ export async function initTeaching() {
   window.addEventListener("emp:navigate", (e) => {
     const page = e.detail?.page;
     if (page && typeof window.__empNavigate === "function") window.__empNavigate(page);
+  });
+  window.addEventListener("emp:locale-change", async () => {
+    if (document.getElementById("page-course")?.classList.contains("active")) await renderCaseList();
+    if (document.getElementById("page-prompts")?.classList.contains("active")) await renderPromptLibrary();
+    const critique = document.getElementById("teaching-panel-critique");
+    if (critique && !critique.classList.contains("hidden")) await renderCritiqueLab();
   });
 }
 

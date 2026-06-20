@@ -134,12 +134,15 @@ export async function optimizeRCode(params = {}) {
     tab:         params.tab ?? null,
     source_code: params.source_code ?? params.code ?? "",
     instruction: params.instruction ?? "",
+    ui_context:  params.ui_context ?? null,
   });
 }
 
 // AI copilot: interpret an analysis result and suggest next steps. Reuses the
 // Code Lab LLM config if the student configured one; otherwise the backend
 // falls back to a deterministic offline interpretation.
+import { getLocale } from "./locale.js?v=2026-06-20-v5.0.0";
+
 export async function aiInterpret(context = {}, opts = {}) {
   let provider = opts.provider ?? null;
   let config = opts.config ?? null;
@@ -152,11 +155,44 @@ export async function aiInterpret(context = {}, opts = {}) {
       }
     } catch { /* ignore malformed config */ }
   }
+  const locale = context.locale ?? context.lang ?? opts.locale ?? getLocale();
   return request("POST", "/ai/interpret", {
-    context,
+    context: { ...context, locale, lang: locale },
+    locale,
+    user_id: opts.user_id ?? getEvolutionUserId(),
+    session_id: sessionId(),
     provider: provider ?? "campus",
     config: config ?? {},
   });
+}
+
+function getEvolutionUserId() {
+  try {
+    let id = localStorage.getItem("emp_evolution_user_id");
+    if (!id) {
+      id = typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `u_${Date.now().toString(36)}`;
+      localStorage.setItem("emp_evolution_user_id", id);
+    }
+    return id;
+  } catch {
+    return "anonymous";
+  }
+}
+
+export async function evolutionEvent(body = {}) {
+  return request("POST", "/evolution/event", {
+    user_id: body.user_id ?? getEvolutionUserId(),
+    session_id: body.session_id ?? sessionId(),
+    event_type: body.event_type ?? body.type ?? "generic",
+    payload: body.payload ?? body,
+  });
+}
+
+export async function evolutionProfile(userId = null) {
+  const uid = userId ?? getEvolutionUserId();
+  return request("GET", `/evolution/profile?user_id=${encodeURIComponent(uid)}`);
 }
 
 export async function listExperiments() {

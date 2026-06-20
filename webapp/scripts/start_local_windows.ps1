@@ -20,6 +20,20 @@ Rscript.exe not found.
 }
 Write-Host "Using Rscript: $RscriptExe"
 
+$PythonCmd = Resolve-EMPPython
+if (-not $PythonCmd) {
+  Write-Error @"
+Python 3 not found (needed to serve the web UI).
+  Install it one of these ways, then re-run:
+    winget install -e --id Python.Python.3.12
+    or download from https://www.python.org/downloads/ (tick "Add python.exe to PATH")
+  Or point us at an existing interpreter:
+    `$env:EMPI_PYTHON = 'C:\path\to\python.exe'
+  Note: the Microsoft Store 'python' stub is ignored on purpose.
+"@
+}
+Write-Host "Using Python: $PythonCmd"
+
 $ApiLog = Join-Path $RunDir "api.log"
 $WebLog = Join-Path $RunDir "web.log"
 $ApiPid = Join-Path $RunDir "api.pid"
@@ -46,7 +60,7 @@ $apiProc = Start-Process -FilePath "powershell" -ArgumentList "-NoProfile","-Exe
 $apiProc.Id | Out-File -FilePath $ApiPid -Encoding ascii -Force
 
 # Bind loopback only; avoids stray 0.0.0.0 listeners and matches browser URL 127.0.0.1
-$webCmd = "cd `"$Root`"; python webapp/scripts/static_server.py $WebPort `"webapp/frontend`" *> `"$WebLog`""
+$webCmd = "cd `"$Root`"; $PythonCmd webapp/scripts/static_server.py $WebPort `"webapp/frontend`" *> `"$WebLog`""
 $webProc = Start-Process -FilePath "powershell" -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-Command",$webCmd -WindowStyle Hidden -PassThru
 $webProc.Id | Out-File -FilePath $WebPid -Encoding ascii -Force
 

@@ -27,6 +27,7 @@ source(file.path(.BACKEND_DIR, "helpers/clinical.R"))
 source(file.path(.BACKEND_DIR, "helpers/jobs.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_exec.R"))
 source(file.path(.BACKEND_DIR, "helpers/llm.R"))
+source(file.path(.BACKEND_DIR, "helpers/user_evolution.R"))
 source(file.path(.BACKEND_DIR, "helpers/ai_copilot.R"))
 source(file.path(.BACKEND_DIR, "helpers/teaching.R"))
 source(file.path(.BACKEND_DIR, "helpers/demo_data.R"))
@@ -1056,11 +1057,13 @@ function(req, res) {
     test_group <- b$test_group%||% NULL
     filter_low        <- if (is.null(b$filter_low))        TRUE else isTRUE(b$filter_low)
     subset_two_groups <- if (is.null(b$subset_two_groups)) TRUE else isTRUE(b$subset_two_groups)
+    comparison_mode   <- b$comparison_mode %||% "pairwise"
     cores             <- b$cores %||% "auto"
 
     result <- run_diff(session_id, experiment, method, group_var, ref_group,
                       test_group, filter_low = filter_low,
-                      subset_two_groups = subset_two_groups, cores = cores)
+                      subset_two_groups = subset_two_groups,
+                      comparison_mode = comparison_mode, cores = cores)
     result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
     list(success = TRUE,
@@ -1084,6 +1087,7 @@ function(req, res) {
     test_group <- b$test_group%||% NULL
     filter_low        <- if (is.null(b$filter_low))        TRUE else isTRUE(b$filter_low)
     subset_two_groups <- if (is.null(b$subset_two_groups)) TRUE else isTRUE(b$subset_two_groups)
+    comparison_mode   <- b$comparison_mode %||% "pairwise"
     cores             <- b$cores %||% "auto"
 
     job_id <- submit_job(
@@ -1093,7 +1097,7 @@ function(req, res) {
         session_id = session_id, experiment = experiment, method = method,
         group_var = group_var, ref_group = ref_group, test_group = test_group,
         filter_low = filter_low, subset_two_groups = subset_two_groups,
-        cores = cores
+        comparison_mode = comparison_mode, cores = cores
       ),
       session_id = session_id
     )
@@ -2498,11 +2502,26 @@ function(req, res) {
 }
 
 #* AI copilot: interpret an analysis result and suggest next steps
-#* Body: { context: {...}, provider?, config? }
+#* Body: { context: {...}, provider?, config?, user_id? }
 #* @post /api/ai/interpret
 #* @serializer unboxedJSON
 function(req, res) {
   plumber_ai_interpret_post(req, res)
+}
+
+#* Self-evolution: record anonymized usage event
+#* Body: { user_id, event_type, payload?, session_id? }
+#* @post /api/evolution/event
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_evolution_event_post(req, res)
+}
+
+#* Self-evolution: aggregated user profile
+#* @get /api/evolution/profile
+#* @serializer unboxedJSON
+function(req, user_id = NULL, res) {
+  plumber_evolution_profile_get(user_id, req, res)
 }
 
 # ══════════════════════════════════════════════════════════

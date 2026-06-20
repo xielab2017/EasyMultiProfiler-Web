@@ -10,14 +10,29 @@
   normalizePath(file.path(.backend_dir(), ".."), winslash = "/", mustWork = FALSE)
 }
 
+.repo_root <- function() {
+  normalizePath(file.path(.webapp_root(), ".."), winslash = "/", mustWork = FALSE)
+}
+
+.tests_dir <- function() {
+  root <- .repo_root()
+  td <- file.path(root, "tests")
+  if (dir.exists(td)) return(td)
+  file.path(.webapp_root(), "tests")
+}
+
 demo_dataset_catalog <- function() {
   root <- .webapp_root()
+  tests <- .tests_dir()
   src <- file.path(root, "test_outputs", "latest", "source_files")
-  clin_dir <- file.path(root, "..", "clinical_test")
-  clinical_raw <- file.path(clin_dir, "Clinical-test.csv")
-  clinical_meta <- file.path(clin_dir, "meta-test.csv")
-  if (!file.exists(clinical_raw)) clinical_raw <- file.path(root, "tests", "Clinical.csv")
-  if (!file.exists(clinical_meta)) clinical_meta <- file.path(root, "tests", "meta.csv")
+  clinical_raw <- file.path(tests, "Clinical-test.csv")
+  clinical_meta <- file.path(tests, "meta-test.csv")
+  if (!file.exists(clinical_raw)) clinical_raw <- file.path(tests, "Clinical.csv")
+  if (!file.exists(clinical_meta)) clinical_meta <- file.path(tests, "meta.csv")
+  rnaseq_data <- file.path(tests, "RNAseq_output.csv")
+  rnaseq_meta <- file.path(tests, "RNAseq_mapping.txt")
+  if (!file.exists(rnaseq_data)) rnaseq_data <- file.path(src, "RNAseq_output.csv")
+  if (!file.exists(rnaseq_meta)) rnaseq_meta <- file.path(src, "RNAseq_mapping.txt")
 
   datasets <- list(
     list(
@@ -30,8 +45,8 @@ demo_dataset_catalog <- function() {
       assay_name = "counts",
       start_level = "Species",
       tax_sep = ";",
-      data_file = file.path(root, "tests", "level-7.csv"),
-      metadata_file = file.path(root, "tests", "meta.csv"),
+      data_file = file.path(tests, "level-7.csv"),
+      metadata_file = file.path(tests, "meta.csv"),
       description = "Taxonomy abundance + sample metadata (UC/IBS-style cohort)."
     ),
     list(
@@ -44,8 +59,8 @@ demo_dataset_catalog <- function() {
       assay_name = "counts",
       start_level = "Species",
       tax_sep = ";",
-      data_file = file.path(src, "RNAseq_output.csv"),
-      metadata_file = file.path(src, "RNAseq_mapping.txt"),
+      data_file = rnaseq_data,
+      metadata_file = rnaseq_meta,
       description = "24-sample DMSO vs treatment count matrix + group metadata."
     ),
     list(
