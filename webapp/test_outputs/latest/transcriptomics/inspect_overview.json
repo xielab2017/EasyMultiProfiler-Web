@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "summary": {
+    "experiment": "RNAseq_test",
+    "assay_name": "counts",
+    "n_features": 19150,
+    "n_samples": 24,
+    "n_coldata_cols": 1,
+    "n_rowdata_cols": 2
+  }
+}

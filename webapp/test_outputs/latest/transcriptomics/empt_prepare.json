@@ -1,0 +1,7 @@
+{
+  "success": true,
+  "ready": true,
+  "experiment": "RNAseq_test",
+  "n_samples": 24,
+  "n_features": 19150
+}

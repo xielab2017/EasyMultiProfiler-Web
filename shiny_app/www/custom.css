@@ -1,0 +1,168 @@
+/* Custom CSS for EasyMultiProfiler Web Application */
+
+/* Main body styling */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Sidebar styling */
+.sidebar {
+  background-color: #2c3e50;
+}
+
+.sidebar-menu li a {
+  color: #ecf0f1;
+}
+
+.sidebar-menu li a:hover {
+  background-color: #34495e;
+  color: #3498db;
+}
+
+/* Header styling */
+.main-header {
+  background-color: #3498db;
+}
+
+.main-header .logo {
+  background-color: #2980b9;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+/* Box styling */
+.box {
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.box-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  font-weight: 600;
+}
+
+/* Button styling */
+.btn-primary {
+  background-color: #3498db;
+  border-color: #2980b9;
+}
+
+.btn-primary:hover {
+  background-color: #2980b9;
+  border-color: #21618c;
+}
+
+.btn-success {
+  background-color: #27ae60;
+  border-color: #229954;
+}
+
+.btn-success:hover {
+  background-color: #229954;
+  border-color: #1e8449;
+}
+
+/* Info box styling */
+.info-box {
+  border-radius: 5px;
+}
+
+.info-box-icon {
+  border-radius: 5px 0 0 5px;
+}
+
+/* Table styling */
+.dataTables_wrapper {
+  font-size: 14px;
+}
+
+/* Plot container */
+.plot-container {
+  background-color: #ffffff;
+  border-radius: 5px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+/* Loading spinner */
+.shiny-spinner-output-container {
+  position: relative;
+}
+
+/* Status indicators */
+.status-success {
+  color: #27ae60;
+}
+
+.status-error {
+  color: #e74c3c;
+}
+
+.status-warning {
+  color: #f39c12;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+  }
+}
+
+/* Dynamic menu visibility based on experiment type */
+/* Hide microbiome-specific items by default */
+.show-rnaseq .sidebar-menu a[data-value="rarefy"],
+.show-proteomics .sidebar-menu a[data-value="rarefy"],
+.show-metabolomics .sidebar-menu a[data-value="rarefy"],
+.show-functional .sidebar-menu a[data-value="rarefy"],
+.show-clinical .sidebar-menu a[data-value="rarefy"],
+.show-rnaseq .sidebar-menu a[data-value="collapse"],
+.show-proteomics .sidebar-menu a[data-value="collapse"],
+.show-metabolomics .sidebar-menu a[data-value="collapse"],
+.show-functional .sidebar-menu a[data-value="collapse"],
+.show-clinical .sidebar-menu a[data-value="collapse"],
+.show-rnaseq .sidebar-menu a[data-value="alpha"],
+.show-proteomics .sidebar-menu a[data-value="alpha"],
+.show-metabolomics .sidebar-menu a[data-value="alpha"],
+.show-functional .sidebar-menu a[data-value="alpha"],
+.show-clinical .sidebar-menu a[data-value="alpha"],
+.show-rnaseq .sidebar-menu a[data-value="sankey"],
+.show-proteomics .sidebar-menu a[data-value="sankey"],
+.show-metabolomics .sidebar-menu a[data-value="sankey"],
+.show-functional .sidebar-menu a[data-value="sankey"],
+.show-clinical .sidebar-menu a[data-value="sankey"],
+.show-rnaseq .sidebar-menu a[data-value="structure_plot"],
+.show-proteomics .sidebar-menu a[data-value="structure_plot"],
+.show-metabolomics .sidebar-menu a[data-value="structure_plot"],
+.show-functional .sidebar-menu a[data-value="structure_plot"],
+.show-clinical .sidebar-menu a[data-value="structure_plot"] {
+  display: none !important;
+}
+
+/* Hide RNAseq/Proteomics/Functional-specific items for microbiome */
+.show-microbiome .sidebar-menu a[data-value="enrichment"],
+.show-microbiome .sidebar-menu a[data-value="gsea"],
+.show-microbiome .sidebar-menu a[data-value="enrich_plots"],
+.show-metabolomics .sidebar-menu a[data-value="enrichment"],
+.show-metabolomics .sidebar-menu a[data-value="gsea"],
+.show-metabolomics .sidebar-menu a[data-value="enrich_plots"],
+.show-clinical .sidebar-menu a[data-value="enrichment"],
+.show-clinical .sidebar-menu a[data-value="gsea"],
+.show-clinical .sidebar-menu a[data-value="enrich_plots"] {
+  display: none !important;
+}
+
+/* Hide WGCNA for microbiome, functional, clinical */
+.show-microbiome .sidebar-menu a[data-value="wgcna"],
+.show-functional .sidebar-menu a[data-value="wgcna"],
+.show-clinical .sidebar-menu a[data-value="wgcna"] {
+  display: none !important;
+}
+
+/* Hide volcano plot for microbiome, functional, clinical */
+.show-microbiome .sidebar-menu a[data-value="volcano"],
+.show-functional .sidebar-menu a[data-value="volcano"],
+.show-clinical .sidebar-menu a[data-value="volcano"] {
+  display: none !important;
+}

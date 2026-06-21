@@ -1,0 +1,2220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EasyMultiProfiler Web v5.0.1</title>
+  <link rel="stylesheet" href="css/style.css?v=2026-06-21-v5.0.1">
+  <link rel="stylesheet" href="css/code_lab.css?v=2026-06-21-v5.0.1">
+  <link rel="stylesheet" href="css/teaching.css?v=2026-06-21-v5.0.1">
+  <script>
+    (function () {
+      var s = parseFloat(localStorage.getItem("emp_font_scale"));
+      if (s >= 0.85 && s <= 1.25) {
+        document.documentElement.style.setProperty("--font-scale", String(s));
+        document.documentElement.dataset.fontScale = String(Math.round(s * 100));
+      }
+    })();
+  </script>
+  <!-- Lucide icons via CDN (MIT license, no build step) -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+
+<!-- ── GLOBAL TASK PROGRESS BAR ───────────────────────── -->
+<div id="global-progress" class="hidden" role="status" aria-live="polite">
+  <div class="gp-row">
+    <span class="gp-label" id="gp-label">Working…</span>
+    <span class="gp-msg"   id="gp-msg"></span>
+    <span class="gp-pct"   id="gp-pct">0%</span>
+  </div>
+  <div class="progress-bar" id="gp-bar" style="--pct:0%"></div>
+</div>
+
+<!-- ── SIDEBAR ─────────────────────────────────────────── -->
+<nav id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      <span class="logo-icon">⬡</span>
+      <span class="logo-text">EasyMultiProfiler</span>
+    </div>
+  </div>
+
+  <div class="omics-switch">
+    <label class="omics-switch-label">Omics</label>
+    <select id="omics-pipeline">
+      <option value="all">All (show every tab)</option>
+      <option value="transcriptomics">Transcriptomics (RNAseq)</option>
+      <option value="chipseq">ChIP-seq</option>
+      <option value="microbiome_16s">Microbiome 16S</option>
+      <option value="metagenomics">Metagenomics</option>
+      <option value="metabolomics">Metabolomics</option>
+    </select>
+  </div>
+
+  <div class="locale-switch" id="locale-switch" title="Auto-detect or choose UI language">
+    <label class="locale-switch-label" data-i18n="locale.label">界面语言</label>
+    <div class="locale-toggle">
+      <button type="button" class="locale-btn active" data-locale-mode="auto" title="Browser + region auto-detect">
+        <i data-lucide="sparkles"></i> <span data-i18n="locale.auto">自动</span>
+      </button>
+      <button type="button" class="locale-btn" data-locale-mode="zh">中文</button>
+      <button type="button" class="locale-btn" data-locale-mode="en">EN</button>
+    </div>
+    <div id="locale-mode-hint" class="locale-mode-hint"></div>
+  </div>
+
+  <div class="font-scale-switch" id="font-scale-switch">
+    <label class="locale-switch-label" data-i18n="fontScale.label">字号</label>
+    <div class="font-scale-controls">
+      <button type="button" class="font-scale-btn" id="btn-font-smaller" aria-label="Smaller text">A−</button>
+      <span id="font-scale-value" class="font-scale-value" aria-live="polite">100%</span>
+      <button type="button" class="font-scale-btn" id="btn-font-larger" aria-label="Larger text">A+</button>
+      <button type="button" class="font-scale-btn font-scale-reset" id="btn-font-reset" aria-label="Reset text size" title="Reset">↺</button>
+    </div>
+  </div>
+
+  <ul class="nav-list">
+    <li class="nav-item" data-page="guide" title="User Guide · 使用指南">
+      <i data-lucide="book-open"></i><span data-i18n="nav.guide">指南</span>
+    </li>
+    <li class="nav-item active" data-page="course" title="Course · 课程">
+      <i data-lucide="graduation-cap"></i><span data-i18n="nav.course">课程</span>
+    </li>
+    <li class="nav-item" data-page="prompts" title="AI Prompts">
+      <i data-lucide="sparkles"></i><span data-i18n="nav.prompts">AI 提示</span>
+    </li>
+    <li class="nav-item" data-page="import" title="Import Data · 导入数据">
+      <i data-lucide="upload-cloud"></i><span data-i18n="nav.data">数据</span>
+    </li>
+    <li class="nav-item" data-page="summary" title="Summary">
+      <i data-lucide="bar-chart-2"></i><span data-i18n="nav.summary">概览</span>
+    </li>
+    <li class="nav-item" data-page="inspector" title="Inspector">
+      <i data-lucide="table-properties"></i><span data-i18n="nav.inspector">检查</span>
+    </li>
+    <li class="nav-item" data-page="preparation" title="Prepare · 预处理">
+      <i data-lucide="sliders"></i><span data-i18n="nav.prepare">预处理</span>
+    </li>
+    <li class="nav-item" data-page="analysis" title="Analyze · 分析">
+      <i data-lucide="activity"></i><span data-i18n="nav.analyze">分析</span>
+    </li>
+    <li class="nav-item" data-page="clinical" title="Clinical">
+      <i data-lucide="stethoscope"></i><span data-i18n="nav.clinical">临床</span>
+    </li>
+    <li class="nav-item" data-page="runall" title="Run All">
+      <i data-lucide="zap"></i><span data-i18n="nav.runall">一键运行</span>
+    </li>
+    <li class="nav-item" data-page="visualization" title="Visualize">
+      <i data-lucide="image"></i><span data-i18n="nav.visualize">可视化</span>
+    </li>
+    <li class="nav-item" data-page="export" title="Export">
+      <i data-lucide="download"></i><span data-i18n="nav.export">导出</span>
+    </li>
+  </ul>
+
+  <div class="sidebar-footer">
+    <div id="session-badge" class="session-badge hidden">
+      <i data-lucide="check-circle"></i>
+      <span id="session-label">Session active</span>
+    </div>
+    <div id="perf-panel" class="perf-panel">
+      <div class="perf-title">Last run</div>
+      <div id="perf-last" class="perf-last">—</div>
+    </div>
+    <div id="locale-note" class="locale-note">
+      <span class="version-badge">v5.0.1</span>
+      <button type="button" class="btn-link" id="btn-help-guide" data-i18n="footer.guide">安装与使用指南</button>
+      · <button type="button" class="btn-link" id="btn-help-course" data-i18n="footer.course">Course 入门</button>
+      · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/master/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ── MAIN CONTENT ───────────────────────────────────── -->
+<main id="main">
+
+  <!-- HEADER -->
+  <header id="topbar">
+    <div class="topbar-head">
+      <h1 id="page-title">Course Cases</h1>
+      <div class="topbar-right">
+        <div id="exp-selector-wrap" class="hidden">
+          <label for="global-experiment">Experiment:</label>
+          <select id="global-experiment"></select>
+        </div>
+        <button class="btn btn-outline hidden" id="btn-topbar-clear"
+                title="Clear all loaded data and analysis results from memory">
+          <i data-lucide="trash-2"></i> Clear All
+        </button>
+        <div id="step-timing" class="step-timing hidden" title="Last step backend / total time">
+          <span id="step-timing-label">—</span>
+        </div>
+        <div id="loading-spinner" class="spinner hidden"></div>
+      </div>
+    </div>
+    <nav id="workflow-stepper" class="workflow-stepper" aria-label="Analysis workflow">
+      <span class="wf-step" data-wf="guide" data-i18n="wf.guide" data-i18n-title="nav.guide">Guide</span>
+      <span class="wf-step" data-wf="course" data-i18n="wf.course" data-i18n-title="nav.course">Course</span>
+      <span class="wf-step" data-wf="prompts" data-i18n="wf.prompts" data-i18n-title="nav.prompts">AI</span>
+      <span class="wf-step" data-wf="import" data-i18n="wf.import" data-i18n-title="nav.data">Data</span>
+      <span class="wf-step" data-wf="summary" data-i18n="wf.summary" data-i18n-title="nav.summary">Summary</span>
+      <span class="wf-step" data-wf="inspector" data-i18n="wf.inspector" data-i18n-title="nav.inspector">Inspect</span>
+      <span class="wf-step" data-wf="preparation" data-i18n="wf.preparation" data-i18n-title="nav.prepare">Prep</span>
+      <span class="wf-step" data-wf="analysis" data-i18n="wf.analysis" data-i18n-title="nav.analyze">Analyze</span>
+      <span class="wf-step" data-wf="clinical" data-i18n="wf.clinical" data-i18n-title="nav.clinical">Clinical</span>
+      <span class="wf-step" data-wf="runall" data-i18n="wf.runall" data-i18n-title="nav.runall">Run</span>
+      <span class="wf-step" data-wf="visualization" data-i18n="wf.visualization" data-i18n-title="nav.visualize">Visualize</span>
+      <span class="wf-step" data-wf="export" data-i18n="wf.export" data-i18n-title="nav.export">Export</span>
+    </nav>
+  </header>
+
+  <!-- R 执行输出：Code Lab 展开时显示在当前页面下方（中间栏） -->
+  <section id="code-lab-console" class="code-lab-console hidden" aria-label="R execution output">
+    <div class="code-lab-console-head">
+      <span class="code-lab-console-title">R 执行输出 · Console / Plots</span>
+      <button type="button" class="btn btn-outline code-lab-console-clear" id="code-lab-console-clear">清空</button>
+    </div>
+    <div id="code-lab-exec-out" class="code-lab-exec-out">
+      <p class="code-lab-exec-placeholder">点击右侧「在 R 中执行」后，图形与输出将显示在此处。</p>
+    </div>
+  </section>
+
+  <!-- ── PAGE: IMPORT ─────────────────────────────────── -->
+  <section id="page-course" class="page active">
+    <div class="card guide-course-banner">
+      <p class="hint" style="margin:0">
+        <strong>v5.0.1</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
+        （Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」
+      </p>
+    </div>
+    <div class="teaching-subnav">
+      <button type="button" class="btn btn-outline teaching-tab active" data-teaching-tab="cases">任务卡案例</button>
+      <button type="button" class="btn btn-outline teaching-tab" data-teaching-tab="critique">AI 纠错 Lab</button>
+    </div>
+    <div id="teaching-panel-cases" class="teaching-panel">
+      <div class="teaching-layout">
+        <div id="teaching-case-list" class="teaching-case-list"></div>
+        <div id="teaching-case-detail"></div>
+      </div>
+    </div>
+    <div id="teaching-panel-critique" class="teaching-panel hidden"></div>
+  </section>
+
+  <section id="page-prompts" class="page">
+    <div class="card">
+      <h2>LLM Prompt 规范模板库</h2>
+      <p class="hint">复制到 ChatGPT / 校园 LLM，或一键填入 Code Lab「优化要求」。每类模板附常见错误与审查要点。</p>
+    </div>
+    <div id="teaching-prompt-root"></div>
+  </section>
+
+  <!-- ── PAGE: USER GUIDE (v5.0.1) ─────────────────────── -->
+  <section id="page-guide" class="page">
+    <div id="guide-root"></div>
+  </section>
+
+  <section id="page-import" class="page">
+    <div class="card welcome-card" id="welcome-card">
+      <h2>👋 欢迎使用 EasyMultiProfiler v5.0.1</h2>
+      <p class="hint">
+        <strong>还没安装？</strong> 左侧点 <strong>Guide</strong> 查看 Mac / Windows 分平台安装步骤（两条路径不同，请勿混用）。
+        <strong>已装好？</strong> 从 <strong>Course</strong> 学，或下方一键加载 16S / RNA-seq / Clinical 示例数据。
+      </p>
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" id="btn-welcome-guide">打开安装指南</button>
+        <button type="button" class="btn btn-outline" id="btn-welcome-course">从 Course 开始</button>
+        <button type="button" class="btn btn-outline" id="btn-welcome-dismiss">我知道了</button>
+      </div>
+    </div>
+
+    <div class="card demo-datasets-card">
+      <h2>一键加载示例数据</h2>
+      <p class="hint">无需准备文件，直接加载 16S / RNA-seq / Clinical 课程测试集（与 Course 案例配套）。</p>
+      <div id="demo-dataset-buttons" class="demo-dataset-row">
+        <span class="hint">加载中…</span>
+      </div>
+    </div>
+
+    <div class="card" data-clinical-script="three_line">
+      <h2>Upload Multi-Omics Data</h2>
+      <p class="hint">Upload your count matrix (CSV/TSV) and optional sample metadata. Multiple experiments can be added to the same session.</p>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Data Type</label>
+          <select id="import-data-type">
+            <option value="normal">Normal (RNAseq / Metabolomics / Proteomics)</option>
+            <option value="chipseq">ChIP-seq (peak matrix / gene activity)</option>
+            <option value="tax">Microbiome / Taxonomy (16S)</option>
+            <option value="clinical">Clinical Data</option>
+          </select>
+        </div>
+        <div class="form-group hidden" id="import-clinical-kind-wrap">
+          <label>Clinical Upload Type</label>
+          <select id="import-clinical-kind">
+            <option value="clinical_raw">Clinical (raw table)</option>
+            <option value="clinical_meta">Meta (metadata table)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Experiment Name</label>
+          <input type="text" id="import-exp-name" value="experiment" placeholder="e.g. RNAseq_1">
+        </div>
+        <div class="form-group">
+          <label>Assay Name</label>
+          <input type="text" id="import-assay-name" value="counts" placeholder="counts / relative_abundance">
+        </div>
+      </div>
+
+      <div id="tax-options" class="form-grid hidden">
+        <div class="form-group">
+          <label>Taxonomy Level</label>
+          <select id="import-start-level">
+            <option value="Species">Species</option>
+            <option value="Genus">Genus</option>
+            <option value="Family">Family</option>
+            <option value="Order">Order</option>
+            <option value="Class">Class</option>
+            <option value="Phylum">Phylum</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Taxonomy Separator</label>
+          <input type="text" id="import-tax-sep" value=";" style="max-width:80px">
+        </div>
+      </div>
+
+      <div class="upload-row">
+        <div class="upload-zone" id="drop-data">
+          <i data-lucide="file-spreadsheet"></i>
+          <p><strong id="import-data-label">Count Matrix</strong> (CSV / TSV)</p>
+          <p class="hint">Rows = features, Columns = samples</p>
+          <input type="file" id="import-data-file" accept=".csv,.tsv,.txt,.biom">
+          <label for="import-data-file" class="btn btn-outline">Choose File</label>
+          <span id="data-filename" class="filename-label"></span>
+        </div>
+
+        <div class="upload-zone" id="drop-meta">
+          <i data-lucide="table-2"></i>
+          <p><strong id="import-meta-label">Metadata</strong> (optional)</p>
+          <p class="hint">First column = sample IDs</p>
+          <input type="file" id="import-meta-file" accept=".csv,.tsv,.txt">
+          <label for="import-meta-file" class="btn btn-outline">Choose File</label>
+          <span id="meta-filename" class="filename-label"></span>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-import">
+          <i data-lucide="upload"></i> Import Data
+        </button>
+      </div>
+
+      <div id="import-result" class="alert hidden"></div>
+
+      <div id="workflow-blueprint" class="card-subsection">
+        <h3>Omics Workflow Blueprint</h3>
+        <p class="hint">Framework first: each omics pipeline is split into import, preparation, analysis, visualization, and export stages.</p>
+        <div id="workflow-list" class="tag-list"></div>
+        <div id="workflow-detail" class="result-area hidden"></div>
+      </div>
+
+      <div id="import-experiments" class="hidden">
+        <div class="section-head">
+          <h3>Loaded Experiments</h3>
+          <button class="btn btn-outline" id="btn-clear-session">
+            <i data-lucide="trash-2"></i> Clear Loaded Data
+          </button>
+        </div>
+        <div id="exp-cards" class="exp-cards"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── PAGE: SUMMARY ────────────────────────────────── -->
+  <section id="page-summary" class="page">
+    <div class="card">
+      <div class="section-head">
+        <h2>Data Summary</h2>
+        <button class="btn btn-outline" id="btn-summary-export-empt">
+          <i data-lucide="file-down"></i> Export EMP Format (EMPT)
+        </button>
+      </div>
+      <div id="summary-stats" class="stats-grid"></div>
+    </div>
+    <div class="card">
+      <h3>Sample Metadata</h3>
+      <div class="table-wrap"><table id="summary-coldata"></table></div>
+    </div>
+    <div class="card">
+      <h3>Feature Preview (first 20)</h3>
+      <div id="summary-features" class="tag-list"></div>
+    </div>
+  </section>
+
+  <!-- ── PAGE: INSPECTOR ─────────────────────────────── -->
+  <section id="page-inspector" class="page">
+    <div class="card teaching-hint-card">
+      <p class="hint"><strong>教学提示：</strong>先理解数据结构再分析——colData 中哪一列适合分组？rowData / feature 行名代表什么生物学实体？可用 AI Prompt「参数解释」辅助，但分组决策须自行确认。</p>
+    </div>
+    <div class="card">
+      <div class="section-head">
+        <h2>EMPT Inspector</h2>
+        <button class="btn btn-outline" id="btn-inspector-refresh">
+          <i data-lucide="refresh-cw"></i> Refresh
+        </button>
+      </div>
+      <div id="inspector-stats" class="stats-grid"></div>
+    </div>
+
+    <div class="tab-bar">
+      <button class="tab active" data-tab="inspector-assay">Assay</button>
+      <button class="tab" data-tab="inspector-coldata">colData</button>
+      <button class="tab" data-tab="inspector-rowdata">rowData</button>
+      <button class="tab" data-tab="inspector-results">EMP Results</button>
+    </div>
+
+    <div id="inspector-assay" class="tab-panel active card">
+      <div class="btn-row">
+        <button class="btn btn-outline" id="btn-inspector-assay-prev">Prev</button>
+        <button class="btn btn-outline" id="btn-inspector-assay-next">Next</button>
+        <span id="inspector-assay-page" class="hint"></span>
+      </div>
+      <div id="inspector-assay-table" class="result-area hidden"></div>
+    </div>
+
+    <div id="inspector-coldata" class="tab-panel card hidden">
+      <div id="inspector-coldata-table" class="result-area hidden"></div>
+    </div>
+
+    <div id="inspector-rowdata" class="tab-panel card hidden">
+      <div class="btn-row">
+        <button class="btn btn-outline" id="btn-inspector-rowdata-prev">Prev</button>
+        <button class="btn btn-outline" id="btn-inspector-rowdata-next">Next</button>
+        <span id="inspector-rowdata-page" class="hint"></span>
+      </div>
+      <div id="inspector-rowdata-table" class="result-area hidden"></div>
+    </div>
+
+    <div id="inspector-results" class="tab-panel card hidden">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Result Table</label>
+          <select id="inspector-result-select"></select>
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+          <button class="btn btn-primary" id="btn-inspector-load-result">
+            <i data-lucide="table"></i> Load Result
+          </button>
+        </div>
+      </div>
+      <div id="inspector-result-table" class="result-area hidden"></div>
+    </div>
+  </section>
+
+  <!-- ── PAGE: PREPARATION ────────────────────────────── -->
+  <section id="page-preparation" class="page">
+    <div class="card" style="margin-bottom:10px">
+      <p class="hint">
+        <strong>Preparation quick guide:</strong> Filter = remove low-information features; Normalize = make samples comparable;
+        Impute = handle missing values; Rarefy = depth equalization for count-like microbiome data; Collapse/16S Taxonomy = aggregate taxa levels.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <button class="btn btn-outline" id="btn-prep-recommended" type="button"
+                title="按当前组学类型套用 tests/ 数据验证过的过滤/归一化/差异分析推荐阈值">
+          <i data-lucide="wand-2"></i> 推荐参数（当前组学）
+        </button>
+        <span class="hint" style="margin:0">导入示例数据后会自动套用；也可随时手动点击。</span>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Prepare mode</label>
+          <select id="prep-mode">
+            <option value="stack" selected>Stack on current processed data</option>
+            <option value="single">Single (always start from raw upload)</option>
+          </select>
+        </div>
+        <div class="form-group form-group--full">
+          <label>Prepared snapshot</label>
+          <div class="form-inline-actions">
+            <select id="prep-snapshot-select"></select>
+            <button class="btn btn-outline" id="btn-prep-refresh-snapshots" type="button">Refresh</button>
+            <button class="btn btn-outline" id="btn-prep-use-snapshot" type="button">Use selected</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:10px">
+      <h3>Preparation Result Preview</h3>
+      <p class="hint" style="margin-top:0">Shows up to 30 rows of the current assay matrix after each preparation step.</p>
+      <div id="prep-preview" class="result-area hidden"></div>
+    </div>
+    <div class="tab-bar">
+      <button class="tab active" data-tab="prep-filter"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Filter</button>
+      <button class="tab" data-tab="prep-normalize"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Normalize</button>
+      <button class="tab" data-tab="prep-impute"
+              data-omics="metabolomics">Impute</button>
+      <button class="tab" data-tab="prep-rarefy"
+              data-omics="microbiome_16s">Rarefy</button>
+      <button class="tab" data-tab="prep-collapse"
+              data-omics="microbiome_16s metagenomics">Collapse</button>
+      <button class="tab" data-tab="prep-m16s-taxonomy"
+              data-omics="microbiome_16s">16S Taxonomy</button>
+    </div>
+
+    <div id="prep-filter" class="tab-panel active card">
+      <h3>Feature Filtering</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Min Max Count</label>
+          <input type="number" id="filter-min-count" value="0" min="0">
+        </div>
+        <div class="form-group">
+          <label>Min detect rate (Count &gt; 0, 0-1)</label>
+          <input type="number" id="filter-min-detect-rate" value="0" min="0" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+          <label>Max detect rate (Count &gt; 0, 0-1)</label>
+          <input type="number" id="filter-max-detect-rate" value="1" min="0" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+          <label>Min prevalence (0-1)</label>
+          <input type="number" id="filter-min-prevalence" value="0" min="0" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+          <label>Max NA Proportion (0–1)</label>
+          <input type="number" id="filter-max-na" value="1" min="0" max="1" step="0.05">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-filter"><i data-lucide="filter"></i> Apply Filter</button>
+      <div id="filter-result" class="alert hidden"></div>
+    </div>
+
+    <div id="prep-normalize" class="tab-panel card hidden">
+      <h3>Normalization</h3>
+      <div class="form-group">
+        <label>Method</label>
+        <select id="norm-method">
+          <option value="rclr">rclr (Robust CLR)</option>
+          <option value="clr">clr (Center Log-Ratio)</option>
+          <option value="hellinger">Hellinger</option>
+          <option value="total">Relative Abundance</option>
+          <option value="log">Log Transform</option>
+          <option value="CSS">CSS (Cumulative Sum Scaling)</option>
+        </select>
+      </div>
+      <p id="norm-method-desc" class="hint">
+        rclr: robust log-ratio for sparse microbiome matrices (recommended default).
+      </p>
+      <button class="btn btn-primary" id="btn-normalize"><i data-lucide="refresh-cw"></i> Normalize</button>
+      <a class="btn btn-outline" id="btn-normalize-export-assay">
+        <i data-lucide="download"></i> Download normalized assay CSV
+      </a>
+      <div id="normalize-result" class="alert hidden"></div>
+    </div>
+
+    <div id="prep-impute" class="tab-panel card hidden">
+      <h3>Missing Value Imputation</h3>
+      <div class="form-group">
+        <label>Method</label>
+        <select id="impute-method">
+          <option value="knn">KNN</option>
+          <option value="zero">Replace with Zero</option>
+          <option value="min">Minimum Value</option>
+          <option value="mean">Mean</option>
+        </select>
+      </div>
+      <p id="impute-method-desc" class="hint">
+        KNN: borrows information from similar samples; generally preferred when missingness is moderate.
+      </p>
+      <button class="btn btn-primary" id="btn-impute"><i data-lucide="wand-2"></i> Impute</button>
+      <div id="impute-result" class="alert hidden"></div>
+    </div>
+
+    <div id="prep-rarefy" class="tab-panel card hidden">
+      <h3>Rarefaction</h3>
+      <p class="hint">Subsample to equal sequencing depth (microbiome / count data).</p>
+      <div class="form-group">
+        <label>Sample Size (0 = minimum)</label>
+        <input type="number" id="rarefy-size" value="0" min="0">
+      </div>
+      <button class="btn btn-primary" id="btn-rarefy"><i data-lucide="shuffle"></i> Rarefy</button>
+      <div id="rarefy-result" class="alert hidden"></div>
+    </div>
+
+    <div id="prep-collapse" class="tab-panel card hidden">
+      <h3>Taxonomy Collapse</h3>
+      <p class="hint">Collapse taxonomy to a given level (microbiome data only).</p>
+      <div class="form-group">
+        <label>Target Level</label>
+        <select id="collapse-level">
+          <option value="Phylum">Phylum</option>
+          <option value="Class">Class</option>
+          <option value="Order">Order</option>
+          <option value="Family">Family</option>
+          <option value="Genus" selected>Genus</option>
+          <option value="Species">Species</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-collapse"><i data-lucide="git-merge"></i> Collapse</button>
+      <div id="collapse-result" class="alert hidden"></div>
+    </div>
+    <div id="prep-m16s-taxonomy" class="tab-panel card hidden">
+      <h3>16S Taxonomy-Aware Preparation</h3>
+      <p class="hint">
+        Collapse and filter taxonomy features for 16S workflows. For species-level analysis, set
+        <strong>Collapse Level</strong> to <strong>Species</strong>. After any filter or collapse, run
+        <strong>Analysis → Dimension (PCoA)</strong> again before beta / ordination plots.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Collapse Level</label>
+          <select id="m16s-collapse-level">
+            <option value="Phylum">Phylum</option>
+            <option value="Class">Class</option>
+            <option value="Order">Order</option>
+            <option value="Family">Family</option>
+            <option value="Genus" selected>Genus</option>
+            <option value="Species">Species</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Taxonomy Separator</label>
+          <input type="text" id="m16s-tax-sep" value=";" style="max-width:80px">
+        </div>
+        <div class="form-group">
+          <label>Min Total Abundance</label>
+          <input type="number" id="m16s-min-total-abundance" value="0" min="0" step="1">
+        </div>
+        <div class="form-group">
+          <label>Keep Top N Taxa (0 = all)</label>
+          <input type="number" id="m16s-keep-topn" value="0" min="0" max="5000">
+        </div>
+        <div class="form-group">
+          <label>Drop Unassigned</label>
+          <select id="m16s-drop-unassigned">
+            <option value="true" selected>Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Normalize (one-step)</label>
+          <select id="m16s-normalize-method">
+            <option value="none">None</option>
+            <option value="rclr" selected>rclr</option>
+            <option value="clr">clr</option>
+            <option value="hellinger">hellinger</option>
+            <option value="total">relative abundance</option>
+            <option value="log">log</option>
+            <option value="CSS">CSS</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-outline" id="m16s-btn-profile"><i data-lucide="scan-search"></i> Profile Taxonomy</button>
+        <button class="btn btn-primary" id="m16s-btn-prepare-taxonomy"><i data-lucide="filter"></i> Run 16S Preparation</button>
+      </div>
+      <div id="m16s-profile-result" class="alert hidden"></div>
+      <div id="m16s-prepare-result" class="alert hidden"></div>
+    </div>
+  </section>
+
+  <!-- ── PAGE: ANALYSIS ───────────────────────────────── -->
+  <section id="page-analysis" class="page">
+    <div class="card" style="margin-bottom:10px">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Analysis snapshot target</label>
+          <select id="ana-snapshot-select"></select>
+          <small class="hint">Selected snapshot will be auto-activated before running analysis on this page.</small>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:10px">
+      <p class="hint">
+        <strong>Core split:</strong> microbiome core (Alpha/Network/PCoA beta),
+        transcriptomics core (Differential/Enrichment/WGCNA in Transcriptomics),
+        and shared modules (Dimension/Correlation/Cluster/Marker) are reusable across omics types.
+      </p>
+    </div>
+    <div class="tab-bar">
+      <button class="tab active" data-tab="ana-alpha"
+              data-omics="microbiome_16s metagenomics">Alpha Diversity</button>
+      <button class="tab" data-tab="ana-diff"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Differential</button>
+      <button class="tab" data-tab="ana-dim"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Dimension</button>
+      <button class="tab" data-tab="ana-cor"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Correlation</button>
+      <button class="tab" data-tab="ana-cluster"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Cluster</button>
+      <button class="tab" data-tab="ana-marker"
+              data-omics="transcriptomics microbiome_16s metagenomics">Marker</button>
+      <button class="tab" data-tab="ana-enrich"
+              data-omics="transcriptomics metagenomics metabolomics">Enrichment</button>
+      <button class="tab" data-tab="ana-network"
+              data-omics="microbiome_16s metagenomics metabolomics">Network</button>
+      <button class="tab" data-tab="ana-tx"
+              data-omics="transcriptomics">Transcriptomics</button>
+      <button class="tab" data-tab="ana-mgx"
+              data-omics="metagenomics">Metagenomics</button>
+      <button class="tab" data-tab="ana-mbx"
+              data-omics="metabolomics">Metabolomics</button>
+      <button class="tab" data-tab="ana-cross"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Cross-Omics</button>
+    </div>
+
+    <!-- Alpha Diversity -->
+    <div id="ana-alpha" class="tab-panel active card">
+      <h3>Alpha Diversity Analysis</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Method</label>
+          <select id="alpha-method">
+            <option value="shannon">Shannon</option>
+            <option value="simpson">Simpson</option>
+            <option value="invsimpson">Inverse Simpson</option>
+            <option value="chao1">Chao1</option>
+            <option value="ACE">ACE</option>
+            <option value="observed">Observed Richness</option>
+            <option value="pielou">Pielou evenness</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Data Source</label>
+          <select id="alpha-source">
+            <option value="current" selected>Current active data</option>
+            <option value="raw">Raw imported data</option>
+            <option value="relative">Relative abundance (current)</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-alpha"><i data-lucide="play"></i> Run</button>
+      <div id="alpha-result" class="result-area hidden"></div>
+    </div>
+
+    <!-- Differential -->
+    <div id="ana-diff" class="tab-panel card hidden">
+      <h3>Differential Analysis</h3>
+      <p class="hint">
+        For bulk RNAseq, <strong>DESeq2 / edgeR / limma</strong> finish in seconds.
+        Wilcoxon on 10k+ genes can take ~100s – use it only for small matrices.
+      </p>
+      <div class="form-grid form-grid--analysis">
+        <div class="form-group">
+          <label>Method</label>
+          <select id="diff-method">
+            <option value="DESeq2">DESeq2 (fast, recommended)</option>
+            <option value="edgeR">edgeR</option>
+            <option value="limma">limma</option>
+            <option value="wilcox">Wilcoxon (slow, parallel)</option>
+            <option value="t.test">t-test</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="diff-group"></select>
+        </div>
+        <div class="form-group">
+          <label>Comparison mode</label>
+          <select id="diff-comparison-mode">
+            <option value="pairwise" selected>Pairwise (ref vs test)</option>
+            <option value="all_pairwise">All pairwise (DESeq2 / edgeR)</option>
+            <option value="multi_lrt">Multi-group LRT + all pairwise (log2FC)</option>
+          </select>
+        </div>
+        <div class="form-group diff-pairwise-only">
+          <label>Reference Group</label>
+          <select id="diff-ref"></select>
+        </div>
+        <div class="form-group diff-pairwise-only">
+          <label>Test Group</label>
+          <select id="diff-test"></select>
+        </div>
+        <div class="form-group">
+          <label>Run Mode</label>
+          <select id="diff-mode">
+            <option value="async" selected>Async (progress bar)</option>
+            <option value="sync">Sync (blocking)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label title="Drop low-count genes before testing">Pre-filter low-count</label>
+          <select id="diff-filter-low">
+            <option value="true" selected>Yes (fast)</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label title="Subset to only the 2 compared groups">Subset 2 groups</label>
+          <select id="diff-subset">
+            <option value="true" selected>Yes (fast)</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label title="Number of CPU cores for wilcox/t-test">Cores</label>
+          <select id="diff-cores">
+            <option value="auto" selected>auto</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-diff"><i data-lucide="play"></i> Run</button>
+      <div id="diff-progress" class="progress hidden">
+        <div class="progress-bar" id="diff-progress-bar"></div>
+        <div class="progress-msg" id="diff-progress-msg"></div>
+      </div>
+      <div id="diff-result" class="result-area hidden"></div>
+    </div>
+
+    <!-- Dimension Reduction -->
+    <div id="ana-dim" class="tab-panel card hidden">
+      <h3>Dimension Reduction</h3>
+      <p class="hint">
+        For 16S / microbiome <strong>beta diversity</strong>, choose <strong>PCoA</strong> (Bray–Curtis via EasyMultiProfiler)
+        or <strong>MDS</strong> (same backend). Then open <strong>Visualization → Scatter/Ordination</strong> with source
+        <em>Auto</em> to plot those coordinates (filtering or taxonomy prep invalidates an old run — re-run Dimension).
+      </p>
+      <div class="form-group">
+        <label>Method</label>
+        <select id="dim-method">
+          <option value="PCA">PCA</option>
+          <option value="PCoA">PCoA (beta, Bray–Curtis)</option>
+          <option value="UMAP">UMAP</option>
+          <option value="tSNE">t-SNE</option>
+          <option value="MDS">MDS (PCoA)</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-dim"><i data-lucide="play"></i> Run</button>
+      <div id="dim-result" class="result-area hidden"></div>
+    </div>
+
+    <!-- Correlation -->
+    <div id="ana-cor" class="tab-panel card hidden">
+      <h3>Correlation Analysis</h3>
+      <div class="form-group">
+        <label>Method</label>
+        <select id="cor-method">
+          <option value="spearman">Spearman</option>
+          <option value="pearson">Pearson</option>
+          <option value="kendall">Kendall</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-cor"><i data-lucide="play"></i> Run</button>
+      <div id="cor-result" class="result-area hidden"></div>
+    </div>
+
+    <!-- Cluster -->
+    <div id="ana-cluster" class="tab-panel card hidden">
+      <h3>Cluster Analysis</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Method</label>
+          <select id="cluster-method">
+            <option value="hclust">Hierarchical</option>
+            <option value="kmeans">K-means</option>
+            <option value="pam">PAM</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>k (clusters)</label>
+          <input type="number" id="cluster-k" value="3" min="2" max="20">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-cluster"><i data-lucide="play"></i> Run</button>
+      <div id="cluster-result" class="result-area hidden"></div>
+    </div>
+
+    <!-- Marker -->
+    <div id="ana-marker" class="tab-panel card hidden">
+      <h3>Marker / Biomarker Analysis</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Method</label>
+          <select id="marker-method">
+            <option value="randomForest">Random Forest (native)</option>
+            <option value="LEfSe">LEfSe (RF fallback)</option>
+            <option value="ANCOM">ANCOM (RF fallback)</option>
+            <option value="lasso">LASSO</option>
+            <option value="xgboost">XGBoost</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="marker-group"></select>
+        </div>
+        <div class="form-group">
+          <label>Reference Group (LASSO/XGBoost)</label>
+          <select id="marker-ref"></select>
+        </div>
+        <div class="form-group">
+          <label>Test Group (LASSO/XGBoost)</label>
+          <select id="marker-test"></select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-marker"><i data-lucide="play"></i> Run</button>
+      <div id="marker-result" class="result-area hidden"></div>
+    </div>
+
+    <!-- Enrichment -->
+    <div id="ana-enrich" class="tab-panel card hidden">
+      <h3>Pathway / Enrichment Analysis (clusterProfiler)</h3>
+      <p class="hint">Reads the cached DESeq2-style DEG table. Requires a prior differential analysis.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Database</label>
+          <select id="enrich-database">
+            <option value="KEGG">KEGG (enrichKEGG)</option>
+            <option value="GO_BP">GO-BP (enrichGO)</option>
+            <option value="GO_CC">GO-CC (enrichGO)</option>
+            <option value="GO_MF">GO-MF (enrichGO)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Organism</label>
+          <select id="enrich-organism">
+            <option value="hsa" selected>Human (org.Hs.eg.db)</option>
+            <option value="mmu">Mouse (org.Mm.eg.db)</option>
+            <option value="rno">Rat (org.Rn.eg.db)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label title="DEGs drawn from padj when available, else pvalue">Threshold</label>
+          <select id="enrich-use-padj">
+            <option value="true" selected>padj (adjusted)</option>
+            <option value="false">pvalue (raw)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>|log2FC| ≥</label>
+          <input type="number" id="enrich-fc-cutoff" value="1.0" min="0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>p ≤</label>
+          <input type="number" id="enrich-p-cutoff" value="0.05" min="0" max="1" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>Direction</label>
+          <select id="enrich-direction">
+            <option value="both" selected>Both (Up + Down)</option>
+            <option value="up">Up only</option>
+            <option value="down">Down only</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Top categories</label>
+          <input type="number" id="enrich-top-n" value="20" min="5" max="50" step="1">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-enrich"><i data-lucide="play"></i> Run</button>
+      <div id="enrich-summary" class="hint hidden" style="margin-top:8px"></div>
+      <div id="enrich-plot"    class="plot-area hidden"></div>
+      <div id="enrich-result"  class="result-area hidden"></div>
+    </div>
+
+    <!-- Network -->
+    <div id="ana-network" class="tab-panel card hidden">
+      <h3>Network Analysis</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Correlation Method</label>
+          <select id="network-method">
+            <option value="spearman">Spearman</option>
+            <option value="pearson">Pearson</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Correlation Cutoff</label>
+          <input type="number" id="network-cutoff" value="0.6" min="0" max="1" step="0.05">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-network"><i data-lucide="play"></i> Run</button>
+      <div id="network-result" class="result-area hidden"></div>
+    </div>
+
+    <!-- Transcriptomics Workflow -->
+    <div id="ana-tx" class="tab-panel card hidden">
+      <h3>Transcriptomics Workflow</h3>
+      <p class="hint">Batch 1 controls for profile, differential, GSEA, and WGCNA-oriented analysis.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Differential Method</label>
+          <select id="tx-diff-method">
+            <option value="DESeq2">DESeq2</option>
+            <option value="edgeR">edgeR</option>
+            <option value="limma">limma</option>
+            <option value="wilcox">Wilcoxon</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="tx-group"></select>
+        </div>
+        <div class="form-group">
+          <label>Reference Group</label>
+          <select id="tx-ref"></select>
+        </div>
+        <div class="form-group">
+          <label>Test Group</label>
+          <select id="tx-test"></select>
+        </div>
+        <div class="form-group">
+          <label>GSEA Database</label>
+          <select id="tx-gsea-db">
+            <option value="KEGG">KEGG</option>
+            <option value="GO_BP">GO-BP</option>
+            <option value="GO_CC">GO-CC</option>
+            <option value="GO_MF">GO-MF</option>
+            <option value="Reactome">Reactome</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>GSEA Organism</label>
+          <select id="tx-gsea-org">
+            <option value="hsa" selected>Human</option>
+            <option value="mmu">Mouse</option>
+            <option value="rno">Rat</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>WGCNA Method</label>
+          <select id="tx-wgcna-method">
+            <option value="spearman">spearman</option>
+            <option value="pearson">pearson</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>WGCNA Cutoff</label>
+          <input type="number" id="tx-wgcna-cutoff" value="0.7" min="0.1" max="1" step="0.05">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-outline" id="tx-btn-profile"><i data-lucide="scan-search"></i> Profile</button>
+        <button class="btn btn-primary" id="tx-btn-diff"><i data-lucide="play"></i> Differential</button>
+        <button class="btn btn-outline" id="tx-btn-gsea"><i data-lucide="waypoints"></i> GSEA</button>
+        <button class="btn btn-outline" id="tx-btn-wgcna"><i data-lucide="network"></i> WGCNA</button>
+      </div>
+      <div id="tx-profile-result" class="alert hidden"></div>
+      <div id="tx-analysis-result" class="result-area hidden"></div>
+    </div>
+
+    <!-- Metagenomics Workflow -->
+    <div id="ana-mgx" class="tab-panel card hidden">
+      <h3>Metagenomics Functional Workflow</h3>
+      <p class="hint">For KO/EC/pathway functional matrices. Uses metagenomics-specific API routes.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Functional ID Type</label>
+          <select id="mgx-id-type">
+            <option value="auto" selected>Auto detect</option>
+            <option value="ko">KO</option>
+            <option value="ec">EC</option>
+            <option value="pathway">Pathway</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="mgx-group"></select>
+        </div>
+        <div class="form-group">
+          <label>Reference Group</label>
+          <select id="mgx-ref"></select>
+        </div>
+        <div class="form-group">
+          <label>Test Group</label>
+          <select id="mgx-test"></select>
+        </div>
+        <div class="form-group">
+          <label>Differential Method</label>
+          <select id="mgx-diff-method">
+            <option value="limma" selected>limma</option>
+            <option value="DESeq2">DESeq2</option>
+            <option value="edgeR">edgeR</option>
+            <option value="wilcox">Wilcoxon</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Max NA Proportion</label>
+          <input type="number" id="mgx-max-na" value="0.2" min="0" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+          <label>Normalize Method</label>
+          <select id="mgx-normalize-method">
+            <option value="rclr" selected>rclr</option>
+            <option value="clr">clr</option>
+            <option value="hellinger">hellinger</option>
+            <option value="total">total</option>
+            <option value="log">log</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Enrichment Database</label>
+          <select id="mgx-database">
+            <option value="">Auto by ID type</option>
+            <option value="KEGG">KEGG</option>
+            <option value="GO">GO</option>
+            <option value="Reactome">Reactome</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-outline" id="mgx-btn-profile"><i data-lucide="scan-search"></i> Profile Matrix</button>
+        <button class="btn btn-outline" id="mgx-btn-preprocess"><i data-lucide="sliders"></i> Preprocess</button>
+        <button class="btn btn-primary" id="mgx-btn-diff"><i data-lucide="play"></i> Run Differential</button>
+        <button class="btn btn-primary" id="mgx-btn-enrich"><i data-lucide="flask-conical"></i> Run Enrichment</button>
+      </div>
+      <div id="mgx-profile-result" class="alert hidden"></div>
+      <div id="mgx-diff-result" class="result-area hidden"></div>
+      <div id="mgx-enrich-result" class="result-area hidden"></div>
+    </div>
+
+    <!-- Metabolomics Workflow -->
+    <div id="ana-mbx" class="tab-panel card hidden">
+      <h3>Metabolomics Workflow</h3>
+      <p class="hint">Missingness-aware preprocessing plus differential and volcano workflows.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Max NA Proportion (optional)</label>
+          <input type="number" id="mbx-max-na" value="" min="0" max="1" step="0.05" placeholder="auto">
+        </div>
+        <div class="form-group">
+          <label>Impute Method (optional)</label>
+          <select id="mbx-impute-method">
+            <option value="">Auto</option>
+            <option value="knn">KNN</option>
+            <option value="min">Minimum Value</option>
+            <option value="mean">Mean</option>
+            <option value="zero">Replace with Zero</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Normalize Method (optional)</label>
+          <select id="mbx-normalize-method">
+            <option value="">Auto</option>
+            <option value="log">Log Transform</option>
+            <option value="clr">CLR</option>
+            <option value="rclr">RCLR</option>
+            <option value="hellinger">Hellinger</option>
+            <option value="total">Relative Abundance</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-outline" id="mbx-btn-profile"><i data-lucide="scan-search"></i> Profile Defaults</button>
+        <button class="btn btn-primary" id="mbx-btn-preprocess"><i data-lucide="sliders-horizontal"></i> Run Preprocess</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Differential Method (optional)</label>
+          <select id="mbx-diff-method">
+            <option value="">Auto</option>
+            <option value="limma">limma</option>
+            <option value="wilcox">Wilcoxon</option>
+            <option value="t.test">t-test</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="mbx-group"></select>
+        </div>
+        <div class="form-group">
+          <label>Reference Group</label>
+          <select id="mbx-ref"></select>
+        </div>
+        <div class="form-group">
+          <label>Test Group</label>
+          <select id="mbx-test"></select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Volcano FC Cutoff</label>
+          <input type="number" id="mbx-fc-cutoff" value="1" min="0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>Volcano p-value Cutoff</label>
+          <input type="number" id="mbx-p-cutoff" value="0.05" min="0" max="1" step="0.01">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="mbx-btn-diff"><i data-lucide="play"></i> Run Differential</button>
+        <button class="btn btn-outline" id="mbx-btn-volcano"><i data-lucide="mountain"></i> Generate Volcano</button>
+        <button class="btn btn-outline" id="mbx-btn-export-diff"><i data-lucide="download"></i> Export Differential CSV</button>
+      </div>
+      <div id="mbx-status" class="alert hidden"></div>
+      <div id="mbx-diff-result" class="result-area hidden"></div>
+      <div id="mbx-volcano-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- Cross-omics -->
+    <div id="ana-cross" class="tab-panel card hidden">
+      <h3>Cross-Omics Integration (inter-omics)</h3>
+      <p class="hint">
+        Integrates two experiments to quantify feature-feature associations across omics layers
+        (for example: taxa vs genes, taxa vs metabolites, genes vs metabolites).
+        Current version provides a guided entry and recommended workflow; full automated model block
+        (CCA/DIABLO/MOFA) will be added next.
+      </p>
+      <ol class="hint" style="margin-top:6px">
+        <li>Load at least two experiments in the same session.</li>
+        <li>Complete per-omics preprocessing first (filter/normalize/impute/taxonomy).</li>
+        <li>Use shared sample IDs and run pairwise correlation in Clinical/Correlation modules.</li>
+      </ol>
+      <div id="cross-omics-status" class="alert alert-info">
+        Tip: for publication-grade inter-omics, ensure confounders are adjusted and report FDR.
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Omics A experiment</label>
+          <select id="cross-exp-a"></select>
+        </div>
+        <div class="form-group">
+          <label>Omics B experiment</label>
+          <select id="cross-exp-b"></select>
+        </div>
+        <div class="form-group">
+          <label>Clinical experiment (optional)</label>
+          <select id="cross-exp-c">
+            <option value="">none</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-cross-omics-cor"><i data-lucide="git-compare-arrows"></i> Cross-omics correlation</button>
+        <button class="btn btn-outline" id="btn-cross-omics-clin"><i data-lucide="stethoscope"></i> Omics + Clinical association</button>
+      </div>
+      <div id="cross-omics-result" class="result-area hidden"></div>
+    </div>
+  </section>
+
+  <!-- ── PAGE: CLINICAL & PHENOTYPE ───────────────────── -->
+  <section id="page-clinical" class="page">
+    <!-- Intro + colData variable summary -->
+    <div class="card">
+      <h2>Clinical &amp; Phenotype Analysis</h2>
+      <p class="hint">
+        Use <em>numeric</em> columns in your sample metadata (age, BMI, biomarker levels,
+        survival time, etc.) as clinical traits and correlate them against features,
+        fit regression lines, or run WGCNA module–trait analysis.
+        Upload metadata with these columns on the <strong>Data</strong> page first.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>当前分析策略 / Code Lab script</label>
+          <select id="clin-analysis-strategy">
+            <option value="three_line">One-click 三线表</option>
+            <option value="systematic">系统临床统计</option>
+            <option value="cor">Feature × Trait correlation</option>
+            <option value="fitline">Scatter + regression line</option>
+            <option value="wgcna">WGCNA module–trait</option>
+            <option value="marker_model">Multi-omics marker model</option>
+            <option value="reorient">行列转换/纠正</option>
+            <option value="overview">变量检测/概览</option>
+          </select>
+          <small class="hint">切换后右侧 Code Lab 会同步显示对应 R 脚本。</small>
+        </div>
+        <div class="form-group">
+          <label>Clinical data source</label>
+          <select id="clin-data-source">
+            <option value="auto" selected>Auto (prefer uploaded clinical table)</option>
+            <option value="experiment">Current experiment metadata (colData)</option>
+            <option value="standalone">Standalone uploaded clinical table</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Three-line table grouping variable (standalone)</label>
+          <select id="clin-three-group"></select>
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="clin-three-skip-high-card" checked>
+            Skip high-cardinality categorical variables
+          </label>
+          <small class="hint">Recommended for columns like patient ID.</small>
+        </div>
+        <div class="form-group">
+          <label>Max levels kept (categorical)</label>
+          <input type="number" id="clin-three-max-levels" value="20" min="2" max="200">
+        </div>
+        <div class="form-group">
+          <label>Three-line engine</label>
+          <select id="clin-three-engine">
+            <option value="gtsummary" selected>gtsummary (preferred)</option>
+            <option value="emp_custom">EMP-compatible fallback</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Systematic cohort filter (sample ID: AK/BK=UC, CJ/DJ=IBS)</label>
+          <select id="clin-systematic-cohort">
+            <option value="" selected>All cohorts (UC + IBS)</option>
+            <option value="IBS">IBS only</option>
+            <option value="UC">UC only</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-outline" id="clin-btn-refresh-vars" data-clinical-script="overview">
+          <i data-lucide="refresh-cw"></i> Detect clinical variables
+        </button>
+        <select id="clin-reorient-mode" style="max-width:220px;">
+          <option value="auto" selected>Auto detect orientation</option>
+          <option value="transpose">Force transpose once</option>
+        </select>
+        <button class="btn btn-outline" id="clin-btn-reorient" data-clinical-script="reorient">
+          <i data-lucide="flip-vertical-2"></i> 行列转换/纠正
+        </button>
+        <button class="btn btn-primary" id="clin-btn-three-line" data-clinical-script="three_line">
+          <i data-lucide="table"></i> One-click 三线表
+        </button>
+        <button class="btn btn-outline" id="clin-btn-systematic" data-clinical-script="systematic">
+          <i data-lucide="files"></i> 系统临床统计（基线+前后变化+组间差异）
+        </button>
+        <span id="clin-vars-summary" class="hint" style="align-self:center;"></span>
+      </div>
+      <div id="clin-precheck" class="alert alert-info hidden" style="margin-top:.6rem;"></div>
+      <div id="clin-vars-table-wrap" class="result-area hidden" style="margin-top:.8rem;">
+        <table id="clin-vars-table" class="results-table">
+          <thead>
+            <tr><th>Name</th><th>Type</th><th>N</th><th>Unique</th>
+                <th>Min</th><th>Max</th><th>Mean</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="clin-three-table" class="result-area hidden" style="margin-top:.8rem;"></div>
+      <div id="clin-systematic-within" class="result-area hidden" style="margin-top:.8rem;"></div>
+      <div id="clin-systematic-between" class="result-area hidden" style="margin-top:.8rem;"></div>
+    </div>
+
+    <!-- 1. Feature × Trait correlation (fast, sync) -->
+    <div class="card" data-clinical-script="cor">
+      <h2>1. Feature × Trait correlation</h2>
+      <p class="hint">
+        Correlate every feature (gene / taxon / metabolite) against one or more
+        numeric clinical variables. A signed heatmap of the top-N features is
+        returned, annotated with significance stars (* p≤0.05, ** p≤0.01, *** p≤0.001).
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Clinical traits (select 1 or more)</label>
+          <select id="clin-cor-traits" multiple size="5"></select>
+          <small class="hint">Hold Ctrl / Cmd to multi-select.</small>
+        </div>
+        <div class="form-group">
+          <label>Method</label>
+          <select id="clin-cor-method">
+            <option value="spearman" selected>Spearman (robust, non-parametric)</option>
+            <option value="pearson">Pearson</option>
+            <option value="kendall">Kendall</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Top N features for heatmap</label>
+          <input type="number" id="clin-cor-topn" value="30" min="5" max="300">
+        </div>
+        <div class="form-group">
+          <label>p-value adjustment</label>
+          <select id="clin-cor-padj">
+            <option value="BH" selected>Benjamini–Hochberg (FDR)</option>
+            <option value="holm">Holm</option>
+            <option value="bonferroni">Bonferroni</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="clin-btn-cor" data-clinical-script="cor">
+          <i data-lucide="play"></i> Run correlation
+        </button>
+        <a class="btn btn-outline hidden" id="clin-cor-pdf" href="#" download>
+          <i data-lucide="file-down"></i> Download PDF
+        </a>
+      </div>
+      <div id="clin-cor-status" class="alert hidden"></div>
+      <div id="clin-cor-plot" class="plot-area hidden"></div>
+      <div id="clin-cor-table-wrap" class="result-area hidden" style="margin-top:.8rem;">
+        <h3 style="margin:0 0 .4rem 0;">Top associations</h3>
+        <table id="clin-cor-table" class="results-table">
+          <thead><tr><th>Feature</th><th>Trait</th><th>r</th><th>p</th><th>p.adj</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 2. Fitline / scatter for one feature vs one trait -->
+    <div class="card" data-clinical-script="fitline">
+      <h2>2. Scatter + regression line</h2>
+      <p class="hint">
+        Pick one feature and one numeric trait. A per-group regression line is
+        drawn when you select a grouping column.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Feature (gene / taxon / metabolite)</label>
+          <input type="text" id="clin-fit-feature" placeholder="e.g. ENSG00000141510 or TP53">
+          <small class="hint">Type the exact feature ID used in the assay.</small>
+        </div>
+        <div class="form-group">
+          <label>Trait (numeric)</label>
+          <select id="clin-fit-trait"></select>
+        </div>
+        <div class="form-group">
+          <label>Group (optional, categorical)</label>
+          <select id="clin-fit-group"><option value="">— no grouping —</option></select>
+        </div>
+        <div class="form-group">
+          <label>Regression</label>
+          <select id="clin-fit-method">
+            <option value="lm" selected>Linear (lm)</option>
+            <option value="loess">LOESS (smooth)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>log1p(y)</label>
+          <select id="clin-fit-logy">
+            <option value="false" selected>No</option>
+            <option value="true">Yes (use for counts)</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="clin-btn-fit" data-clinical-script="fitline">
+          <i data-lucide="trending-up"></i> Draw scatter
+        </button>
+        <a class="btn btn-outline hidden" id="clin-fit-pdf" href="#" download>
+          <i data-lucide="file-down"></i> Download PDF
+        </a>
+      </div>
+      <div id="clin-fit-status" class="alert hidden"></div>
+      <div id="clin-fit-plot" class="plot-area hidden"></div>
+    </div>
+
+    <!-- 3. WGCNA module–trait -->
+    <div class="card" data-clinical-script="wgcna">
+      <h2>3. WGCNA module – trait correlation</h2>
+      <p class="hint">
+        Clusters features into co-expression modules, computes each module
+        eigengene, then correlates modules with clinical traits. This step is
+        slow (≈ 1–5 min on bulk RNA-seq) – the global progress bar will update
+        while it runs.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Clinical traits (empty = all numeric)</label>
+          <select id="clin-wgcna-traits" multiple size="5"></select>
+        </div>
+        <div class="form-group">
+          <label>Minimum module size</label>
+          <input type="number" id="clin-wgcna-minmod" value="30" min="10" max="200">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="clin-btn-wgcna" data-clinical-script="wgcna">
+          <i data-lucide="network"></i> Run WGCNA
+        </button>
+        <a class="btn btn-outline hidden" id="clin-wgcna-pdf" href="#" download>
+          <i data-lucide="file-down"></i> Download PDF
+        </a>
+      </div>
+      <div id="clin-wgcna-status" class="alert hidden"></div>
+      <div id="clin-wgcna-plot" class="plot-area hidden"></div>
+      <div id="clin-wgcna-table-wrap" class="result-area hidden" style="margin-top:.8rem;">
+        <h3 style="margin:0 0 .4rem 0;">Top module – trait associations</h3>
+        <table id="clin-wgcna-table" class="results-table">
+          <thead><tr><th>Trait</th><th>Module</th><th>r</th><th>p</th><th>p.adj</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 4. Multi-omics diagnostic / early-warning marker model -->
+    <div class="card" data-clinical-script="marker_model">
+      <h2>4. Multi-omics marker diagnostic model</h2>
+      <p class="hint">
+        Combine transcriptomics / proteomics / microbiome features with clinical variables to train single-marker
+        and multi-marker warning models. Outputs include ROC-derived AUC, best cut-off, sensitivity, specificity,
+        sample size, and whether AUC &gt; 0.8.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Omics experiments (select 1 or more)</label>
+          <select id="clin-marker-experiments" multiple size="5"></select>
+          <small class="hint">Use Cmd/Ctrl to combine transcriptome, proteome, microbiome, etc.</small>
+        </div>
+        <div class="form-group">
+          <label>Binary clinical outcome</label>
+          <select id="clin-marker-outcome"></select>
+        </div>
+        <div class="form-group">
+          <label>Positive / risk class</label>
+          <input type="text" id="clin-marker-positive" placeholder="e.g. IBS, responder, severe">
+        </div>
+        <div class="form-group">
+          <label>Models</label>
+          <select id="clin-marker-methods" multiple size="3">
+            <option value="randomForest" selected>Random Forest</option>
+            <option value="lasso" selected>LASSO</option>
+            <option value="xgboost" selected>XGBoost</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Max features per omics</label>
+          <input type="number" id="clin-marker-max-features" value="200" min="20" max="2000">
+        </div>
+        <div class="form-group">
+          <label>Validation fraction</label>
+          <input type="number" id="clin-marker-validation" value="0.3" min="0" max="0.7" step="0.05">
+          <small class="hint">Uses stratified holdout when sample size permits; otherwise reports apparent performance.</small>
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="clin-marker-include-clinical" checked>
+            Include numeric clinical indicators
+          </label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="clin-btn-marker-model" data-clinical-script="marker_model">
+          <i data-lucide="activity"></i> Run marker model
+        </button>
+      </div>
+      <div id="clin-marker-status" class="alert hidden"></div>
+      <div id="clin-marker-performance" class="result-area hidden" style="margin-top:.8rem;"></div>
+      <div id="clin-marker-markers" class="result-area hidden" style="margin-top:.8rem;"></div>
+      <div id="clin-marker-scores" class="result-area hidden" style="margin-top:.8rem;"></div>
+    </div>
+  </section>
+
+  <!-- ── PAGE: VISUALIZATION ──────────────────────────── -->
+  <section id="page-visualization" class="page">
+    <div class="card" style="margin-bottom:10px">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Visualization snapshot target</label>
+          <select id="viz-snapshot-select"></select>
+          <small class="hint">Selected snapshot will be auto-activated before plotting on this page.</small>
+        </div>
+      </div>
+    </div>
+    <div class="tab-bar">
+      <button class="tab active" data-tab="viz-barplot"
+              data-omics="microbiome_16s metagenomics metabolomics">Barplot</button>
+      <button class="tab" data-tab="viz-boxplot"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Boxplot</button>
+      <button class="tab" data-tab="viz-heatmap"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Heatmap</button>
+      <button class="tab" data-tab="viz-volcano"
+              data-omics="transcriptomics metagenomics metabolomics">Volcano</button>
+      <button class="tab" data-tab="viz-scatter"
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Scatter/PCA</button>
+      <button class="tab" data-tab="viz-structure"
+              data-omics="microbiome_16s metagenomics">Structure</button>
+      <button class="tab" data-tab="viz-alpha"
+              data-omics="microbiome_16s metagenomics">Alpha Plot</button>
+      <button class="tab" data-tab="viz-tx"
+              data-omics="transcriptomics">Transcriptomics</button>
+      <button class="tab" data-tab="viz-m16s-sankey"
+              data-omics="microbiome_16s">16S Sankey</button>
+      <button class="tab" data-tab="viz-m16s-network"
+              data-omics="microbiome_16s">16S Network</button>
+      <button class="tab" data-tab="viz-mgx"
+              data-omics="metagenomics">MGX Functional</button>
+    </div>
+    <div class="card" style="margin-top:10px">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Color panel (all plots)</label>
+          <select id="viz-color-panel">
+            <option value="npg" selected>Nature (NPG)</option>
+            <option value="lancet">Lancet</option>
+            <option value="nejm">NEJM</option>
+            <option value="jama">JAMA</option>
+            <option value="aaas">AAAS</option>
+            <option value="tableau">Tableau</option>
+            <option value="set2">Set2</option>
+            <option value="dark3">Dark3</option>
+            <option value="viridis">Viridis</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Custom group colors (optional)</label>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+            <input type="checkbox" id="viz-use-custom-colors">
+            <label for="viz-use-custom-colors">Enable custom colors</label>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input type="color" id="viz-color-1" value="#1f77b4">
+            <input type="color" id="viz-color-2" value="#ff7f0e">
+            <input type="color" id="viz-color-3" value="#2ca02c">
+            <input type="color" id="viz-color-4" value="#d62728">
+            <input type="color" id="viz-color-5" value="#9467bd">
+            <input type="color" id="viz-color-6" value="#8c564b">
+          </div>
+          <small class="hint">Color picker values override panel for group colors.</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barplot -->
+    <div id="viz-barplot" class="tab-panel active card">
+      <h3>Barplot</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Mode</label>
+          <select id="bar-mode">
+            <option value="top20">Top N Features</option>
+            <option value="single">Single Feature</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="bar-group"><option value="">None</option></select>
+        </div>
+        <div class="form-group" id="bar-topn-wrap">
+          <label>Top N</label>
+          <input type="number" id="bar-topn" value="20" min="1" max="100">
+        </div>
+        <div class="form-group hidden" id="bar-feature-wrap">
+          <label>Feature</label>
+          <select id="bar-feature"></select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-barplot"><i data-lucide="image"></i> Generate</button>
+      <div id="barplot-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- Boxplot -->
+    <div id="viz-boxplot" class="tab-panel card hidden">
+      <h3>Boxplot</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="box-group"><option value="">None</option></select>
+        </div>
+        <div class="form-group">
+          <label>Feature</label>
+          <select id="box-feature"></select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-boxplot"><i data-lucide="image"></i> Generate</button>
+      <div id="boxplot-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- Heatmap -->
+    <div id="viz-heatmap" class="tab-panel card hidden">
+      <h3>Heatmap</h3>
+      <p class="hint">
+        <strong>Top-variance</strong> and <strong>custom-list</strong> heatmaps use the same
+        pheatmap layout (row/column clustering, blue&ndash;white&ndash;red).
+        <strong>DEG heatmap</strong> draws every gene passing the differential cutoff
+        (same pheatmap style).
+      </p>
+
+      <!-- Top-variance controls -->
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="heat-group"><option value="">None</option></select>
+        </div>
+        <div class="form-group">
+          <label>Top N (by variance)</label>
+          <input type="number" id="heat-topn" value="50" min="5" max="200">
+        </div>
+        <div class="form-group">
+          <label>Cluster rows</label>
+          <select id="heat-cluster-rows"><option value="true" selected>Yes</option><option value="false">No</option></select>
+        </div>
+        <div class="form-group">
+          <label>Cluster cols</label>
+          <select id="heat-cluster-cols"><option value="true" selected>Yes</option><option value="false">No</option></select>
+        </div>
+        <div class="form-group">
+          <label>Show gene names</label>
+          <select id="heat-show-rn"><option value="true" selected>Yes</option><option value="false">No</option></select>
+        </div>
+        <div class="form-group">
+          <label>Font size</label>
+          <input type="number" id="heat-font-size" value="11" min="6" max="24" step="1">
+        </div>
+        <div class="form-group">
+          <label>Figure width (inch)</label>
+          <input type="number" id="heat-width" value="11" min="4" max="30" step="0.5">
+        </div>
+        <div class="form-group">
+          <label>Figure height (inch)</label>
+          <input type="number" id="heat-height" value="8" min="4" max="36" step="0.5">
+        </div>
+      </div>
+
+      <!-- Custom gene/feature list -->
+      <div class="form-group" style="margin-top:8px">
+        <label for="heat-custom">Custom feature list
+          <small class="muted">(leave blank to use Top-N)</small>
+        </label>
+        <textarea id="heat-custom" rows="4"
+          placeholder="Paste symbols or feature IDs, one per line or comma/tab separated, e.g.&#10;TP53, MYC, BRCA1&#10;ENSMUSG00000026822"></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+          <input type="file" id="heat-custom-file"
+                 accept=".txt,.csv,.tsv,text/plain,text/csv"
+                 style="max-width:280px">
+          <button class="btn btn-outline" id="heat-custom-clear" type="button">
+            <i data-lucide="x"></i> Clear list
+          </button>
+          <span id="heat-custom-meta" class="muted" style="font-size:12px"></span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-heatmap"><i data-lucide="image"></i> Top-variance heatmap</button>
+        <button class="btn btn-primary" id="btn-heatmap-custom"><i data-lucide="list-checks"></i> Custom-list heatmap</button>
+      </div>
+      <div id="heatmap-out" class="plot-area hidden"></div>
+
+      <!-- DEG heatmap controls -->
+      <hr style="margin:18px 0;border:none;border-top:1px solid var(--border);">
+      <h4 style="margin:0 0 10px">DEG heatmap</h4>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>|log2FC| ≥</label>
+          <input type="number" id="deg-fc" value="1" min="0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>p ≤</label>
+          <input type="number" id="deg-p" value="0.05" min="0" max="1" step="0.01">
+        </div>
+        <div class="form-group">
+          <label title="Use adjusted p-value (BH) when available; automatic fallback to raw p if none pass">Threshold</label>
+          <select id="deg-use-padj">
+            <option value="true" selected>padj (auto-fallback)</option>
+            <option value="false">p-value</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label title="Drop low-expression genes (rowSum across samples)">Min rowSum</label>
+          <input type="number" id="deg-min-rowsum" value="10" min="0" step="1">
+        </div>
+        <div class="form-group">
+          <label>Max genes</label>
+          <input type="number" id="deg-max-genes" value="200" min="10" max="2000">
+        </div>
+        <div class="form-group">
+          <label>Cluster rows</label>
+          <select id="deg-cluster-rows"><option value="true" selected>Yes</option><option value="false">No</option></select>
+        </div>
+        <div class="form-group">
+          <label>Cluster cols</label>
+          <select id="deg-cluster-cols"><option value="true" selected>Yes</option><option value="false">No</option></select>
+        </div>
+        <div class="form-group">
+          <label>Show gene names</label>
+          <select id="deg-show-rn"><option value="true" selected>Yes</option><option value="false">No</option></select>
+        </div>
+        <div class="form-group">
+          <label>Font size</label>
+          <input type="number" id="deg-font-size" value="10" min="6" max="24" step="1">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-primary" id="btn-deg-heatmap"><i data-lucide="layers"></i> DEG heatmap</button>
+        <a id="deg-pdf-link" class="btn btn-outline hidden" target="_blank" rel="noopener">
+          <i data-lucide="download"></i> Download PDF
+        </a>
+        <span id="deg-meta" class="muted" style="font-size:12px"></span>
+      </div>
+      <div id="deg-heatmap-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- Volcano -->
+    <div id="viz-volcano" class="tab-panel card hidden">
+      <h3>Volcano Plot</h3>
+      <p class="hint">Uses the cached DESeq2-style DEG table. Run Differential Analysis first.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>|log2FC| ≥</label>
+          <input type="number" id="vol-fc" value="1" min="0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>p ≤</label>
+          <input type="number" id="vol-p" value="0.05" min="0" max="1" step="0.01">
+        </div>
+        <div class="form-group">
+          <label title="Use adjusted p-value (BH/FDR) for thresholding when available">Threshold</label>
+          <select id="vol-use-padj">
+            <option value="true" selected>padj (adjusted)</option>
+            <option value="false">pvalue (raw)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Top-N labels</label>
+          <input type="number" id="vol-label-top" value="15" min="0" max="60" step="1">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-volcano"><i data-lucide="image"></i> Generate</button>
+        <a id="vol-pdf-link" class="btn btn-outline hidden" target="_blank" rel="noopener">
+          <i data-lucide="download"></i> Download PDF
+        </a>
+      </div>
+      <div id="volcano-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- Scatter -->
+    <div id="viz-scatter" class="tab-panel card hidden">
+      <h3>Scatter / Ordination Plot</h3>
+      <p class="hint">
+        <strong>Auto</strong> uses the coordinates from <strong>Analysis → Dimension</strong> when they match the
+        current assay (recommended for 16S PCoA / beta). <strong>Assay PCA</strong> always recomputes PCA from the
+        matrix (legacy). After preparation filters, re-run Dimension so beta and plots stay in sync.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="scat-group"><option value="">None</option></select>
+        </div>
+        <div class="form-group">
+          <label>Ordination source</label>
+          <select id="scat-ordination">
+            <option value="auto" selected>Auto (EMP Dimension if valid)</option>
+            <option value="emp">EMP Dimension only</option>
+            <option value="assay_pca">Assay PCA (recompute)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Axis 1 (index)</label>
+          <input type="number" id="scat-dim1" value="1" min="1">
+        </div>
+        <div class="form-group">
+          <label>Axis 2 (index)</label>
+          <input type="number" id="scat-dim2" value="2" min="1">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-scatter"><i data-lucide="image"></i> Generate</button>
+      <div id="scatter-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- Structure -->
+    <div id="viz-structure" class="tab-panel card hidden">
+      <h3>Composition / Structure Plot</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="struct-group"><option value="">None</option></select>
+        </div>
+        <div class="form-group">
+          <label>Top N Features</label>
+          <input type="number" id="struct-topn" value="10" min="2" max="50">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-structure"><i data-lucide="image"></i> Generate</button>
+      <div id="structure-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- Alpha Plot -->
+    <div id="viz-alpha" class="tab-panel card hidden">
+      <h3>Alpha Diversity Plot</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Group Variable</label>
+          <select id="aplot-group"><option value="">None</option></select>
+        </div>
+        <div class="form-group">
+          <label>Diversity Metric</label>
+          <select id="aplot-metric">
+            <option value="shannon">Shannon</option>
+            <option value="simpson">Simpson</option>
+            <option value="invsimpson">Inverse Simpson</option>
+            <option value="chao1">Chao1</option>
+            <option value="ACE">ACE</option>
+            <option value="observed">Observed</option>
+            <option value="pielou">Pielou</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Data Source</label>
+          <select id="aplot-source">
+            <option value="current" selected>Current active data</option>
+            <option value="raw">Raw imported data</option>
+            <option value="relative">Relative abundance (current)</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-alpha-plot"><i data-lucide="image"></i> Generate</button>
+      <div id="alpha-plot-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- Transcriptomics Workflow Visualizations -->
+    <div id="viz-tx" class="tab-panel card hidden">
+      <h3>Transcriptomics Workflow Visualization</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Group Variable (Heatmap)</label>
+          <select id="tx-viz-group"><option value="">None</option></select>
+        </div>
+        <div class="form-group">
+          <label>Heatmap Top N</label>
+          <input type="number" id="tx-viz-topn" value="50" min="5" max="500">
+        </div>
+        <div class="form-group">
+          <label>Volcano FC Cutoff</label>
+          <input type="number" id="tx-viz-fc" value="1" min="0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>Volcano p-value Cutoff</label>
+          <input type="number" id="tx-viz-p" value="0.05" min="0.000001" max="0.99" step="0.01">
+        </div>
+      </div>
+      <!-- Optional custom feature list for the heatmap -->
+      <div class="form-group" style="margin-top:8px">
+        <label for="tx-heat-custom">Custom gene list for heatmap
+          <small class="muted">(leave blank to use Top N)</small>
+        </label>
+        <textarea id="tx-heat-custom" rows="3"
+          placeholder="Paste gene symbols/IDs, e.g. TP53, MYC, BRCA1 …"></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+          <input type="file" id="tx-heat-custom-file"
+                 accept=".txt,.csv,.tsv,text/plain,text/csv"
+                 style="max-width:280px">
+          <button class="btn btn-outline" id="tx-heat-custom-clear" type="button">
+            <i data-lucide="x"></i> Clear
+          </button>
+          <span id="tx-heat-custom-meta" class="muted" style="font-size:12px"></span>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="tx-btn-heatmap"><i data-lucide="image"></i> Heatmap</button>
+        <button class="btn btn-outline" id="tx-btn-volcano"><i data-lucide="mountain"></i> Volcano</button>
+      </div>
+      <div id="tx-viz-heatmap-out" class="plot-area hidden"></div>
+      <div id="tx-viz-volcano-out" class="plot-area hidden"></div>
+    </div>
+    <div id="viz-m16s-sankey" class="tab-panel card hidden">
+      <h3>16S Taxonomy Sankey Plot</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>From Level</label>
+          <select id="m16s-sankey-from">
+            <option value="Phylum" selected>Phylum</option>
+            <option value="Class">Class</option>
+            <option value="Order">Order</option>
+            <option value="Family">Family</option>
+            <option value="Genus">Genus</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>To Level</label>
+          <select id="m16s-sankey-to">
+            <option value="Family">Family</option>
+            <option value="Genus" selected>Genus</option>
+            <option value="Species">Species</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Top N Taxa</label>
+          <input type="number" id="m16s-sankey-topn" value="25" min="1" max="500">
+        </div>
+        <div class="form-group">
+          <label>Taxonomy Separator</label>
+          <input type="text" id="m16s-sankey-tax-sep" value=";" style="max-width:80px">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="m16s-btn-sankey"><i data-lucide="image"></i> Generate Sankey</button>
+      <div id="m16s-sankey-out" class="plot-area hidden"></div>
+    </div>
+    <div id="viz-m16s-network" class="tab-panel card hidden">
+      <h3>16S Dedicated Network Plot</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Correlation Method</label>
+          <select id="m16s-network-method">
+            <option value="spearman" selected>Spearman</option>
+            <option value="pearson">Pearson</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Correlation Cutoff</label>
+          <input type="number" id="m16s-network-cutoff" value="0.6" min="0.05" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+          <label>Top N Taxa</label>
+          <input type="number" id="m16s-network-topn" value="40" min="2" max="500">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="m16s-btn-network"><i data-lucide="image"></i> Generate 16S Network</button>
+      <div id="m16s-network-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- Metagenomics Functional Plots -->
+    <div id="viz-mgx" class="tab-panel card hidden">
+      <h3>Metagenomics Functional Visualization</h3>
+      <p class="hint">Use after metagenomics differential analysis.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Group Variable (Heatmap)</label>
+          <select id="mgx-viz-group"><option value="">None</option></select>
+        </div>
+        <div class="form-group">
+          <label>Heatmap Top N</label>
+          <input type="number" id="mgx-viz-topn" value="50" min="5" max="500">
+        </div>
+        <div class="form-group">
+          <label>Volcano FC Cutoff</label>
+          <input type="number" id="mgx-viz-fc" value="1" min="0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>Volcano p-value Cutoff</label>
+          <input type="number" id="mgx-viz-p" value="0.05" min="0.000001" max="0.99" step="0.01">
+        </div>
+      </div>
+      <!-- Optional custom feature list for the functional heatmap -->
+      <div class="form-group" style="margin-top:8px">
+        <label for="mgx-heat-custom">Custom feature list for heatmap
+          <small class="muted">(leave blank to use Top N)</small>
+        </label>
+        <textarea id="mgx-heat-custom" rows="3"
+          placeholder="Paste KO / pathway / EC IDs, e.g. K00001, K00002 …"></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+          <input type="file" id="mgx-heat-custom-file"
+                 accept=".txt,.csv,.tsv,text/plain,text/csv"
+                 style="max-width:280px">
+          <button class="btn btn-outline" id="mgx-heat-custom-clear" type="button">
+            <i data-lucide="x"></i> Clear
+          </button>
+          <span id="mgx-heat-custom-meta" class="muted" style="font-size:12px"></span>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="mgx-btn-heatmap"><i data-lucide="image"></i> Functional Heatmap</button>
+        <button class="btn btn-primary" id="mgx-btn-volcano"><i data-lucide="mountain"></i> Functional Volcano</button>
+      </div>
+      <div id="mgx-viz-heatmap-out" class="plot-area hidden"></div>
+      <div id="mgx-viz-volcano-out" class="plot-area hidden"></div>
+    </div>
+  </section>
+
+  <!-- ── PAGE: EXPORT ─────────────────────────────────── -->
+  <!-- ── Run All (one-click end-to-end workflow) ──────────── -->
+  <section id="page-runall" class="page">
+    <div class="card">
+      <h2>One-click analysis &amp; bundled download</h2>
+      <p class="hint">
+        Select a workflow, set the core parameters and click <strong>Run all</strong>.
+        Every analysis below is executed end-to-end on the backend. Figures are saved as
+        PDF, tables as Excel (.xlsx), and the whole run is packaged as a single zip
+        you can download when done.
+      </p>
+
+      <div class="form-grid" style="max-width:760px">
+        <div class="form-group">
+          <label>Pipeline</label>
+          <select id="ra-pipeline">
+            <option value="rnaseq" selected>Transcriptomics (RNAseq / DESeq2)</option>
+            <option value="m16s">Microbiome 16S</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Grouping variable</label>
+          <select id="ra-group"><option value="">(auto)</option></select>
+        </div>
+        <div class="form-group" id="ra-ref-wrap">
+          <label>Reference group</label>
+          <select id="ra-ref"><option value="">(auto)</option></select>
+        </div>
+        <div class="form-group" id="ra-test-wrap">
+          <label>Test group</label>
+          <select id="ra-test"><option value="">(auto)</option></select>
+        </div>
+        <div class="form-group" id="ra-organism-wrap">
+          <label>Organism (for KEGG/GO)</label>
+          <select id="ra-organism">
+            <option value="hsa">Human (hsa / org.Hs.eg.db)</option>
+            <option value="mmu" selected>Mouse (mmu / org.Mm.eg.db)</option>
+            <option value="rno">Rat (rno / org.Rn.eg.db)</option>
+          </select>
+        </div>
+        <div class="form-group" id="ra-fc-wrap">
+          <label>|log2FC| ≥</label>
+          <input type="number" id="ra-fc" value="1" min="0" step="0.1">
+        </div>
+        <div class="form-group" id="ra-p-wrap">
+          <label>p ≤</label>
+          <input type="number" id="ra-p" value="0.05" min="0" max="1" step="0.01">
+        </div>
+        <div class="form-group" id="ra-threshold-wrap">
+          <label>Threshold</label>
+          <select id="ra-use-padj">
+            <option value="true">padj (auto-fallback)</option>
+            <option value="false" selected>p-value</option>
+          </select>
+        </div>
+        <div class="form-group" id="ra-rowsum-wrap">
+          <label title="Drop low-expression genes before DEG heatmap">Min rowSum</label>
+          <input type="number" id="ra-min-rowsum" value="0" min="0" step="1">
+        </div>
+        <div class="form-group" id="ra-enrich-wrap">
+          <label>KEGG + GO enrichment</label>
+          <select id="ra-enrich">
+            <option value="true" selected>Include (slower)</option>
+            <option value="false">Skip</option>
+          </select>
+        </div>
+
+        <!-- 16S-only controls (shown when pipeline is "m16s") -->
+        <div class="form-group ra-m16s-only hidden">
+          <label>Taxonomy level</label>
+          <select id="ra-tax-level">
+            <option>Phylum</option><option>Class</option><option>Order</option>
+            <option>Family</option><option selected>Genus</option><option>Species</option>
+          </select>
+        </div>
+        <div class="form-group ra-m16s-only hidden">
+          <label title="Run All now exports every available alpha index as its own boxplot. The pick below just becomes the first in the bundle.">Primary alpha index</label>
+          <select id="ra-alpha">
+            <option selected>shannon</option>
+            <option>simpson</option>
+            <option>invsimpson</option>
+            <option>chao1</option>
+            <option>ace</option>
+            <option>observed</option>
+            <option>pielou</option>
+          </select>
+          <small class="hint">Run All exports all indices; this picks the primary one.</small>
+        </div>
+        <div class="form-group ra-m16s-only hidden">
+          <label title="Run All always produces PCoA + PCA + NMDS scatter plots. The pick below only sets ordering priority.">Primary ordination</label>
+          <select id="ra-ord">
+            <option selected>PCoA</option>
+            <option>PCA</option>
+            <option>NMDS</option>
+          </select>
+          <small class="hint">Bundle contains all three ordinations.</small>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+        <button class="btn btn-primary" id="btn-run-all">
+          <i data-lucide="zap"></i> Run all
+        </button>
+        <button class="btn btn-outline" id="btn-run-all-smart" title="根据当前数据自动选择分组、对比组、物种与推荐阈值">
+          <i data-lucide="wand-2"></i> Smart defaults
+        </button>
+        <button class="btn btn-outline" id="btn-run-all-cancel" disabled>
+          <i data-lucide="stop-circle"></i> Cancel (client-side)
+        </button>
+        <a id="ra-download" class="btn btn-outline hidden" target="_blank" rel="noopener">
+          <i data-lucide="package"></i> Download bundle (zip)
+        </a>
+      </div>
+
+      <!-- Unified progress bar -->
+      <div id="ra-progress-wrap" class="hidden" style="margin-top:18px">
+        <div class="progress-bar-track" style="background:#e5e7eb;border-radius:6px;height:14px;overflow:hidden">
+          <div id="ra-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#2563eb,#60a5fa);transition:width .2s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:13px">
+          <span id="ra-progress-msg">Queued</span>
+          <span id="ra-progress-pct">0%</span>
+        </div>
+      </div>
+
+      <pre id="ra-log" class="hint" style="margin-top:12px;max-height:320px;overflow:auto;background:#0b1020;color:#e5e7eb;padding:12px;border-radius:6px;font-size:12px;line-height:1.5;display:none"></pre>
+
+      <!-- Existing bundles for this session -->
+      <h3 style="margin-top:22px">Previous bundles</h3>
+      <div id="ra-bundles" class="hint">—</div>
+    </div>
+  </section>
+
+  <section id="page-export" class="page">
+    <div class="card">
+      <h2>Export Results</h2>
+      <p class="hint">Download data tables, analysis results, or the complete session.</p>
+
+      <div class="export-grid">
+        <div class="export-card">
+          <i data-lucide="table"></i>
+          <h3>Assay Matrix</h3>
+          <p>Download count / abundance matrix as CSV</p>
+          <button class="btn btn-outline" id="btn-export-assay">Download CSV</button>
+        </div>
+        <div class="export-card">
+          <i data-lucide="users"></i>
+          <h3>Sample Metadata</h3>
+          <p>Download colData (sample annotations) as CSV</p>
+          <button class="btn btn-outline" id="btn-export-coldata">Download CSV</button>
+        </div>
+        <div class="export-card">
+          <i data-lucide="flask-conical"></i>
+          <h3>Differential Results</h3>
+          <p>Download differential analysis table as CSV</p>
+          <button class="btn btn-outline" id="btn-export-diff">Download CSV</button>
+        </div>
+        <div class="export-card">
+          <i data-lucide="database-zap"></i>
+          <h3>Metagenomics Differential</h3>
+          <p>Download metagenomics functional differential as CSV</p>
+          <button class="btn btn-outline" id="mgx-btn-export-diff">Download CSV</button>
+        </div>
+        <div class="export-card">
+          <i data-lucide="dna"></i>
+          <h3>Alpha Diversity</h3>
+          <p>Download alpha diversity values as CSV</p>
+          <button class="btn btn-outline" id="btn-export-alpha">Download CSV</button>
+        </div>
+        <div class="export-card">
+          <i data-lucide="archive"></i>
+          <h3>Full Session (RDS)</h3>
+          <p>Download complete EMP object for use in R</p>
+          <button class="btn btn-primary" id="btn-export-rds">Download RDS</button>
+        </div>
+        <div class="export-card teaching-export-card">
+          <i data-lucide="file-text"></i>
+          <h3>课程项目报告</h3>
+          <p>汇总课前卡、反思、解读、假设与 Learning Trace</p>
+          <button class="btn btn-primary" id="btn-teaching-report">下载 Markdown 报告</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="teaching-journal-card">
+      <h2>科学解读与假设（期末项目）</h2>
+      <p class="hint">完成分析后填写；假设须独立思考，AI 仅可作草稿参考。</p>
+      <label>结果科学解读<textarea id="teaching-journal-interpretation" rows="4" placeholder="观察 → 比较 → 生物学意义"></textarea></label>
+      <label>可验证假设<textarea id="teaching-journal-hypothesis" rows="3" placeholder="提出可被实验检验的机制假设"></textarea></label>
+      <label>局限性<textarea id="teaching-journal-limitations" rows="2"></textarea></label>
+      <label>AI 使用声明<input type="text" id="teaching-journal-ai" placeholder="具体说明 AI 辅助范围"></label>
+      <button type="button" class="btn btn-primary" id="btn-teaching-journal-save">保存到 Learning Trace</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- TOAST NOTIFICATIONS -->
+<div id="toast-container"></div>
+
+<script>
+  // Optional dev pairing only. Must match js/api.js resolveApiBase(); do NOT set
+  // a wrong default for unknown ports (that would override api.js and break the UI).
+  if (!window.API_BASE) {
+    const host = window.location.hostname || "127.0.0.1";
+    const webPort = window.location.port || "";
+    if (webPort === "8080") window.API_BASE = `http://${host}:8000/api`;
+    else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
+  }
+</script>
+<script type="module" src="js/app.js?v=2026-06-21-v5.0.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script>
+  // Initialise Lucide icons after all content is ready
+  document.addEventListener("DOMContentLoaded", () => lucide.createIcons());
+</script>
+</body>
+</html>

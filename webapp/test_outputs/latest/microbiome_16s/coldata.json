@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "columns": [
+    {
+      "name": "group",
+      "n_unique": 2,
+      "values": [
+        "tax_1",
+        "tax_2"
+      ]
+    }
+  ]
+}

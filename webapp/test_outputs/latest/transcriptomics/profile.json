@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "profile": {
+    "assay_hint": "counts",
+    "n_features": 19150,
+    "n_samples": 24,
+    "feature_examples": [
+      "0610005C13Rik",
+      "0610007P14Rik",
+      "0610009B22Rik",
+      "0610009L18Rik",
+      "0610009O20Rik",
+      "0610010B08Rik",
+      "0610010F05Rik",
+      "0610010K14Rik",
+      "0610011F06Rik",
+      "0610012G03Rik"
+    ]
+  }
+}

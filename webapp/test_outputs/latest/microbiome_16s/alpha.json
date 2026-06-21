@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "n_rows": 6,
+  "columns": [
+    "primary",
+    "shannon",
+    "simpson",
+    "invsimpson",
+    "observerd_index",
+    "chao1",
+    "ACE"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "validation": {
+    "success": true,
+    "checks": {
+      "has_features": true,
+      "has_samples": true,
+      "taxonomy_depth_ok": true
+    },
+    "profile": {
+      "experiment": "16S_test",
+      "n_samples": 6,
+      "n_features": 369,
+      "taxonomy_separator": ";",
+      "max_taxonomy_depth": 8,
+      "observed_levels": [
+        369,
+        369,
+        369,
+        369,
+        369,
+        369,
+        369,
+        369,
+        0
+      ]
+    }
+  }
+}

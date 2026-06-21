@@ -1,0 +1,157 @@
+{
+  "success": true,
+  "n_samples": 24,
+  "n_features": 19150,
+  "assay_name": "counts",
+  "sample_names": [
+    "DHMR001",
+    "DHMR002",
+    "DHMR003",
+    "DHMR004",
+    "DHMR005",
+    "DHMR006",
+    "DHMR007",
+    "DHMR008",
+    "DHMR009",
+    "DHMR010",
+    "DHMR011",
+    "DHMR012",
+    "DHMR013",
+    "DHMR014",
+    "DHMR015",
+    "DHMR016",
+    "DHMR017",
+    "DHMR018",
+    "DHMR019",
+    "DHMR020",
+    "DHMR021",
+    "DHMR022",
+    "DHMR023",
+    "DHMR024"
+  ],
+  "feature_names": [
+    "0610005C13Rik",
+    "0610007P14Rik",
+    "0610009B22Rik",
+    "0610009L18Rik",
+    "0610009O20Rik",
+    "0610010B08Rik",
+    "0610010F05Rik",
+    "0610010K14Rik",
+    "0610011F06Rik",
+    "0610012G03Rik",
+    "0610030E20Rik",
+    "0610031O16Rik",
+    "0610037L13Rik",
+    "0610038B21Rik",
+    "0610039H22Rik",
+    "0610039K10Rik",
+    "0610040B10Rik",
+    "0610040F04Rik",
+    "0610040J01Rik",
+    "0610043K17Rik"
+  ],
+  "coldata_cols": "Group",
+  "coldata": [
+    {
+      "Group": "DMSO",
+      "sample": "DHMR001"
+    },
+    {
+      "Group": "DMSO",
+      "sample": "DHMR002"
+    },
+    {
+      "Group": "DMSO",
+      "sample": "DHMR003"
+    },
+    {
+      "Group": "DMSO",
+      "sample": "DHMR004"
+    },
+    {
+      "Group": "DMSO+LIPUS",
+      "sample": "DHMR005"
+    },
+    {
+      "Group": "DMSO+LIPUS",
+      "sample": "DHMR006"
+    },
+    {
+      "Group": "DMSO+LIPUS",
+      "sample": "DHMR007"
+    },
+    {
+      "Group": "DMSO+LIPUS",
+      "sample": "DHMR008"
+    },
+    {
+      "Group": "T4400",
+      "sample": "DHMR009"
+    },
+    {
+      "Group": "T4400",
+      "sample": "DHMR010"
+    },
+    {
+      "Group": "T4400",
+      "sample": "DHMR011"
+    },
+    {
+      "Group": "T4400",
+      "sample": "DHMR012"
+    },
+    {
+      "Group": "T4400+LIPUS",
+      "sample": "DHMR013"
+    },
+    {
+      "Group": "T4400+LIPUS",
+      "sample": "DHMR014"
+    },
+    {
+      "Group": "T4400+LIPUS",
+      "sample": "DHMR015"
+    },
+    {
+      "Group": "T4400+LIPUS",
+      "sample": "DHMR016"
+    },
+    {
+      "Group": "T3976",
+      "sample": "DHMR017"
+    },
+    {
+      "Group": "T3976",
+      "sample": "DHMR018"
+    },
+    {
+      "Group": "T3976",
+      "sample": "DHMR019"
+    },
+    {
+      "Group": "T3976",
+      "sample": "DHMR020"
+    },
+    {
+      "Group": "T3976+LIPUS",
+      "sample": "DHMR021"
+    },
+    {
+      "Group": "T3976+LIPUS",
+      "sample": "DHMR022"
+    },
+    {
+      "Group": "T3976+LIPUS",
+      "sample": "DHMR023"
+    },
+    {
+      "Group": "T3976+LIPUS",
+      "sample": "DHMR024"
+    }
+  ],
+  "rowdata_cols": [
+    "feature",
+    "Name"
+  ]
+}

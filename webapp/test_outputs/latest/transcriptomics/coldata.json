@@ -1,0 +1,17 @@
+{
+  "success": true,
+  "columns": [
+    {
+      "name": "Group",
+      "n_unique": 6,
+      "values": [
+        "DMSO",
+        "DMSO+LIPUS",
+        "T4400",
+        "T4400+LIPUS",
+        "T3976",
+        "T3976+LIPUS"
+      ]
+    }
+  ]
+}

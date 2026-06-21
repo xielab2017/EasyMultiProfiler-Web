@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "session_id": "PArkT3RstD4py1wcsbecA4tH",
+  "experiment_name": "RNAseq_test",
+  "samples": 24,
+  "features": 19150,
+  "assay": "counts"
+}

@@ -1,0 +1,370 @@
+feature,Estimate_group,pvalue,fdr,sign_group,method,vs,fold_change,log2FC
+feature_1,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.3259,0.407
+feature_2,group,0.2,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.3988,-1.3263
+feature_3,group,0.1,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.2377,-2.073
+feature_4,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,2.2753,1.186
+feature_5,group,0.2,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.3733,-1.4218
+feature_6,group,0.4,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.3685,-1.4404
+feature_7,group,0.7,0.8359,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.7627,-0.3908
+feature_8,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.1067,0.1463
+feature_9,group,0.4,0.6772,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.5635,0.6448
+feature_10,group,0.2,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.3307,-1.5966
+feature_11,group,0.4,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.2285,-2.1299
+feature_12,group,0.7,0.8359,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.7234,-0.4671
+feature_13,group,1,1,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,5.9471,2.5722
+feature_14,group,0.1,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.3312,-1.5942
+feature_15,group,0.7,0.8359,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.5231,-0.9349
+feature_16,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.2152,0.2812
+feature_17,group,0.4,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.6119,-0.7086
+feature_18,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,2.6404,1.4008
+feature_19,group,1,1,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.9202,-0.12
+feature_20,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.1889,0.2496
+feature_21,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.111,0.1518
+feature_22,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.3886,0.4737
+feature_23,group,1,1,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.1107,0.1515
+feature_24,group,0.1,0.6772,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,13.0927,3.7107
+feature_25,group,0.4,0.6772,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,5.1682,2.3697
+feature_26,group,0.0765,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.1265,-2.9831
+feature_27,group,0.1,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.4776,-1.0661
+feature_28,group,0.1,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.1401,-2.8354
+feature_29,group,0.1,0.6772,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,4.3835,2.1321
+feature_30,group,0.7,0.8359,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.7013,-0.5119
+feature_31,group,0.4,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.5294,-0.9175
+feature_32,group,0.7,0.8359,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.739,-0.4364
+feature_33,group,0.1,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.1663,-2.5879
+feature_34,group,0.1,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.3733,-1.4217
+feature_35,group,0.7,0.8359,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.7127,-0.4886
+feature_36,group,0.4,0.6772,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,9.3913,3.2313
+feature_37,group,1,1,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.9231,-0.1155
+feature_38,group,1,1,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.0141,0.0202
+feature_39,group,0.2,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.3972,-1.3322
+feature_40,group,0.4,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.4033,-1.3099
+feature_41,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.1875,0.2479
+feature_42,group,1,1,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.1265,0.1719
+feature_43,group,0.0765,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.0147,-6.0875
+feature_44,group,1,1,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.6756,-0.5658
+feature_45,group,0.7,0.8359,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.5777,-0.7915
+feature_46,group,0.5066,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,2.6488,1.4053
+feature_47,group,0.184,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,151.5,7.2432
+feature_48,group,0.8248,0.9723,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.7748,-0.3682
+feature_49,group,0.6428,0.8294,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,78,6.2854
+feature_50,group,0.4,0.6772,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,8.2381,3.0423
+feature_51,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_52,group,0.6428,0.8294,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,107,6.7415
+feature_53,group,0.1,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.0773,-3.6935
+feature_54,group,0.1967,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_55,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_56,group,0.5066,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,20.3333,4.3458
+feature_57,group,0.3758,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,65.2,6.0268
+feature_58,group,1,1,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,80.875,6.3376
+feature_59,group,0.4,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.5593,-0.8384
+feature_60,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,25,4.6439
+feature_61,group,0.3537,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,204,7.6724
+feature_62,group,0.1212,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,65.3548,6.0302
+feature_63,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,50.5,5.6582
+feature_64,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_65,group,0.4,0.6772,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,2.9915,1.5809
+feature_66,group,1,1,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.443,0.5291
+feature_67,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,2.1857,1.1281
+feature_68,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_69,group,0.3537,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,73.3333,6.1964
+feature_70,group,0.6428,0.8294,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.3535,-1.5001
+feature_71,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,39.4848,5.3032
+feature_72,group,0.6428,0.8294,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,51.75,5.6935
+feature_73,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,32.2,5.009
+feature_74,group,0.6579,0.8359,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1.0435,0.0614
+feature_75,group,1,1,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.21,0.2751
+feature_76,group,0.6428,0.8294,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1.5405,0.6234
+feature_77,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,15.5556,3.9594
+feature_78,group,0.4,0.6772,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,14.1818,3.826
+feature_79,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_80,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_81,group,0.6579,0.8359,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1.25,0.3219
+feature_82,group,1,1,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,11.8605,3.5681
+feature_83,group,0.3758,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,7.5,2.9069
+feature_84,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_85,group,0.5066,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,43.6667,5.4485
+feature_86,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_87,group,1,1,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.3175,-1.6554
+feature_88,group,0.0636,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_89,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_90,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_91,group,1,1,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.9273,-0.1089
+feature_92,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_93,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,38,5.2479
+feature_94,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,139.5,7.1241
+feature_95,group,0.6579,0.8359,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,34.3333,5.1015
+feature_96,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,123.5,6.9484
+feature_97,group,0.3687,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,116.3333,6.8621
+feature_98,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_99,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_100,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_101,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_102,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_103,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,82.5,6.3663
+feature_104,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_105,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_106,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,138.5,7.1137
+feature_107,group,0.6428,0.8294,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,26,4.7004
+feature_108,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,63.6,5.991
+feature_109,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_110,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_111,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,51.5,5.6865
+feature_112,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_113,group,0.3537,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,13.5,3.7549
+feature_114,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_115,group,0.0636,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_116,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,66,6.0444
+feature_117,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,91,6.5078
+feature_118,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_119,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_120,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,83,6.375
+feature_121,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,85.5,6.4179
+feature_122,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_123,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_124,group,0.2,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.3796,-1.3973
+feature_125,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_126,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,69,6.1085
+feature_127,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_128,group,0.8248,0.9723,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.25,-2
+feature_129,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_130,group,0.0765,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.1087,-3.2016
+feature_131,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,52.8,5.7225
+feature_132,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_133,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_134,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_135,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_136,group,0.6428,0.8294,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,34.6667,5.1155
+feature_137,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_138,group,0.4795,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,11,3.4594
+feature_139,group,0.8248,0.9723,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,19.5714,4.2907
+feature_140,group,0.3758,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,30.4286,4.9274
+feature_141,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_142,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,20.3333,4.3458
+feature_143,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1.3425,0.4249
+feature_144,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_145,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,79.5,6.3129
+feature_146,group,0.1212,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,30.4118,4.9266
+feature_147,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_148,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_149,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,2.375,1.2479
+feature_150,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,57.5,5.8455
+feature_151,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_152,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,56.1111,5.8102
+feature_153,group,0.3537,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,65,6.0224
+feature_154,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,53,5.7279
+feature_155,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,54.5,5.7682
+feature_156,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_157,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_158,group,0.3537,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,70.5,6.1396
+feature_159,group,0.1,0.6772,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,106.6667,6.737
+feature_160,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_161,group,0.5002,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,37.75,5.2384
+feature_162,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_163,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_164,group,0.6428,0.8294,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,64.3333,6.0075
+feature_165,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,4.3103,2.1078
+feature_166,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,24.6923,4.626
+feature_167,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_168,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_169,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_170,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_171,group,0.3758,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.24,-2.0589
+feature_172,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_173,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_174,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_175,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_176,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_177,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_178,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_179,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_180,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_181,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_182,group,0.1967,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_183,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_184,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_185,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_186,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_187,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_188,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_189,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_190,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_191,group,0.0636,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_192,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_193,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_194,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_195,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_196,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_197,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_198,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_199,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_200,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_201,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_202,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_203,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,20.3333,4.3458
+feature_204,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_205,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_206,group,0.3537,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,108,6.7549
+feature_207,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_208,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,53,5.7279
+feature_209,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_210,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_211,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,10.6667,3.415
+feature_212,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_213,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_214,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_215,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_216,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_217,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_218,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_219,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_220,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_221,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_222,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_223,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_224,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_225,group,0.8137,0.9685,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,10.25,3.3576
+feature_226,group,0.1,0.6772,tax_2,Wilcoxon rank sum exact test,tax_1 vs tax_2,0.2921,-1.7753
+feature_227,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_228,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_229,group,0.5066,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,12,3.585
+feature_230,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_231,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_232,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_233,group,0.6428,0.8294,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,11.75,3.5546
+feature_234,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_235,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_236,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_237,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,13,3.7004
+feature_238,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_239,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,29.5,4.8826
+feature_240,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_241,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_242,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_243,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_244,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_245,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_246,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_247,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_248,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_249,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_250,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_251,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,10.5,3.3923
+feature_252,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_253,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_254,group,0.3537,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.0625,-4
+feature_255,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_256,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_257,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_258,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_259,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_260,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_261,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,9.5,3.2479
+feature_262,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_263,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_264,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_265,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_266,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_267,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_268,group,0.0636,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_269,group,1,1,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.75,-0.415
+feature_270,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1.1875,0.2479
+feature_271,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_272,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_273,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_274,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_275,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_276,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_277,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_278,group,0.7,0.8359,tax_1,Wilcoxon rank sum exact test,tax_1 vs tax_2,1.4,0.4854
+feature_279,group,0.0636,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_280,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1.4615,0.5475
+feature_281,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_282,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_283,group,0.5002,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.4444,-1.1699
+feature_284,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_285,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,18.5,4.2095
+feature_286,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_287,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_288,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_289,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_290,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_291,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_292,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_293,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_294,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_295,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_296,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,7,2.8074
+feature_297,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,8,3
+feature_298,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_299,group,0.3537,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.0909,-3.4594
+feature_300,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,6.5,2.7004
+feature_301,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_302,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_303,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,3.5,1.8074
+feature_304,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_305,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_306,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_307,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,6,2.585
+feature_308,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_309,group,0.3537,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.1875,-2.415
+feature_310,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_311,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_312,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_313,group,0.3537,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.2381,-2.0704
+feature_314,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_315,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_316,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_317,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_318,group,0.6428,0.8294,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,3.6667,1.8745
+feature_319,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_320,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_321,group,0.1967,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_322,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_323,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_324,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_325,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_326,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_327,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_328,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_329,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_330,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_331,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_332,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_333,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_334,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_335,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_336,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_337,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_338,group,1,1,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1.5,0.585
+feature_339,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_340,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_341,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_342,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_343,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_344,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_345,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_346,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_347,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_348,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_349,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_350,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_351,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_352,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_353,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_354,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_355,group,0.1876,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_356,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_357,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_358,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_359,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_360,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_361,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_362,group,0.505,0.6772,tax_1,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,1000,9.9658
+feature_363,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_364,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_365,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_366,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_367,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_368,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658
+feature_369,group,0.505,0.6772,tax_2,Wilcoxon rank sum test with continuity correction,tax_1 vs tax_2,0.001,-9.9658

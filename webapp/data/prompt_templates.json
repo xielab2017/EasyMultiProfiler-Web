@@ -1,0 +1,124 @@
+{
+  "categories": [
+    {
+      "id": "literature",
+      "title": "文献批判性阅读",
+      "description": "课前问题卡：摘要提炼、术语解释、批判性追问",
+      "templates": [
+        {
+          "id": "lit_summary",
+          "title": "文献核心论点提炼",
+          "prompt": "我正在阅读以下文献片段：\n\n[PASTE_ABSTRACT_OR_PARAGRAPH]\n\n请帮我：\n1) 用 3 句话概括核心科学问题与主要结论；\n2) 列出 5 个我不懂的专业术语并通俗解释；\n3) 提出 3 个批判性问题（方法局限、样本偏倚、因果推断等）。\n\n注意：请标注你不确定的地方，不要编造文献或数据。",
+          "usage": "将摘要或段落粘贴到 [PASTE_ABSTRACT_OR_PARAGRAPH]，用于课前问题卡。",
+          "pitfalls": ["编造参考文献", "把相关性说成因果", "忽略样本量与偏倚"],
+          "review_checklist": ["是否逐条回答了批判性问题？", "术语解释是否用自己的话复述？", "是否标注了 AI 不确定之处？"]
+        }
+      ]
+    },
+    {
+      "id": "question",
+      "title": "科学问题拆解",
+      "description": "从数据现象提炼可验证的科学问题",
+      "templates": [
+        {
+          "id": "question_decompose",
+          "title": "科学问题拆解",
+          "prompt": "背景：{CASE_BACKGROUND}\n\n当前数据概况：{DATA_SUMMARY}\n\n请帮我：\n1) 将宽泛兴趣收敛为 1 个主科学问题；\n2) 拆解为 2–3 个可检验子问题；\n3) 每个子问题建议一种 EMP-Web 分析步骤（Import/Prepare/Analyze/Visualize）。\n\n要求：区分观察性问题与机制性问题；不要直接给出最终结论。",
+          "usage": "在课程案例第一步使用；将 CASE_BACKGROUND 替换为案例背景。",
+          "pitfalls": ["问题过大无法检验", "混淆描述与解释", "跳过数据可行性"],
+          "review_checklist": ["主问题是否可检验？", "子问题是否对应具体分析？", "是否写了自己的修改意见？"]
+        }
+      ]
+    },
+    {
+      "id": "strategy",
+      "title": "分析策略设计",
+      "description": "多组学方法选择与流程规划",
+      "templates": [
+        {
+          "id": "omics_strategy",
+          "title": "多组学分析策略",
+          "prompt": "组学类型：{OMICS_TYPE}\n样本数：{N_SAMPLES}\n分组变量：{GROUP_VAR}\n科学问题：{SCIENTIFIC_QUESTION}\n\n请设计分析路线图：质控 → 标准化 → 差异/关联 → 富集/网络 → 可视化。\n对每一步说明：推荐 EMP-Web 页面、关键参数、生物学理由、常见误区。\n不要生成具体 R 代码。",
+          "usage": "在 Prepare/Analyze 之前使用，辅助规划而非替代决策。",
+          "pitfalls": ["RNA-seq 误用 t 检验", "忽略组成型数据", "多重检验未校正"],
+          "review_checklist": ["方法是否与数据类型匹配？", "是否考虑 FDR/批次？", "是否由学生最终拍板？"]
+        }
+      ]
+    },
+    {
+      "id": "emp_ops",
+      "title": "EMP-Web 操作辅助",
+      "description": "解释当前页面参数与下一步操作",
+      "templates": [
+        {
+          "id": "emp_params",
+          "title": "参数解释",
+          "prompt": "我正在 EMP-Web 的「{EMP_PAGE}」页面，当前参数：\n{PARAMS_JSON}\n\n请用本科生能理解的语言解释每个参数的含义、默认值是否合理、对结果的影响。\n不要替我点击运行；最后列出 3 个我应该自己确认的检查项。",
+          "usage": "在运行分析前理解参数；结合 Code Lab 更佳。",
+          "pitfalls": ["忽略实验设计", "盲目采用默认阈值"],
+          "review_checklist": ["是否独立核对了分组变量？", "阈值是否有生物学依据？"]
+        }
+      ]
+    },
+    {
+      "id": "interpretation",
+      "title": "图表科学解读",
+      "description": "辅助解读火山图、热图、多样性图等",
+      "templates": [
+        {
+          "id": "plot_interpret",
+          "title": "图表解读",
+          "prompt": "图表类型：{PLOT_TYPE}\n主要统计结果摘要：{STATS_SUMMARY}\n分组信息：{GROUP_INFO}\n\n请从「观察 → 比较 → 生物学意义 → 局限性」四段解读。\n明确区分相关与因果；不要编造未提供的基因/通路名称。",
+          "usage": "Visualize 生成图表后使用；需粘贴真实统计摘要。",
+          "pitfalls": ["P 值误解", "选择性报告显著特征", "过度机制推断"],
+          "review_checklist": ["是否标注 AI 辅助部分？", "是否写了不同意的修正？", "局限性是否诚实？"]
+        }
+      ]
+    },
+    {
+      "id": "hallucination",
+      "title": "AI 幻觉审查",
+      "description": "识别统计误用、因果错误、文献编造",
+      "templates": [
+        {
+          "id": "audit_ai_text",
+          "title": "审查 AI 解读",
+          "prompt": "以下是一段 AI 生成的多组学结果解读：\n\n[AI_TEXT]\n\n请扮演严格审稿人：\n1) 标出可能的错误类型（统计误用、因果夸大、文献幻觉、通路过度解读）；\n2) 对每处给出修正建议；\n3) 列出需要回 EMP-Web 或原文核对的事实。\n\n原始数据上下文：{DATA_CONTEXT}",
+          "usage": "AI 批判训练与作业自查。",
+          "pitfalls": ["审查者本身编造事实"],
+          "review_checklist": ["是否逐类标错？", "修正是否基于数据？", "是否保留审查记录？"]
+        }
+      ]
+    },
+    {
+      "id": "writing",
+      "title": "论文写作辅助",
+      "description": "结果段、讨论段结构化草稿",
+      "templates": [
+        {
+          "id": "results_draft",
+          "title": "结果段草稿",
+          "prompt": "科学问题：{QUESTION}\n已完成分析：{ANALYSIS_LIST}\n关键数字与图表：{KEY_FINDINGS}\n\n请按「方法一句 + 主要发现 + 统计支持」写结果段草稿（中文）。\n禁止编造未提供的 p 值、基因名或样本量。",
+          "usage": "期末小论文结果部分；必须人工修改后提交。",
+          "pitfalls": ["捏造统计量", "图表与文字不一致"],
+          "review_checklist": ["每个数字能否在 EMP 导出中追溯？", "是否附 AI 声明？"]
+        }
+      ]
+    },
+    {
+      "id": "declaration",
+      "title": "AI 使用声明",
+      "description": "标准化诚信声明模板",
+      "templates": [
+        {
+          "id": "ai_declaration",
+          "title": "AI 使用声明模板",
+          "prompt": "请根据以下勾选生成 AI 使用声明（课程作业格式）：\n- 使用工具：{TOOLS}\n- 用途：文献阅读 / 参数理解 / 图表解读 / 代码优化 / 写作草稿（勾选）\n- 本人独立完成的步骤：{INDEPENDENT_WORK}\n- 对 AI 输出的修改：{CRITICAL_EDITS}\n\n输出一段可直接放入报告末尾的声明，并提醒：声明不实属于学术不端。",
+          "usage": "每次作业提交前必填；平台 Learning Trace 可自动附操作记录。",
+          "pitfalls": ["隐瞒 AI 使用", "复制声明模板不填实"],
+          "review_checklist": ["用途是否具体？", "独立部分是否真实？", "是否与 Trace 记录一致？"]
+        }
+      ]
+    }
+  ]
+}

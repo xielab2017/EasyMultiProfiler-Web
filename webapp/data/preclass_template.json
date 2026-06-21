@@ -1,0 +1,10 @@
+{
+  "title": "课前问题卡",
+  "description": "模式一：文献导读 + AI 协作 + 批判追问（提交后写入 Learning Trace）",
+  "fields": [
+    {"id": "core_concepts", "label": "我理解的核心概念（3–5 句）", "required": true},
+    {"id": "my_questions", "label": "我向 AI 提出的问题", "required": true},
+    {"id": "ai_answers", "label": "AI 的回答（摘要）", "required": true},
+    {"id": "critique", "label": "我的批判与追问（必填，防复制）", "required": true}
+  ]
+}

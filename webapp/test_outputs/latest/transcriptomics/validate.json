@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "validation": {
+    "success": true,
+    "checks": {
+      "has_assay": true,
+      "has_metadata": true,
+      "has_group_candidates": true
+    },
+    "group_candidates": "Group"
+  }
+}
