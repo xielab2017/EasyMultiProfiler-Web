@@ -12,26 +12,26 @@ b <- list(
   cluster_cols = TRUE, show_gene_names = NULL, font_size = 11,
   color_panel = NULL, custom_colors = NULL
 )
-    img <- tx_make_heatmap(session_id, experiment, group = group,
-                            top_n = top_n, features = features,
-                            cluster_rows = cluster_rows, cluster_cols = cluster_cols,
-                            show_gene_names = show_gene_names,
-                            font_size = font_size, color_panel = color_panel,
-                            custom_colors = custom_colors)
-    .heatmap_response(img)
-  }, res)
-}
+fc_cutoff  <- as.numeric(b$fc_cutoff %||% 1.0)
+p_cutoff   <- as.numeric(b$p_cutoff  %||% 0.05)
+use_padj   <- if (is.null(b$use_padj)) TRUE else isTRUE(b$use_padj)
+direction  <- b$direction %||% "both"
+top_n      <- as.integer(b$top_n %||% 20)
 
-#* Transcriptomics volcano plot
-#* @post /api/workflows/transcriptomics/visualize/volcano
-#* @serializer unboxedJSON
-function(req, res) {
-  safe_api({
+out <- run_enrichment(session_id, experiment,
+                      database = database, organism = organism,
+                      fc_cutoff = fc_cutoff, p_cutoff = p_cutoff,
+                      use_padj = use_padj, direction = direction,
+                      top_n = top_n)
 
-    session_id <- if (!is.null(b$session_id) && length(b$session_id) > 0) as.character(b$session_id[[1]]) else NULL
-    experiment <- if (!is.null(b$experiment) && length(b$experiment) > 0) as.character(b$experiment[[1]]) else NULL
-    fc_cutoff <- if (!is.null(b$fc_cutoff) && length(b$fc_cutoff) > 0) as.numeric(b$fc_cutoff[[1]]) else 1.0
-    p_cutoff <- if (!is.null(b$p_cutoff) && length(b$p_cutoff) > 0) as.numeric(b$p_cutoff[[1]]) else 0.05
+result_df <- tryCatch(as.data.frame(out$data), error = function(e) data.frame())
+list(
+  success      = TRUE,
+  database     = out$database,
+  organism     = out$organism,
+  direction    = out$direction,
+  deg_count    = out$deg_count,
+  mapped_count = out$mapped_count,
 
 
 # --- POST /api/workflows/metagenomics/visualize/volcano ---
@@ -39,14 +39,14 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   fc_cutoff = 1.0, p_cutoff = 0.05, color_panel = NULL, custom_colors = NULL
 )
-
-#* Metagenomics functional heatmap
-#* @post /api/workflows/metagenomics/visualize/heatmap
+#* Enrichment analysis (async) – submits background job, streams progress
+#* @post /api/analyze/enrichment/async
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
 
-    session_id <- if (!is.null(b$session_id) && length(b$session_id) > 0) as.character(b$session_id[[1]]) else NULL
-    experiment <- if (!is.null(b$experiment) && length(b$experiment) > 0) as.character(b$experiment[[1]]) else NULL
-    group <- if (!is.null(b$group) && length(b$group) > 0) as.character(b$group[[1]]) else NULL
-    top_n <- if (!is.null(b$top_n) && length(b$top_n) > 0) as.integer(b$top_n[[1]]) else 50L
+    session_id <- b$session_id
+    experiment <- b$experiment
+    database   <- b$database  %||% "KEGG"
+    organism   <- b$organism  %||% "hsa"
+    fc_cutoff  <- as.numeric(b$fc_cutoff %||% 1.0)

@@ -1,4 +1,4 @@
-# EasyMultiProfiler Web v5.0.1 — 用户使用指南
+# EasyMultiProfiler Web v5.0.2 — 用户使用指南
 
 > **三种使用方式，请只选一种**  
 > ① **macOS Web 版** · ② **Windows Web 版** · ③ **仅 R / RStudio 包**（不用浏览器）
@@ -50,7 +50,7 @@ Web 专有的 **Course、AI 解读、Run All、Code Lab** 仅在浏览器版提�
 
 - 网页 UI：`http://127.0.0.1:8080` → 默认 **Course** 页  
 - API 健康：`http://127.0.0.1:8000/api/health` → `"status":"ok"`  
-- 侧边栏底部显示 **v5.0.1**
+- 侧边栏底部显示 **v5.0.2**
 
 ---
 
@@ -114,7 +114,7 @@ Prepare 页点击 **「推荐参数（当前组学）」** 可手动重新套用
 
 ---
 
-## 5. v5.0.1 新特性摘要
+## 5. v5.0.2 新特性摘要
 
 - 分平台傻瓜安装（Mac bash / Windows PowerShell+bat）  
 - 一键示例数据 + 组学推荐参数  

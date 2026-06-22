@@ -835,7 +835,7 @@
   max_tokens <- as.integer(.ai_num(cfg$max_tokens, 1100))
   img_url <- .ai_image_data_url(plot_image)
 
-  if (provider %in% c("chatgpt", "openai", "deepseek", "qwen", "minimax", "custom", "campus")) {
+  if (provider %in% c("chatgpt", "openai", "deepseek", "qwen", "minimax", "nvidia", "custom", "campus")) {
     if (!nzchar(key)) stop(sprintf("API key required for provider: %s", provider))
     url <- paste0(d$base_url, "/chat/completions")
     model <- d$model

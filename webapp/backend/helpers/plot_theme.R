@@ -197,6 +197,17 @@ emp_conf_ellipse <- function(x, y, group, level = 0.95, n_segments = 60) {
   do.call(rbind, out)
 }
 
+# PCA / ordination scatter: outer halo + inner solid core per group (shape 21).
+emp_add_ordination_double_points <- function(p) {
+  p +
+    ggplot2::geom_point(
+      shape = 21, size = 5.8, alpha = 0.25, stroke = 0.45
+    ) +
+    ggplot2::geom_point(
+      shape = 21, size = 3.1, alpha = 0.96, color = "grey25", stroke = 0.35
+    )
+}
+
 # Wilcoxon comparison labels for boxplots (k>=2 groups).
 emp_pairwise_wilcox <- function(values, groups) {
   groups <- as.character(groups)

@@ -1,0 +1,11 @@
+{
+  "base_url": "http://10.22.18.12:9901/v1",
+  "api_key": "YOUR_CAMPUS_API_KEY",
+  "timeout": 120,
+  "models": {
+    "fast": "deepseek-v4-flash",
+    "accurate": "Qwen3.6-35B-A3B",
+    "vision": "Qwen3-VL-8B-Instruct",
+    "embedding": "Qwen-embedding"
+  }
+}

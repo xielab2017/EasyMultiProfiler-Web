@@ -9,19 +9,18 @@ if (!exists("experiment", inherits = FALSE) || is.null(experiment) || !nzchar(as
 
 # --- POST /api/workflows/transcriptomics/profile ---
 b <- list(session_id = session_id, experiment = as.character(experiment)[1], assay_hint = "counts")
-  safe_api({
-    snaps <- list_prepare_snapshots(session_id, experiment)
-    list(success = TRUE, n_rows = nrow(snaps), snapshots = snaps)
-  }, res)
-}
+mae            <- load_mae(session_id)
+mae[[experiment]] <- empt
+save_mae(session_id, mae)
+save_empt(session_id, experiment, empt)
+snap_id <- save_prepare_snapshot(session_id, experiment, empt, label = "rarefy")
 
 
 # --- POST /api/workflows/transcriptomics/validate ---
 b <- list(session_id = session_id, experiment = as.character(experiment)[1])
-snapshot_id <- b$snapshot_id
-empt <- load_prepare_snapshot(session_id, experiment, snapshot_id)
-if (is.null(empt)) stop("Snapshot not found.")
-mae <- load_mae(session_id)
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
 
 
 # --- POST /api/workflows/transcriptomics/analyze/differential ---
@@ -30,6 +29,45 @@ b <- list(
   group_var = NULL, ref_group = NULL, test_group = NULL,
   filter_low = TRUE, subset_two_groups = TRUE, cores = "auto"
 )
+    mae            <- load_mae(session_id)
+    mae[[experiment]] <- empt
+    save_mae(session_id, mae)
+    save_empt(session_id, experiment, empt)
+    snap_id <- save_prepare_snapshot(session_id, experiment, empt, label = paste0("collapse_", taxa_level))
+
+    list(success = TRUE, taxa_level = taxa_level,
+         n_features = nrow(SummarizedExperiment::assays(empt)[[1]]),
+         prepare_mode = mode,
+         snapshot_id = snap_id,
+         preview_data = emp_prepare_preview_rows(empt))
+  }, res)
+}
+
+#* List preparation snapshots for an experiment
+#* @get /api/prepare/snapshots/<session_id>/<experiment>
+#* @serializer unboxedJSON
+function(session_id, experiment, res) {
+  safe_api({
+    snaps <- list_prepare_snapshots(session_id, experiment)
+    list(success = TRUE, n_rows = nrow(snaps), snapshots = snaps)
+  }, res)
+}
+
+#* Activate one preparation snapshot as current working data
+#* @post /api/prepare/use_snapshot
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+
+
+# --- POST /api/workflows/transcriptomics/analyze/gsea ---
+b <- list(session_id = session_id, experiment = as.character(experiment)[1], database = "KEGG", organism = "hsa")
+    save_empt(session_id, experiment, empt)
+    list(success = TRUE, snapshot_id = snapshot_id)
+  }, res)
+}
+
+# ══════════════════════════════════════════════════════════
 # ANALYSIS
 # ══════════════════════════════════════════════════════════
 
@@ -44,14 +82,10 @@ function(req, res) {
     assay_hint <- b$assay_hint %||% "counts"
     profile <- tx_profile(session_id, experiment, assay_hint)
     list(success = TRUE, profile = profile)
-  }, res)
-}
 
-#* Transcriptomics workflow pre-check validation
-#* @post /api/workflows/transcriptomics/validate
-#* @serializer unboxedJSON
-function(req, res) {
-  safe_api({
+
+# --- POST /api/workflows/transcriptomics/analyze/wgcna ---
+b <- list(session_id = session_id, experiment = as.character(experiment)[1], method = "spearman", cutoff = 0.7)
 
     session_id <- b$session_id %||% NULL
     experiment <- b$experiment %||% NULL
@@ -60,51 +94,16 @@ function(req, res) {
 }
 
 #* Transcriptomics differential analysis
-
-
-# --- POST /api/workflows/transcriptomics/analyze/gsea ---
-b <- list(session_id = session_id, experiment = as.character(experiment)[1], database = "KEGG", organism = "hsa")
-group_var <- b$group_var %||% NULL
-ref_group <- b$ref_group %||% NULL
-test_group <- b$test_group %||% NULL
-filter_low        <- if (is.null(b$filter_low))        TRUE else isTRUE(b$filter_low)
-subset_two_groups <- if (is.null(b$subset_two_groups)) TRUE else isTRUE(b$subset_two_groups)
-cores             <- b$cores %||% "auto"
-
-result <- tx_run_differential(
-  session_id = session_id,
-  experiment = experiment,
-  method = method,
-  group_var = group_var,
-  ref_group = ref_group,
-  test_group = test_group,
-  filter_low = filter_low,
-  subset_two_groups = subset_two_groups,
-  cores = cores
-)
-result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
-
-
-# --- POST /api/workflows/transcriptomics/analyze/wgcna ---
-b <- list(session_id = session_id, experiment = as.character(experiment)[1], method = "spearman", cutoff = 0.7)
-
-#* Transcriptomics GSEA analysis
-#* @post /api/workflows/transcriptomics/analyze/gsea
+#* @post /api/workflows/transcriptomics/analyze/differential
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
 
     session_id <- b$session_id %||% NULL
     experiment <- b$experiment %||% NULL
-    database <- b$database %||% "KEGG"
-    organism <- b$organism %||% "hsa"
-
-    result <- tx_run_gsea(
-      session_id = session_id,
-      experiment = experiment,
-      database = database,
-      organism = organism
-    )
-    result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
-
-    list(
+    method <- b$method %||% "DESeq2"
+    group_var <- b$group_var %||% NULL
+    ref_group <- b$ref_group %||% NULL
+    test_group <- b$test_group %||% NULL
+    filter_low        <- if (is.null(b$filter_low))        TRUE else isTRUE(b$filter_low)
+    subset_two_groups <- if (is.null(b$subset_two_groups)) TRUE else isTRUE(b$subset_two_groups)

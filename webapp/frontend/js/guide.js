@@ -1,7 +1,7 @@
 /**
  * User Guide page — bilingual render + install command copy.
  */
-import { getLocale, t } from "./locale.js?v=2026-06-21-v5.0.1";
+import { getLocale, t } from "./locale.js?v=2026-06-21-v5.0.2";
 
 const INSTALL_MAC_ONE_LINE =
   'bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"';
@@ -15,7 +15,7 @@ library(EasyMultiProfiler)`;
 
 const COPY = {
   zh: {
-    heroTitle: "EasyMultiProfiler Web v5.0.1 使用指南",
+    heroTitle: "EasyMultiProfiler Web v5.0.2 使用指南",
     heroHint: "本页汇总<strong>安装路径</strong>（Mac / Windows / 仅 R 包）与<strong>网页内分析流程</strong>。零基础：先完成对应系统安装，再从 Course 或「一键示例数据」开始。",
     pathsTitle: "三条安装路径（请只选与你电脑匹配的一条）",
     macCard: "🍎 macOS · Web 版",
@@ -47,12 +47,12 @@ const COPY = {
     rP: "Web 版 AI、Course、Run All <strong>仅在浏览器版</strong>提供。",
     rCopy: "复制 R 代码",
     flowTitle: "网页内分析流程（v5 推荐）",
-    featTitle: "v5.0.1 新功能速览",
+    featTitle: "v5.0.2 新功能速览",
     navTitle: "左侧导航说明",
     faqTitle: "常见问题",
   },
   en: {
-    heroTitle: "EasyMultiProfiler Web v5.0.1 User Guide",
+    heroTitle: "EasyMultiProfiler Web v5.0.2 User Guide",
     heroHint: "Install paths (Mac / Windows / R-only) and the in-app workflow. Complete install first, then start from <strong>Course</strong> or one-click demo data.",
     pathsTitle: "Three install paths (pick one for your computer)",
     macCard: "🍎 macOS · Web",
@@ -84,7 +84,7 @@ const COPY = {
     rP: "AI interpret, Course, Run All are <strong>web-only</strong> features.",
     rCopy: "Copy R code",
     flowTitle: "In-app workflow (v5)",
-    featTitle: "v5.0.1 highlights",
+    featTitle: "v5.0.2 highlights",
     navTitle: "Sidebar pages",
     faqTitle: "FAQ",
   },
@@ -100,7 +100,7 @@ function renderGuideHtml() {
     <div class="card guide-hero">
       <div class="guide-hero-head">
         <h2>${L("heroTitle")}</h2>
-        <span class="version-badge version-badge-lg">v5.0.1</span>
+        <span class="version-badge version-badge-lg">v5.0.2</span>
       </div>
       <p class="hint">${L("heroHint")}</p>
     </div>

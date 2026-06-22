@@ -432,6 +432,47 @@ tr:hover td { background: rgba(59,110,245,.04); }
 .plot-toolbar {
   display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px;
 }
+.ord-stats-card {
+  text-align: left;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #f8fafc;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.ord-section {
+  margin-top: 18px;
+  text-align: center;
+}
+.ord-section-title {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: #334155;
+  text-align: left;
+}
+.scat-groups-field {
+  grid-column: 1 / -1;
+}
+.checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 6px;
+}
+.checkbox-grid label.chk-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.ord-plot-panel img {
+  max-width: 100%;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
 
 /* ─── ALERTS ──────────────────────────────────── */
 .alert {
@@ -632,6 +673,60 @@ body.omics-chipseq         [data-omics]:not([data-omics~="chipseq"]):not([data-o
 /* ─── UTILITIES ───────────────────────────────── */
 .hidden { display: none !important; }
 
+#chip-plots.plot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.chip-plot-panel { padding: 12px; }
+.chip-plot-panel img { max-width: 100%; height: auto; border-radius: 8px; }
+.chip-plot-panel h4 { margin: 0 0 8px; font-size: 0.929rem; color: var(--clr-primary-d); }
+
+.chip-section-title {
+  margin: 18px 0 10px;
+  font-size: 0.929rem;
+  font-weight: 700;
+  color: var(--clr-primary-d);
+  border-bottom: 1px solid var(--clr-border);
+  padding-bottom: 6px;
+}
+.chip-sample-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 768px) {
+  .chip-sample-grid { grid-template-columns: 1fr; }
+}
+.chip-sample-col {
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--clr-border);
+  background: var(--clr-bg);
+}
+.chip-sample-col--treatment { border-left: 3px solid #3b82f6; }
+.chip-sample-col--control { border-left: 3px solid #64748b; }
+.chip-sample-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.chip-sample-sub { font-size: 0.786rem; color: var(--clr-muted); }
+.chip-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.786rem;
+  font-weight: 700;
+}
+.chip-badge--t { background: #dbeafe; color: #1d4ed8; }
+.chip-badge--c { background: #f1f5f9; color: #475569; }
+.chip-bam-summary { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+.chip-advanced { margin: 12px 0; padding: 10px 12px; border: 1px dashed var(--clr-border); border-radius: 8px; }
+.chip-advanced summary { cursor: pointer; font-weight: 600; color: var(--clr-primary-d); }
+.input-row { display: flex; gap: 8px; align-items: center; }
+.input-row input { flex: 1; }
+.checkbox-label { display: flex; align-items: center; gap: 6px; font-weight: 500; min-height: 38px; }
+tr.chip-row--t { background: rgba(59, 130, 246, 0.04); }
+tr.chip-row--c { background: rgba(100, 116, 139, 0.04); }
+
 /* ─── AI COPILOT (AI 解读) ─────────────────────── */
 .ai-copilot { margin: 12px 12px 4px; }
 .ai-copilot-btn {
@@ -809,7 +904,7 @@ body.code-lab-docked .workflow-stepper {
   .workflow-stepper { display: none; }
 }
 
-/* ─── USER GUIDE (v5.0.1) ─────────────────────── */
+/* ─── USER GUIDE (v5.0.2) ─────────────────────── */
 .version-badge {
   display: inline-block; font-size: 0.714rem; font-weight: 700;
   padding: 2px 7px; border-radius: 999px;

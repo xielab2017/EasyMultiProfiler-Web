@@ -10,23 +10,23 @@ b <- list(
   fc_cutoff = 1.0, p_cutoff = 0.05, use_padj = TRUE, min_row_sum = 0,
   do_enrichment = TRUE
 )
-#   - a rich list returned by run_enrichment (data df + plot + counts)
-#   - a plain data.frame returned by run_diff / run_marker etc.
-if (is.list(result_obj) && !is.data.frame(result_obj) &&
-    !is.null(result_obj$run_id %||% result_obj$zip_name)) {
-  result_obj$success <- TRUE
-  return(result_obj)
+    tax_sep <- b$tax_sep %||% ";"
+    normalize_method <- b$normalize_method %||% NULL
+
+    m16s_prepare_taxonomy_step(
+      session_id = session_id,
+      experiment = experiment,
+      collapse_level = collapse_level,
+      min_total_abundance = min_total_abundance,
+      drop_unassigned = drop_unassigned,
+      keep_top_n = keep_top_n,
+      tax_sep = tax_sep,
+      normalize_method = normalize_method
+    )
+  }, res)
 }
-if (is.list(result_obj) && !is.data.frame(result_obj) &&
-    !is.null(result_obj$data) && is.data.frame(result_obj$data)) {
-  df <- result_obj$data
-  out <- result_obj
-  out$data    <- jsonlite::toJSON(df, na = "null", auto_unbox = TRUE)
-  out$n_rows  <- nrow(df)
-  out$columns <- names(df)
-  out$success <- TRUE
-  return(out)
-}
-result_df <- tryCatch(as.data.frame(result_obj), error = function(e) data.frame())
-list(success = TRUE,
-     n_rows  = nrow(result_df),
+
+#* Alpha diversity analysis
+#* @post /api/analyze/alpha
+#* @serializer unboxedJSON
+function(req, res) {

@@ -167,7 +167,7 @@ export async function optimizeRCode(params = {}) {
 // AI copilot: interpret an analysis result and suggest next steps. Reuses the
 // Code Lab LLM config if the student configured one; otherwise the backend
 // falls back to a deterministic offline interpretation.
-import { getLocale } from "./locale.js?v=2026-06-21-v5.0.1";
+import { getLocale } from "./locale.js?v=2026-06-21-v5.0.2";
 
 export async function aiInterpret(context = {}, opts = {}) {
   let provider = opts.provider ?? null;
@@ -754,6 +754,51 @@ export async function chipAnnotate(params = {}) {
 export async function chipCrossOmics(params = {}) {
   const sid = sessionId();
   return request("POST", "/workflows/chipseq/analyze/cross_omics", { session_id: sid, ...params });
+}
+
+export async function chipListBams() {
+  const sid = sessionId();
+  return request("GET", `/workflows/chipseq/bams/list?session_id=${encodeURIComponent(sid || "")}`);
+}
+
+export async function chipUploadBam(file, group = "t") {
+  const sid = sessionId();
+  const fd = new FormData();
+  fd.append("bam_file", file);
+  fd.append("session_id", sid || "");
+  fd.append("group", group);
+  return request("POST", "/workflows/chipseq/bams/upload", fd, true);
+}
+
+export async function chipRegisterBams(entries) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/bams/register", { session_id: sid, entries });
+}
+
+export async function chipScanFolder(folderPath, defaultGroup = "t") {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/bams/scan_folder", {
+    session_id: sid, folder_path: folderPath, default_group: defaultGroup,
+  });
+}
+
+export async function chipSetBamGroup(fileId, group) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/bams/set_group", { session_id: sid, file_id: fileId, group });
+}
+
+export async function chipAnnotateFull(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/analyze/annotation_full", { session_id: sid, ...params });
+}
+
+export async function chipRnaseqCoanalysis(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/analyze/rnaseq_coanalysis", { session_id: sid, ...params });
+}
+
+export async function chipMacsPresets() {
+  return request("GET", "/workflows/chipseq/macs/presets");
 }
 
 // ── EXPORT ────────────────────────────────────────

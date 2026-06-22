@@ -15,34 +15,34 @@ b <- list(
   validation_fraction = 0.3,
   seed = 123L
 )
-function(req, res) {
-  safe_api({
-
-    session_id <- b$session_id
-    experiments <- if (length(b$experiments)) as.character(b$experiments) else character()
-    methods <- if (length(b$methods)) as.character(b$methods) else c("randomForest", "lasso", "xgboost")
-    out <- run_clinical_marker_model(
-      session_id = session_id,
-      experiments = experiments,
-      outcome_var = b$outcome_var %||% NULL,
-      positive_class = b$positive_class %||% NULL,
-      methods = methods,
-      clinical_source = b$clinical_source %||% "experiment",
-      include_clinical_numeric = if (is.null(b$include_clinical_numeric)) TRUE else isTRUE(b$include_clinical_numeric),
-      max_features_per_omics = as.integer(b$max_features_per_omics %||% 200L),
-      top_n = as.integer(b$top_n %||% 30L),
-      validation_fraction = as.numeric(b$validation_fraction %||% 0.3),
-      seed = as.integer(b$seed %||% 123L)
-    )
-    list(
-      success = TRUE,
-      performance = out$performance,
-      markers = out$markers,
-      sample_scores = out$sample_scores,
-      n_performance = nrow(out$performance),
-      n_markers = nrow(out$markers),
-      n_scores = nrow(out$sample_scores),
-      meta = out$meta
+      n_groups = out$meta$n_groups %||% 0L,
+      analysis_note = out$meta$analysis_note %||% NULL
     )
   }, res)
 }
+
+#* Feature × Trait correlation (synchronous, typically < 5 s).
+#* Body: { session_id, experiment, traits:[..], method, top_n_features, p_adjust, clinical_source }
+#* @post /api/clinical/cor
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+
+    session_id     <- b$session_id
+    experiment     <- b$experiment
+    traits         <- as.character(b$traits)
+    method         <- b$method %||% "spearman"
+    top_n_features <- as.integer(b$top_n_features %||% 30L)
+    p_adjust       <- b$p_adjust %||% "BH"
+    clinical_source<- b$clinical_source %||% "experiment"
+
+    pdf_dir <- file.path(session_path(session_id), "plots")
+    dir.create(pdf_dir, recursive = TRUE, showWarnings = FALSE)
+    pdf_path <- file.path(pdf_dir, paste0("clinical_cor_", make.names(experiment), ".pdf"))
+
+    out <- run_clinical_cor(session_id, experiment,
+                             traits = traits, method = method,
+                             top_n_features = top_n_features,
+                             p_adjust = p_adjust,
+                             clinical_source = clinical_source,
+                             pdf_path = pdf_path)

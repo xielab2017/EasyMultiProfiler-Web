@@ -8,18 +8,18 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   method = "randomForest", group_var = NULL, ref_group = NULL, test_group = NULL
 )
-
-    list(success = TRUE,
-         n_rows  = nrow(result_df),
-         columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+        test_group    = b$test_group %||% NULL,
+        organism      = b$organism  %||% "mmu",
+        fc_cutoff     = as.numeric(b$fc_cutoff %||% 1.0),
+        p_cutoff      = as.numeric(b$p_cutoff  %||% 0.05),
+        use_padj      = if (is.null(b$use_padj)) TRUE else isTRUE(b$use_padj),
+        min_row_sum   = as.numeric(b$min_row_sum %||% 0),
+        do_enrichment = if (is.null(b$do_enrichment)) TRUE else isTRUE(b$do_enrichment)
+      ),
+      session_id = b$session_id
+    )
+    list(success = TRUE, job_id = job_id, kind = "rnaseq_run_all")
   }, res)
 }
 
-#* Cluster analysis
-#* @post /api/analyze/cluster
-#* @serializer unboxedJSON
-function(req, res) {
-  safe_api({
-
-    session_id <- b$session_id
+#* Run the full 16S pipeline in the background

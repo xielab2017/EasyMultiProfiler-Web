@@ -441,6 +441,35 @@ body.code-lab-docked #code-lab-root.code-lab--open {
   background: #fff;
 }
 
+.code-lab-llm-readonly {
+  background: #fffbeb !important;
+  color: #92400e;
+  cursor: default;
+}
+
+.code-lab-llm-base-url-mode {
+  margin-bottom: 4px;
+}
+
+.code-lab-llm-save-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 8px;
+  flex-wrap: wrap;
+}
+
+.code-lab-llm-save-row .btn {
+  font-size: 0.786rem;
+  padding: 5px 9px;
+}
+
+.code-lab-llm-save-hint {
+  font-size: 0.714rem;
+  color: #9a3412;
+  line-height: 1.35;
+}
+
 .code-lab-llm-instruction {
   padding: 0 10px 8px;
 }

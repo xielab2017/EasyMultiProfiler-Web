@@ -3,7 +3,7 @@
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
 // this value in lock-step with the one used in index.html (app.js ?v=).
-import * as API from "./api.js?v=2026-06-21-v5.0.1";
+import * as API from "./api.js?v=2026-06-21-v5.0.2";
 import {
   initCodeLab,
   notifyCodeLabNavigate,
@@ -12,17 +12,17 @@ import {
   refreshCodeLabContext,
   openCodeLabPanel,
   applyCopilotAction,
-} from "./code_lab.js?v=2026-06-21-v5.0.1";
+} from "./code_lab.js?v=2026-06-21-v5.0.2";
 import {
   initTeaching,
   onTeachingPage,
   setupTeachingTraceHooks,
-} from "./teaching.js?v=2026-06-21-v5.0.1";
-import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=2026-06-21-v5.0.1";
-import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-06-21-v5.0.1";
-import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=2026-06-21-v5.0.1";
-import { initFontScale } from "./font_scale.js?v=2026-06-21-v5.0.1";
-import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-06-21-v5.0.1";
+} from "./teaching.js?v=2026-06-21-v5.0.2";
+import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=2026-06-21-v5.0.2";
+import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-06-21-v5.0.2";
+import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=2026-06-21-v5.0.2";
+import { initFontScale } from "./font_scale.js?v=2026-06-21-v5.0.2";
+import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-06-21-v5.0.2";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -398,6 +398,85 @@ export function showPlot(containerId, base64png) {
     });
   }
   // Re-initialise icons inside the new element
+  if (window.lucide) lucide.createIcons({ nodes: [container] });
+  attachAiCopilot(container, { ...inferAiContext(containerId), kind: "plot" });
+}
+
+function buildPlotPanelHtml(panelId, base64png, downloadStem) {
+  const pngSrc = `data:image/png;base64,${base64png}`;
+  return `
+    <div class="ord-plot-panel" id="${panelId}-wrap">
+      <div class="plot-toolbar">
+        <a class="btn btn-outline" id="${panelId}-dl-png" href="${pngSrc}" download="${downloadStem}.png"><i data-lucide="download"></i> PNG</a>
+        <a class="btn btn-outline" id="${panelId}-dl-jpg" href="#"><i data-lucide="download"></i> JPEG</a>
+      </div>
+      <img src="${pngSrc}" alt="${downloadStem}">
+    </div>`;
+}
+
+function wirePlotPanelDownloads(panelId, downloadStem) {
+  const wrap = document.getElementById(`${panelId}-wrap`);
+  if (!wrap) return;
+  const img = wrap.querySelector("img");
+  if (!img) return;
+  const mkCanvas = () => new Promise((resolve, reject) => {
+    const probe = new Image();
+    probe.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = probe.naturalWidth || probe.width;
+      c.height = probe.naturalHeight || probe.height;
+      c.getContext("2d").drawImage(probe, 0, 0);
+      resolve(c);
+    };
+    probe.onerror = reject;
+    probe.src = img.src;
+  });
+  const jpgBtn = document.getElementById(`${panelId}-dl-jpg`);
+  jpgBtn?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const c = await mkCanvas();
+    const a = document.createElement("a");
+    a.href = c.toDataURL("image/jpeg", 0.95);
+    a.download = `${downloadStem}.jpg`;
+    a.click();
+  });
+}
+
+function formatOrdinationStats(stats) {
+  if (!stats || typeof stats !== "object") return "";
+  const lines = [];
+  if (stats.title) lines.push(`<strong>${escapeHtml(stats.title)}</strong>`);
+  if (stats.subtitle) lines.push(`<div>${escapeHtml(stats.subtitle)}</div>`);
+  if (stats.caption) lines.push(`<div>${escapeHtml(stats.caption)}</div>`);
+  ["proj_x", "proj_y"].forEach(key => {
+    const rec = stats[key];
+    if (rec?.axis && rec?.label) {
+      lines.push(`<div>${escapeHtml(rec.axis)} projection: ${escapeHtml(rec.label)}</div>`);
+    }
+  });
+  return lines.join("");
+}
+
+export function showOrdinationResult(containerId, res) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const panels = [
+    { id: `${containerId}-main`, b64: res.plot_main || res.plot, label: "Core ordination", stem: "ordination_core" },
+    { id: `${containerId}-proj-x`, b64: res.plot_proj_x, label: res.stats?.axis_x || "Axis X projection", stem: "ordination_proj_axis_x" },
+    { id: `${containerId}-proj-y`, b64: res.plot_proj_y, label: res.stats?.axis_y || "Axis Y projection", stem: "ordination_proj_axis_y" },
+  ].filter(p => p.b64);
+
+  let html = "";
+  const statsHtml = formatOrdinationStats(res.stats);
+  if (statsHtml) {
+    html += `<div class="ord-stats-card">${statsHtml}</div>`;
+  }
+  for (const p of panels) {
+    html += `<section class="ord-section"><h4 class="ord-section-title">${escapeHtml(p.label)}</h4>${buildPlotPanelHtml(p.id, p.b64, p.stem)}</section>`;
+  }
+  container.innerHTML = html || `<p style="padding:12px">No plot returned.</p>`;
+  container.classList.remove("hidden");
+  for (const p of panels) wirePlotPanelDownloads(p.id, p.stem);
   if (window.lucide) lucide.createIcons({ nodes: [container] });
   attachAiCopilot(container, { ...inferAiContext(containerId), kind: "plot" });
 }
@@ -1039,6 +1118,11 @@ async function refreshExperimentList() {
     if (markerExp) {
       markerExp.innerHTML = exps.map(e => `<option value="${e.name}" selected>${e.name}</option>`).join("");
     }
+    const chipRnaseq = document.getElementById("chip-rnaseq-exp");
+    if (chipRnaseq) {
+      chipRnaseq.innerHTML = exps.map(e => `<option value="${e.name}">${e.name}</option>`).join("");
+      if (window._emp.currentExp) chipRnaseq.value = window._emp.currentExp;
+    }
 
     // Import page cards
     cards.innerHTML = exps.map(e => `
@@ -1174,6 +1258,7 @@ async function refreshGroupSelectors() {
   bindGroupChange("mbx-group", updateMbxGroups);
   bindGroupChange("tx-group", updateTxGroups);
   bindGroupChange("ra-group", updateRaGroups);
+  bindGroupChange("scat-group", updateScatGroupFilter);
   bindGroupChange("diff-method", updateDiffComparisonUI);
   bindGroupChange("diff-comparison-mode", updateDiffComparisonUI);
   updateDiffGroups();
@@ -1182,6 +1267,7 @@ async function refreshGroupSelectors() {
   updateMbxGroups();
   updateTxGroups();
   updateRaGroups();
+  updateScatGroupFilter();
 }
 
 function updateMarkerGroups() {
@@ -2282,6 +2368,316 @@ runAnalysis("tx-btn-wgcna", "tx-analysis-result", exp =>
       cutoff: +document.getElementById("tx-wgcna-cutoff").value
     })));
 
+// ── ChIP-seq WORKFLOW ─────────────────────────────
+const CHIP_MACS_PRESET_HINTS = {
+  chipseq_tf: "Standard TF ChIP-seq: MACS builds shifting model automatically. -f BAM, -q 0.01.",
+  chipseq_histone_broad: "Broad peak calling for histone marks: --broad --broad-cutoff 0.1.",
+  atac_paired: "Paired-end ATAC: -f BAMPE, uses fragment length from alignments.",
+  atac_cutting_site: "Cutting-site mode: --nomodel --shift -75 --extsize 150 --keep-dup all.",
+  cuttag_tn5: "MACS3 CUT&Tag example: --nomodel --shift -50 --extsize 100.",
+  dnase_smoothed: "DNase smoothing window: --nomodel --shift -100 --extsize 200.",
+  no_control: "Treatment only (no -c). Optional --nolambda; use with caution.",
+  custom: "Manually set all MACS parameters below.",
+};
+
+const CHIP_MACS_PRESET_VALUES = {
+  chipseq_tf: { format: "BAM", cutoff_type: "q", qvalue: 0.01, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false },
+  chipseq_histone_broad: { format: "BAM", cutoff_type: "q", qvalue: 0.01, broad: true, broad_cutoff: 0.1, keep_dup: "auto", nomodel: false },
+  atac_paired: { format: "BAMPE", cutoff_type: "q", qvalue: 0.05, keep_dup: "auto", broad: false, nomodel: false },
+  atac_cutting_site: { format: "BAM", cutoff_type: "q", qvalue: 0.05, keep_dup: "all", nomodel: true, shift: -75, extsize: 150, broad: false },
+  cuttag_tn5: { format: "BAM", cutoff_type: "q", qvalue: 0.01, nomodel: true, shift: -50, extsize: 100, keep_dup: "auto" },
+  dnase_smoothed: { format: "BAM", cutoff_type: "q", qvalue: 0.05, nomodel: true, shift: -100, extsize: 200, keep_dup: "auto" },
+  no_control: { format: "BAM", cutoff_type: "q", qvalue: 0.01, nolambda: true, keep_dup: "auto" },
+};
+
+function chipSetField(id, value) {
+  const el = document.getElementById(id);
+  if (!el || value == null) return;
+  if (el.type === "checkbox") el.checked = !!value;
+  else el.value = String(value);
+}
+
+function applyChipMacsPreset(presetId) {
+  const hint = document.getElementById("chip-macs-preset-hint");
+  if (hint) hint.textContent = CHIP_MACS_PRESET_HINTS[presetId] || CHIP_MACS_PRESET_HINTS.custom;
+  if (presetId === "custom") return;
+  const p = CHIP_MACS_PRESET_VALUES[presetId];
+  if (!p) return;
+  chipSetField("chip-format", p.format);
+  chipSetField("chip-cutoff-type", p.cutoff_type || "q");
+  chipSetField("chip-qvalue", p.qvalue);
+  chipSetField("chip-pvalue", p.pvalue);
+  chipSetField("chip-keep-dup", p.keep_dup);
+  chipSetField("chip-broad", p.broad);
+  chipSetField("chip-broad-cutoff", p.broad_cutoff);
+  chipSetField("chip-call-summits", p.call_summits);
+  chipSetField("chip-nomodel", p.nomodel);
+  chipSetField("chip-shift", p.shift ?? "");
+  chipSetField("chip-extsize", p.extsize ?? "");
+  chipSetField("chip-nolambda", p.nolambda);
+  document.getElementById("chip-cutoff-type")?.dispatchEvent(new Event("change"));
+}
+
+function chipMacsParams() {
+  const cutoffType = document.getElementById("chip-cutoff-type")?.value || "q";
+  const shiftVal = document.getElementById("chip-shift")?.value;
+  const extVal = document.getElementById("chip-extsize")?.value;
+  const tsizeVal = document.getElementById("chip-tsize")?.value;
+  const minLen = document.getElementById("chip-min-length")?.value;
+  const maxGap = document.getElementById("chip-max-gap")?.value;
+  const slocal = document.getElementById("chip-slocal")?.value;
+  const llocal = document.getElementById("chip-llocal")?.value;
+  const scaleTo = document.getElementById("chip-scale-to")?.value;
+  const preset = document.getElementById("chip-macs-preset")?.value || "custom";
+  const params = {
+    genome: document.getElementById("chip-genome")?.value || "hs",
+    prefer_macs: document.getElementById("chip-prefer-macs")?.value || "auto",
+    format: document.getElementById("chip-format")?.value || "BAM",
+    preset: preset === "custom" ? null : preset,
+    keep_dup: document.getElementById("chip-keep-dup")?.value || "auto",
+    broad: document.getElementById("chip-broad")?.checked || false,
+    broad_cutoff: +document.getElementById("chip-broad-cutoff")?.value || 0.1,
+    call_summits: document.getElementById("chip-call-summits")?.checked || false,
+    save_bdg: document.getElementById("chip-save-bdg")?.checked || false,
+    nomodel: document.getElementById("chip-nomodel")?.checked || false,
+    fix_bimodal: document.getElementById("chip-fix-bimodal")?.checked || false,
+    nolambda: document.getElementById("chip-nolambda")?.checked || false,
+    cutoff_analysis: document.getElementById("chip-cutoff-analysis")?.checked || false,
+    fe_cutoff: +document.getElementById("chip-fe-cutoff")?.value || 1,
+    extra_args: document.getElementById("chip-extra-args")?.value?.trim() || null,
+    score_cutoff: +document.getElementById("chip-score-cutoff")?.value || 5,
+  };
+  if (cutoffType === "p") {
+    params.pvalue = +document.getElementById("chip-pvalue")?.value || 0.05;
+  } else {
+    params.qvalue = +document.getElementById("chip-qvalue")?.value || 0.01;
+  }
+  if (shiftVal !== "" && shiftVal != null) params.shift = +shiftVal;
+  if (extVal !== "" && extVal != null) params.extsize = +extVal;
+  if (tsizeVal !== "" && tsizeVal != null) params.tsize = +tsizeVal;
+  if (minLen !== "" && minLen != null) params.min_length = +minLen;
+  if (maxGap !== "" && maxGap != null) params.max_gap = +maxGap;
+  if (slocal !== "" && slocal != null) params.slocal = +slocal;
+  if (llocal !== "" && llocal != null) params.llocal = +llocal;
+  if (scaleTo) params.scale_to = scaleTo;
+  return params;
+}
+
+function chipParams() {
+  const m = chipMacsParams();
+  return { genome: m.genome, prefer_macs: m.prefer_macs, qvalue: m.qvalue, score_cutoff: m.score_cutoff };
+}
+
+async function uploadChipBams(inputId, group, label) {
+  const input = document.getElementById(inputId);
+  const files = input?.files ? [...input.files] : [];
+  if (!files.length) { toast(`Select ${label} BAM/SAM files.`, "error"); return; }
+  setLoading(true);
+  try {
+    for (const f of files) {
+      await withBusy(`Upload ${f.name}`, () => API.chipUploadBam(f, group));
+    }
+    await refreshChipBamTable();
+    showAlert("chip-profile-result", `✓ Uploaded ${files.length} ${label} file(s).`, "success");
+    toast(`${label} upload complete.`, "success");
+    input.value = "";
+  } catch (e) {
+    showAlert("chip-profile-result", `Error: ${e.message}`, "error");
+    toast(e.message, "error");
+  } finally { setLoading(false); }
+}
+
+async function refreshChipBamTable() {
+  const wrap = document.getElementById("chip-bam-table-wrap");
+  const summary = document.getElementById("chip-bam-summary");
+  const tbody = document.querySelector("#chip-bam-table tbody");
+  if (!wrap || !tbody) return;
+  try {
+    const res = await API.chipListBams();
+    const files = res.files || [];
+    const nT = res.n_treatment ?? files.filter((f) => f.group === "t").length;
+    const nC = res.n_control ?? files.filter((f) => f.group === "c").length;
+    const cntT = document.getElementById("chip-count-treatment");
+    const cntC = document.getElementById("chip-count-control");
+    if (cntT) cntT.textContent = `Treatment: ${nT}`;
+    if (cntC) cntC.textContent = `Control: ${nC}`;
+    if (summary) summary.classList.toggle("hidden", !files.length);
+    if (!files.length) {
+      wrap.classList.add("hidden");
+      tbody.innerHTML = "";
+      return;
+    }
+    const sorted = [...files].sort((a, b) => (a.group === "c") - (b.group === "c"));
+    tbody.innerHTML = sorted.map((f) => `
+      <tr class="chip-row--${f.group === "c" ? "c" : "t"}" data-chip-id="${escapeHtml(f.id || f.name)}">
+        <td>${escapeHtml(f.name || "")}</td>
+        <td>
+          <select class="chip-bam-group" data-id="${escapeHtml(f.id || f.name)}">
+            <option value="t" ${f.group === "t" ? "selected" : ""}>Treatment (T)</option>
+            <option value="c" ${f.group === "c" ? "selected" : ""}>Control (C)</option>
+          </select>
+        </td>
+        <td class="meta">${escapeHtml(f.path || "")}</td>
+      </tr>
+    `).join("");
+    wrap.classList.remove("hidden");
+    tbody.querySelectorAll(".chip-bam-group").forEach((sel) => {
+      sel.addEventListener("change", async () => {
+        try {
+          await API.chipSetBamGroup(sel.dataset.id, sel.value);
+          await refreshChipBamTable();
+          toast("Sample group updated.", "success");
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      });
+    });
+    if (res.last_peaks?.peak_file) window._emp.chipLastPeaks = res.last_peaks;
+    if (res.last_annotation_csv) window._emp.chipLastAnnotation = res.last_annotation_csv;
+  } catch (_) {
+    wrap.classList.add("hidden");
+    if (summary) summary.classList.add("hidden");
+  }
+}
+
+function renderChipPlots(plots) {
+  const el = document.getElementById("chip-plots");
+  if (!el) return;
+  const entries = plots && typeof plots === "object" ? Object.entries(plots) : [];
+  if (!entries.length) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = entries.map(([title, b64]) => `
+    <div class="chip-plot-panel card">
+      <h4>${escapeHtml(title.replace(/_/g, " "))}</h4>
+      <img src="data:image/png;base64,${b64}" alt="${escapeHtml(title)}">
+    </div>
+  `).join("");
+  el.classList.remove("hidden");
+  if (window.lucide) lucide.createIcons({ nodes: [el] });
+}
+
+document.getElementById("chip-macs-preset")?.addEventListener("change", (e) => {
+  applyChipMacsPreset(e.target.value);
+});
+
+document.getElementById("chip-cutoff-type")?.addEventListener("change", (e) => {
+  const isP = e.target.value === "p";
+  document.getElementById("chip-qvalue-wrap")?.classList.toggle("hidden", isP);
+  document.getElementById("chip-pvalue-wrap")?.classList.toggle("hidden", !isP);
+});
+
+document.getElementById("chip-btn-upload-treatment")?.addEventListener("click", () => {
+  uploadChipBams("chip-bam-files-treatment", "t", "Treatment");
+});
+document.getElementById("chip-btn-upload-control")?.addEventListener("click", () => {
+  uploadChipBams("chip-bam-files-control", "c", "Control");
+});
+
+document.getElementById("chip-btn-scan-folder")?.addEventListener("click", async () => {
+  const folder = document.getElementById("chip-folder-path")?.value?.trim();
+  if (!folder) { toast("Enter a server folder path.", "error"); return; }
+  setLoading(true);
+  try {
+    const res = await withBusy("Scan BAM folder", () => API.chipScanFolder(folder, "t"));
+    await refreshChipBamTable();
+    showAlert("chip-profile-result", `✓ Registered ${res.n_files || 0} file(s) as Treatment. Reassign Control samples in the table.`, "success");
+  } catch (e) {
+    showAlert("chip-profile-result", `Error: ${e.message}`, "error");
+    toast(e.message, "error");
+  } finally { setLoading(false); }
+});
+
+document.getElementById("chip-btn-profile")?.addEventListener("click", async () => {
+  setLoading(true);
+  clearAlert("chip-profile-result");
+  try {
+    const res = await withBusy("ChIP-seq profile", () => API.chipProfile());
+    const p = res.profile || {};
+    const macs = [p.has_macs3 && "macs3", p.has_macs2 && "macs2"].filter(Boolean).join(", ") || "none";
+    showAlert(
+      "chip-profile-result",
+      `✓ MACS: ${macs}; ChIPseeker: ${p.has_chipseeker ? "yes" : "no"}; OrgDb hs/mm: ${p.has_orgdb_hs}/${p.has_orgdb_mm}.`,
+      p.has_chipseeker && (p.has_macs3 || p.has_macs2) ? "success" : "warning"
+    );
+    await refreshChipBamTable();
+  } catch (e) {
+    showAlert("chip-profile-result", `Error: ${e.message}`, "error");
+  } finally { setLoading(false); }
+});
+
+document.getElementById("chip-btn-peaks")?.addEventListener("click", async () => {
+  setLoading(true);
+  const el = document.getElementById("chip-analysis-result");
+  try {
+    const mp = chipMacsParams();
+    const res = await withBusy("MACS peak calling", () => API.chipCallPeaks({
+      use_manifest: true,
+      ...mp,
+    }));
+    window._emp.chipLastPeaks = res;
+    el.innerHTML = `<p style="padding:12px;color:#166534">✓ Peaks called with ${res.caller}. <strong>Treatment: ${res.n_treatment ?? (res.treatment_bams || []).length}</strong>, <strong>Control: ${res.n_control ?? (res.control_bams || []).length}</strong>.<br>Peak: ${escapeHtml(res.peak_file || "")}</p>`;
+    el.classList.remove("hidden");
+    toast("MACS peak calling complete.", "success");
+  } catch (e) {
+    el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${escapeHtml(e.message)}</p>`;
+    el.classList.remove("hidden");
+    toast(e.message, "error");
+  } finally { setLoading(false); }
+});
+
+document.getElementById("chip-btn-annotate")?.addEventListener("click", async () => {
+  setLoading(true);
+  const el = document.getElementById("chip-analysis-result");
+  try {
+    const cp = chipParams();
+    const res = await withBusy("ChIPseeker annotation", () => API.chipAnnotateFull({
+      peak_file: window._emp.chipLastPeaks?.peak_file || null,
+      genome: cp.genome,
+      score_cutoff: cp.score_cutoff,
+    }));
+    window._emp.chipLastAnnotation = res.annotation_csv;
+    renderChipPlots(res.plots);
+    el.innerHTML = `<p style="padding:12px;color:#166534">✓ Annotated ${res.n_peaks} peaks. CSV: ${escapeHtml(res.annotation_csv || "")}</p>`;
+    el.classList.remove("hidden");
+    toast("ChIPseeker annotation complete.", "success");
+  } catch (e) {
+    el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${escapeHtml(e.message)}</p>`;
+    el.classList.remove("hidden");
+    toast(e.message, "error");
+  } finally { setLoading(false); }
+});
+
+document.getElementById("chip-btn-coanalysis")?.addEventListener("click", async () => {
+  const rnaseq = document.getElementById("chip-rnaseq-exp")?.value;
+  if (!rnaseq) { toast("Select an RNA-seq experiment.", "error"); return; }
+  setLoading(true);
+  const el = document.getElementById("chip-analysis-result");
+  try {
+    const cp = chipParams();
+    const res = await withBusy("ChIP + RNA-seq co-analysis", () => API.chipRnaseqCoanalysis({
+      rnaseq_experiment: rnaseq,
+      peak_annotation_csv: window._emp.chipLastAnnotation || null,
+      genome: cp.genome,
+      score_cutoff: +document.getElementById("chip-co-score-cutoff")?.value || 10,
+      min_total_counts: +document.getElementById("chip-min-counts")?.value || 100,
+    }));
+    renderChipPlots(res.plots);
+    el.innerHTML = `<p style="padding:12px;color:#166534">✓ Co-analysis: ${res.chip_genes_n} peak-linked genes with RNA-seq ${escapeHtml(rnaseq)}.</p>`;
+    el.classList.remove("hidden");
+    toast("RNA-seq co-analysis complete.", "success");
+  } catch (e) {
+    el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${escapeHtml(e.message)}</p>`;
+    el.classList.remove("hidden");
+    toast(e.message, "error");
+  } finally { setLoading(false); }
+});
+
+refreshChipBamTable();
+applyChipMacsPreset(document.getElementById("chip-macs-preset")?.value || "chipseq_tf");
+
 prepAction("mgx-btn-preprocess", "mgx-profile-result", exp =>
   ensureWorkflowReady("metagenomics", exp, {
     alertId: "mgx-profile-result",
@@ -2452,6 +2848,43 @@ function currentHeatmapSize() {
   };
 }
 
+function updateScatGroupFilter() {
+  const gEl = document.getElementById("scat-group");
+  const wrap = document.getElementById("scat-groups-wrap");
+  const box = document.getElementById("scat-groups-filter");
+  if (!gEl || !box || !wrap) return;
+  const col = window._emp.coldataCols.find(c => c.name === gEl.value);
+  if (!col?.values?.length) {
+    wrap.classList.add("hidden");
+    box.innerHTML = '<span class="muted">Select a group variable first.</span>';
+    return;
+  }
+  wrap.classList.remove("hidden");
+  box.innerHTML = col.values.map(v => {
+    const safe = String(v).replace(/"/g, "&quot;");
+    return `<label class="chk-inline"><input type="checkbox" class="scat-grp-cb" value="${safe}" checked> ${safe}</label>`;
+  }).join("");
+}
+
+function selectedScatGroups() {
+  return [...document.querySelectorAll("#scat-groups-filter .scat-grp-cb:checked")]
+    .map(el => el.value)
+    .filter(Boolean);
+}
+
+function currentScatterSize() {
+  const w = +document.getElementById("scat-width")?.value;
+  const h = +document.getElementById("scat-height")?.value;
+  const pw = +document.getElementById("scat-proj-width")?.value;
+  const ph = +document.getElementById("scat-proj-height")?.value;
+  return {
+    width:  Number.isFinite(w) && w > 0 ? w : 9,
+    height: Number.isFinite(h) && h > 0 ? h : 7,
+    proj_width: Number.isFinite(pw) && pw > 0 ? pw : 7,
+    proj_height: Number.isFinite(ph) && ph > 0 ? ph : 4.5,
+  };
+}
+
 // "Top-variance" heatmap (classic): always ignores the custom list.
 genPlot("btn-heatmap", "heatmap-out", exp => API.vizHeatmap(exp, {
   group: document.getElementById("heat-group").value || null,
@@ -2576,13 +3009,33 @@ document.getElementById("btn-deg-heatmap")?.addEventListener("click", async () =
   } finally { setLoading(false); }
 });
 
-genPlot("btn-scatter", "scatter-out", exp => API.vizScatter(exp, {
-  group: document.getElementById("scat-group").value || null,
-  dim1:  +document.getElementById("scat-dim1").value,
-  dim2:  +document.getElementById("scat-dim2").value,
-  ordination: document.getElementById("scat-ordination")?.value || "auto",
-  ...currentColorOptions(),
-}));
+document.getElementById("btn-scatter")?.addEventListener("click", async () => {
+  const exp = window._emp.currentExp;
+  if (!exp) { toast("Import data first.", "error"); return; }
+  const out = document.getElementById("scatter-out");
+  setLoading(true);
+  out.innerHTML = '<p style="padding:12px">Generating ordination panels…</p>';
+  out.classList.remove("hidden");
+  try {
+    await ensurePageSnapshot("visualization");
+    const res = await withBusy("Ordination plot", () => API.vizScatter(exp, {
+      group: document.getElementById("scat-group").value || null,
+      dim1:  +document.getElementById("scat-dim1").value,
+      dim2:  +document.getElementById("scat-dim2").value,
+      groups_include: selectedScatGroups(),
+      ordination: document.getElementById("scat-ordination")?.value || "auto",
+      ...currentScatterSize(),
+      ...currentColorOptions(),
+    }));
+    showOrdinationResult("scatter-out", res);
+    toast("Ordination panels ready.", "success");
+  } catch (e) {
+    out.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${e.message}</p>`;
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+});
 
 genPlot("btn-structure", "structure-out", exp => API.vizStructure(exp, {
   group: document.getElementById("struct-group").value || null,

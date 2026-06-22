@@ -4,7 +4,7 @@
 param(
   [string]$RepoUrl = "https://github.com/xielab2017/EasyMultiProfiler-Web.git",
   [string]$TargetDir = "EasyMultiProfiler-Web",
-  [string]$Branch = "v5.0.1"
+  [string]$Branch = "v5.0.2"
 )
 
 $ErrorActionPreference = "Stop"

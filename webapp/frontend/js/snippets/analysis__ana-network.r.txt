@@ -8,11 +8,11 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   method = "spearman", cutoff = 0.6
 )
-function(res) {
-  safe_api({
-    df <- list_enrichment_species()
-    list(success = TRUE, n_rows = nrow(df), data = df)
-  }, res)
-}
+experiment <- b$experiment
+use        <- b$use %||% "spearman"
 
-#* Install a missing OrgDb package on the server (async).
+result    <- run_correlation(session_id, experiment, use)
+result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
+
+list(success = TRUE,
+     n_rows  = nrow(result_df),

@@ -80,11 +80,11 @@ stopifnot(nrow(coord) == ncol(ad2))
 ## Scatter must consume EMP coordinates (not a silent PCA mismatch)
 img_auto <- make_scatter(sid, exp, group = "Group", dim1 = 1L, dim2 = 2L,
                          ordination = "auto")
-stopifnot(is.character(img_auto), nchar(img_auto) > 500L)
+stopifnot(is.list(img_auto), is.character(img_auto$plot), nchar(img_auto$plot) > 500L)
 
 ## Stale-dimension guard: auto falls back to assay PCA without error
 img_pca <- make_scatter(sid, exp, group = "Group", ordination = "assay_pca")
-stopifnot(nchar(img_pca) > 500L)
+stopifnot(nchar(img_pca$plot) > 500L)
 
 cat("\n[m16s_species_e2e] OK\n")
 cat(sprintf("  features after filter: %d → after Species prep: %d\n", n1, nrow(ad2)))

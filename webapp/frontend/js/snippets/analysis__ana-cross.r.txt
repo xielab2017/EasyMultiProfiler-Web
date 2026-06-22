@@ -10,29 +10,29 @@ b <- list(
   exp_b = "REPLACE_SECOND_EXPERIMENT",
   traits = NULL, method = "spearman", top_n = 20L, clinical_source = "experiment"
 )
-#* WGCNA module–trait correlation (async: 1–5 min on bulk RNAseq).
-#* Body: { session_id, experiment, traits:[..], min_module_size, clinical_source }
-#* Returns a job_id that the frontend polls with the global progress bar.
-#* @post /api/clinical/wgcna/async
-#* @serializer unboxedJSON
-function(req, res) {
-  safe_api({
-
-    session_id  <- b$session_id
-    experiment  <- b$experiment
-    traits      <- if (length(b$traits)) as.character(b$traits) else NULL
-    min_mod     <- as.integer(b$min_module_size %||% 30L)
-    clinical_source <- b$clinical_source %||% "experiment"
-
-    pdf_dir <- file.path(session_path(session_id), "plots")
-    dir.create(pdf_dir, recursive = TRUE, showWarnings = FALSE)
-    pdf_path <- file.path(pdf_dir, paste0("wgcna_modtrait_",
-                                            make.names(experiment), ".pdf"))
-
-    job_id <- submit_job(
-      kind = "clinical_wgcna",
-      fn   = "run_clinical_wgcna",
-      args = list(
-        session_id = session_id, experiment = experiment,
-        traits = traits, min_module_size = min_mod,
-        clinical_source = clinical_source,
+    }
+  )
+} else {
+  vars_df <- list_clinical_vars_standalone(session_id)
+  df <- tryCatch(
+    make_clinical_three_line_table(
+      session_id = session_id, group_var = group_var,
+      skip_high_cardinality = skip_high_cardinality, max_levels = max_levels,
+      table_engine = table_engine
+    ),
+    error = function(e) {
+      msg <- conditionMessage(e)
+      if (grepl("no variables|no standalone clinical data|empty", msg, ignore.case = TRUE)) {
+        data.frame(Variable = character(), stringsAsFactors = FALSE)
+      } else stop(e)
+    }
+  )
+}
+n_num <- if (!is.null(vars_df) && nrow(vars_df)) sum(vars_df$type == "numeric", na.rm = TRUE) else 0L
+warn_msg <- NULL
+if (n_num <= 0L) {
+  warn_msg <- "No numeric clinical indicators detected in selected source. Output is count-only summary."
+}
+if (!nrow(df)) {
+  warn_msg <- paste(c(warn_msg, "No clinical variables found in selected source."), collapse = " ")
+  warn_msg <- trimws(warn_msg)

@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_URL="${1:-https://github.com/xielab2017/EasyMultiProfiler-Web.git}"
 TARGET_DIR="${2:-EasyMultiProfiler-Web}"
-BRANCH="${BRANCH:-v5.0.1}"
+BRANCH="${BRANCH:-v5.0.2}"
 
 if ! command -v git >/dev/null 2>&1; then
   echo "git is required but not found. Please install git first."

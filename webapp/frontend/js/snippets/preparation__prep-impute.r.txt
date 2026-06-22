@@ -8,21 +8,21 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   method = "knn", prepare_mode = "stack"
 )
-  }, res)
-}
-
-#* Normalize data
-#* @post /api/prepare/normalize
-#* @serializer unboxedJSON
 function(req, res) {
   safe_api({
 
     session_id <- b$session_id
     experiment <- b$experiment
-    method     <- b$method %||% "rclr"
+    min_count  <- as.numeric(b$min_count  %||% 0)
+    min_samples<- as.integer(b$min_samples %||% 0L)
+    min_detect_rate <- as.numeric(b$min_detect_rate %||% NA_real_)
+    max_detect_rate <- as.numeric(b$max_detect_rate %||% NA_real_)
+    min_prevalence <- as.numeric(b$min_prevalence %||% 0)
+    max_na     <- as.numeric(b$max_na     %||% 1)
 
     mode <- b$prepare_mode %||% "stack"
-    empt <- .prepare_load_base(session_id, experiment, mode = mode)
-    empt <- empt |> EasyMultiProfiler::EMP_decostand(method = method)
-
-    mae            <- load_mae(session_id)
+    empt  <- .prepare_load_base(session_id, experiment, mode = mode)
+    ad    <- SummarizedExperiment::assays(empt)[[1]]
+    keep  <- rep(TRUE, nrow(ad))
+    if (min_count  > 0) keep <- keep & apply(ad, 1, max, na.rm = TRUE) >= min_count
+    if (min_samples> 0) keep <- keep & apply(ad, 1, function(x) sum(x > 0, na.rm=TRUE)) >= min_samples

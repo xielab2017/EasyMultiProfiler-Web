@@ -7,83 +7,83 @@
   list(p1 = p1, p2 = p2, r1 = e1, r2 = e2)
 }
 
-# -----------------------------------------------------------------------------
-# Barplot: top-N feature mean-abundance with optional group facet
-# -----------------------------------------------------------------------------
-make_barplot <- function(session_id, experiment, group = NULL, feature = NULL,
-                          mode = "top20", top_n = 20L, width = 9, height = 6,
-                          color_panel = NULL, custom_colors = NULL) {
-  old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
-  on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- .viz_load_empt(session_id, experiment)
-  ad   <- SummarizedExperiment::assays(empt)[[1]]
-  cd   <- as.data.frame(SummarizedExperiment::colData(empt))
-
-  if (mode == "single" && !is.null(feature) && feature != "" && feature %in% rownames(ad)) {
-    df <- data.frame(sample = colnames(ad), value = as.numeric(ad[feature, ]))
-    if (!is.null(group) && group %in% names(cd)) {
-      df$group <- .viz_group_levels(cd[[group]])
-      p <- ggplot2::ggplot(df, ggplot2::aes(x = sample, y = value, fill = group)) +
-        ggplot2::geom_col(width = 0.7) +
-        emp_scale_fill_pub(name = group) +
-        ggplot2::facet_grid(~ group, scales = "free_x", space = "free_x")
-    } else {
-      p <- ggplot2::ggplot(df, ggplot2::aes(x = sample, y = value)) +
-        ggplot2::geom_col(fill = emp_pub_palette(1)[1], width = 0.7)
-    }
-    p <- p +
-      ggplot2::labs(title = feature, x = NULL, y = "Abundance") +
-      emp_pub_theme() +
-      ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
-    return(plot_to_base64(p, width = width, height = height))
+.viz_axis_projection_test <- function(values, groups) {
+  g <- droplevels(as.factor(groups))
+  if (nlevels(g) < 2L) {
+    return(list(p = NA_real_, label = "", method = NA_character_))
   }
-
-  top_n <- max(3L, as.integer(top_n))
-  ord   <- order(rowMeans(ad, na.rm = TRUE), decreasing = TRUE)
-  topf  <- rownames(ad)[ord[seq_len(min(top_n, nrow(ad)))]]
-  ad_t  <- ad[topf, , drop = FALSE]
-  topf_lab <- make.unique(.viz_feature_labels(empt, topf))
-
-  if (!is.null(group) && group %in% names(cd)) {
-    grp <- .viz_group_levels(cd[[group]])
-    means <- vapply(levels(grp), function(g) {
-      cols <- which(grp == g)
-      if (!length(cols)) return(rep(NA_real_, length(topf_lab)))
-      rowMeans(ad_t[, cols, drop = FALSE], na.rm = TRUE)
-    }, numeric(length(topf_lab)))
-    df <- data.frame(
-      feature = rep(topf_lab, ncol(means)),
-      group   = rep(colnames(means), each = length(topf_lab)),
-      value   = as.vector(means),
-      stringsAsFactors = FALSE
+  if (nlevels(g) == 2L) {
+    pv <- tryCatch(
+      stats::wilcox.test(values ~ g, exact = FALSE)$p.value,
+      error = function(e) NA_real_
     )
-    df$feature <- factor(df$feature, levels = rev(topf_lab))
-    df$group   <- factor(df$group, levels = colnames(means))
-    sig_tbl <- do.call(rbind, lapply(topf_lab, function(fx) {
-      sub <- df[df$feature == fx, , drop = FALSE]
-      pv <- tryCatch(stats::kruskal.test(value ~ group, data = sub)$p.value, error = function(e) NA_real_)
-      data.frame(feature = fx, p = pv, stringsAsFactors = FALSE)
-    }))
-    sig_tbl$signif <- ifelse(is.na(sig_tbl$p), "",
-                             ifelse(sig_tbl$p < 0.001, "***",
-                                    ifelse(sig_tbl$p < 0.01, "**",
-                                           ifelse(sig_tbl$p < 0.05, "*", ""))))
-    n_sig <- sum(nzchar(sig_tbl$signif), na.rm = TRUE)
-    feat_lab_map <- stats::setNames(
-      ifelse(nzchar(sig_tbl$signif), paste0(sig_tbl$feature, " ", sig_tbl$signif), sig_tbl$feature),
-      sig_tbl$feature
-    )
-    df$feature_lab <- factor(feat_lab_map[as.character(df$feature)],
-                             levels = rev(unname(feat_lab_map[topf_lab])))
+    return(list(
+      p = pv,
+      label = if (is.finite(pv)) sprintf("p = %.4g", pv) else "ns",
+      method = "wilcox"
+    ))
+  }
+  pv <- tryCatch(
+    stats::kruskal.test(values ~ g)$p.value,
+    error = function(e) NA_real_
+  )
+  list(
+    p = pv,
+    label = if (is.finite(pv)) sprintf("KW p = %.4g", pv) else "ns",
+    method = "kruskal"
+  )
+}
 
-    p <- ggplot2::ggplot(df, ggplot2::aes(x = feature_lab, y = value, fill = group)) +
-      ggplot2::geom_col(position = ggplot2::position_dodge(width = 0.8), width = 0.7) +
-      ggplot2::coord_flip() +
-      emp_scale_fill_pub(name = group, n_hint = length(levels(df$group))) +
-      ggplot2::labs(title = paste0("Top ", length(topf), " features by mean abundance"),
-                    subtitle = sprintf("Per-feature Kruskal test: %d/%d significant (p < 0.05)", n_sig, nrow(sig_tbl)),
-                    x = NULL, y = "Mean abundance")
+.viz_group_label_axis <- function(labels, plot_width_in = 7) {
+  labels <- as.character(labels)
+  labels <- labels[nzchar(labels)]
+  ng <- length(labels)
+  if (ng < 1L) {
+    return(list(angle = 0, hjust = 0.5, vjust = 1, size = 9, margin_b = 8))
+  }
+  max_len <- max(nchar(labels), na.rm = TRUE)
+  avg_len <- mean(nchar(labels), na.rm = TRUE)
+  # Rough capacity: wider plot + fewer groups → horizontal labels fit.
+  slot_chars <- (plot_width_in / ng) * 2.4
+  crowded <- ng >= 5L ||
+    max_len > 12L ||
+    avg_len > slot_chars ||
+    (ng * avg_len) > (plot_width_in * 5)
+  if (isTRUE(crowded)) {
+    list(
+      angle = 45, hjust = 1, vjust = 1,
+      size = if (ng > 8L) 7 else 8,
+      margin_b = if (max_len > 16L) 22 else 18
+    )
   } else {
-    df <- data.frame(feature = factor(topf_lab, levels = rev(topf_lab)),
-                     mean = rowMeans(ad_t, na.rm = TRUE))
-    p <- ggplot2::ggplot(df, ggplot2::aes(x = feature, y = mean)) +
+    list(angle = 0, hjust = 0.5, vjust = 1, size = 9, margin_b = 8)
+  }
+}
+
+.viz_ordination_projection <- function(df, value_col, pal, stat = NULL,
+                                       layout = c("group_x", "value_x"),
+                                       title = NULL, standalone = TRUE,
+                                       plot_width = 7) {
+  layout <- match.arg(layout)
+  ng <- nlevels(df$group)
+  vals <- df[[value_col]]
+  if (is.null(stat)) stat <- .viz_axis_projection_test(vals, df$group)
+  vr <- range(vals, na.rm = TRUE)
+  pad <- diff(vr) * 0.14
+  if (!is.finite(pad) || pad < 1e-9) pad <- max(abs(vr), na.rm = TRUE) * 0.1 + 1
+  v_lo <- vr[1] - pad * 0.25
+  v_hi <- vr[2] + pad * (if (ng == 2L && stat$method == "wilcox") 1.55 else 1.05)
+
+  if (layout == "group_x") {
+    p <- ggplot2::ggplot(df, ggplot2::aes(
+      x = .data[["group"]], y = .data[[value_col]],
+      fill = group, color = group
+    )) +
+      ggplot2::geom_boxplot(
+        width = 0.55, alpha = 0.32, outlier.shape = NA,
+        linewidth = 0.35, color = "grey35"
+      ) +
+      ggplot2::geom_jitter(width = 0.11, size = 1.8, alpha = 0.78, stroke = 0) +
+      ggplot2::scale_y_continuous(limits = c(v_lo, v_hi), expand = c(0, 0))
+  } else {
+    p <- ggplot2::ggplot(df, ggplot2::aes(

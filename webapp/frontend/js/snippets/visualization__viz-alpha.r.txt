@@ -2,99 +2,99 @@
 # session_id (+ experiment) come from POST /api/user_r/run (Code Lab).
 # viz.R make_alpha_plot — viz.R lines 1024-1119
 
-      ggplot2::theme(strip.background = ggplot2::element_rect(fill = "grey90"))
+    fc_ord <- stats::setNames(sig$fc, sig$feature)
+    mat <- mat[order(fc_ord[rownames(mat)], decreasing = TRUE, na.last = TRUE), , drop = FALSE]
   }
-  plot_to_base64(p, width = width, height = height)
+
+  sym_map <- stats::setNames(
+    make.unique(.viz_feature_labels(empt, as.character(sig$feature))),
+    sig$feature
+  )
+  rownames(mat) <- sym_map[rownames(mat)]
+
+  grp_col <- if (!is.null(group) && nzchar(group) && group %in% names(cd)) {
+    group
+  } else if (!is.null(cmp_var) && cmp_var %in% names(cd)) {
+    cmp_var
+  } else {
+    pick0 <- .viz_pick_group(empt, NULL)
+    if (!is.null(pick0)) pick0$name else names(cd)[1]
+  }
+  grp_vals <- as.character(cd[[grp_col]])
+  grp_vals[is.na(grp_vals) | !nzchar(grp_vals)] <- "NA"
+  grp_lv <- if (!is.null(ref_g) && !is.null(test_g)) {
+    unique(c(ref_g, test_g, grp_vals))
+  } else {
+    unique(grp_vals)
+  }
+  grp <- factor(grp_vals, levels = grp_lv)
+
+  title <- paste0("DEG heatmap (", nrow(mat), " genes)")
+  subtitle <- paste0("|log2FC| >= ", fc_cutoff, ", ",
+                     if (isTRUE(use_padj)) "padj" else "p", " <= ", p_cutoff,
+                     if (min_row_sum > 0) paste0(", rowSum > ", min_row_sum) else "")
+
+  show_rn <- isTRUE(show_rownames) && nrow(mat) <= 200
+  out <- .viz_render_pheatmap(
+    mat, grp, title = title, subtitle = subtitle,
+    cluster_rows = cluster_rows, cluster_cols = cluster_cols,
+    show_rownames = show_rn, font_size = font_size,
+    color_panel = color_panel, pdf_path = pdf_path,
+    width = width, height = height, ann_name = "Group"
+  )
+  list(png = out$png, pdf = out$pdf, n_genes = out$n_rows)
 }
 
 # -----------------------------------------------------------------------------
-# Alpha diversity boxplot with Wilcoxon p-values + sample sizes
+# Scatter / ordination: prefers EMP_dimension_analysis (PCoA / PCA / UMAP) when
+# available so beta diversity matches Analysis > Dimension.  Falls back to a
+# quick assay PCA when `ordination = "assay_pca"` or when cached coordinates
+# no longer match the assay (e.g. after feature filtering).
 # -----------------------------------------------------------------------------
-make_alpha_plot <- function(session_id, experiment, group = NULL,
-                             metric = "shannon", source = "current", width = 8, height = 6,
-                             color_panel = NULL, custom_colors = NULL) {
+make_scatter <- function(session_id, experiment, group = NULL,
+                          dim1 = 1L, dim2 = 2L,
+                          width = 9, height = 7,
+                          proj_width = 7, proj_height = 4.5,
+                          groups_include = NULL,
+                          color_panel = NULL, ordination = "auto", custom_colors = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- .viz_load_empt(session_id, experiment)
-  alpha_res <- tryCatch(run_alpha(session_id, experiment, method = metric, source = source), error = function(e) NULL)
-  if (is.null(alpha_res)) stop("Could not compute alpha diversity table.")
-
-  cd <- as.data.frame(SummarizedExperiment::colData(empt))
-  df <- as.data.frame(alpha_res, check.names = FALSE)
-  # Normalise sample ID column across possible names
-  if ("primary" %in% names(df)) {
-    df$sample <- as.character(df$primary)
-  } else if ("sample" %in% names(df)) {
-    df$sample <- as.character(df$sample)
-  } else if ("sampleID" %in% names(df)) {
-    df$sample <- as.character(df$sampleID)
-  } else {
-    df$sample <- as.character(rownames(df))
-  }
-  # If df rownames/sample IDs are just integers, fall back to colData rownames
-  if (all(grepl("^[0-9]+$", df$sample)) && nrow(df) == nrow(cd)) {
-    df$sample <- rownames(cd)[as.integer(df$sample)]
-  }
-
-  excl_cols <- c("sample", "primary", "sampleID")
-  candidate <- setdiff(names(df), excl_cols)
-  metric_key <- tolower(trimws(as.character(metric)))
-  metric_alias <- c(
-    "shannon" = "shannon",
-    "simpson" = "simpson",
-    "invsimpson" = "invsimpson",
-    "chao1" = "chao1",
-    "ace" = "ace",
-    "observed" = "observed|observerd",
-    "pielou" = "pielou"
+  ordination <- match.arg(
+    tolower(trimws(as.character(ordination %||% "auto")[1])),
+    c("auto", "emp", "assay_pca")
   )
-  metric_pat <- metric_alias[[metric_key]] %||% metric_key
-  metric_col <- grep(metric_pat, candidate, ignore.case = TRUE, value = TRUE)[1]
-  if (is.na(metric_col)) {
-    # Recompute via analysis helper to guarantee full alpha column set.
-    alpha_full <- tryCatch(run_alpha(session_id, experiment, method = metric_key, source = source), error = function(e) NULL)
-    if (!is.null(alpha_full) && nrow(alpha_full)) {
-      df2 <- as.data.frame(alpha_full, check.names = FALSE)
-      if ("primary" %in% names(df2)) {
-        df2$sample <- as.character(df2$primary)
-      } else if ("sample" %in% names(df2)) {
-        df2$sample <- as.character(df2$sample)
-      } else if ("sampleID" %in% names(df2)) {
-        df2$sample <- as.character(df2$sampleID)
-      } else {
-        df2$sample <- as.character(rownames(df2))
-      }
-      candidate2 <- setdiff(names(df2), excl_cols)
-      metric_col <- grep(metric_pat, candidate2, ignore.case = TRUE, value = TRUE)[1]
-      if (!is.na(metric_col)) df <- df2
+  width <- max(4, as.numeric(width)[1])
+  height <- max(4, as.numeric(height)[1])
+  proj_width <- max(3, as.numeric(proj_width)[1])
+  proj_height <- max(2, as.numeric(proj_height)[1])
+  if (!is.finite(width)) width <- 9
+  if (!is.finite(height)) height <- 7
+  if (!is.finite(proj_width)) proj_width <- 7
+  if (!is.finite(proj_height)) proj_height <- 4.5
+
+  empt <- .viz_load_empt(session_id, experiment)
+  ad   <- SummarizedExperiment::assays(empt)[[1]]
+  cd   <- as.data.frame(SummarizedExperiment::colData(empt))
+  if (ncol(ad) < 2 || nrow(ad) < 2) {
+    stop("Ordination scatter needs at least 2 samples and 2 features.")
+  }
+
+  sample_ids <- colnames(ad)
+  bundle <- .viz_emp_dimension_bundle(empt)
+  use_emp <- FALSE
+  if (!is.null(bundle) && .viz_dim_coords_match_assay(bundle$coord, sample_ids)) {
+    if (identical(ordination, "assay_pca")) {
+      use_emp <- FALSE
+    } else if (identical(ordination, "emp")) {
+      use_emp <- TRUE
+    } else {
+      use_emp <- TRUE
     }
-  }
-  if (is.na(metric_col)) metric_col <- candidate[1]
-  if (is.na(metric_col)) stop("Could not find an alpha-diversity metric column.")
-
-  pick <- if (!is.null(group) && nzchar(group) && group %in% names(cd))
-            list(name = group, values = cd[match(df$sample, rownames(cd)), group]) else .viz_pick_group(empt, NULL)
-  if (!is.null(pick)) {
-    df$group <- .viz_group_levels(pick$values)
-    grp_name <- pick$name
-  } else {
-    df$group <- factor("All"); grp_name <- "Group"
+  } else if (identical(ordination, "emp")) {
+    stop(paste0("No usable EMP dimension coordinates for this experiment ",
+                 "(run Analysis > Dimension first, or coordinates are out of ",
+                 "date after filtering/collapse). Try ordination = auto or assay_pca."))
   }
 
-  df$value <- suppressWarnings(as.numeric(df[[metric_col]]))
-
-  p <- ggplot2::ggplot(df, ggplot2::aes(x = group, y = value, fill = group)) +
-    ggplot2::geom_boxplot(alpha = 0.6, outlier.shape = NA, width = 0.55) +
-    ggplot2::geom_jitter(ggplot2::aes(color = group), width = 0.18, size = 1.8, alpha = 0.85) +
-    emp_scale_fill_pub(name = grp_name, n_hint = length(levels(df$group))) +
-    emp_scale_color_pub(name = grp_name, n_hint = length(levels(df$group))) +
-    ggplot2::labs(title = paste(metric_col, "diversity"), x = grp_name, y = metric_col) +
-    emp_pub_theme() +
-    ggplot2::theme(legend.position = "none")
-
-  if (length(levels(df$group)) >= 2 && requireNamespace("ggpubr", quietly = TRUE)) {
-    pw <- emp_pairwise_wilcox(df$value, df$group)
-    if (!is.null(pw) && nrow(pw)) {
-      comps <- lapply(seq_len(nrow(pw)), function(i) c(pw$group1[i], pw$group2[i]))
-      p <- p + ggpubr::stat_compare_means(comparisons = comps, method = "wilcox.test",
-                                           label = "p.signif", tip.length = 0.01,
+  d1 <- max(1L, min(3L, as.integer(dim1)))
+  d2 <- max(1L, min(3L, as.integer(dim2)))

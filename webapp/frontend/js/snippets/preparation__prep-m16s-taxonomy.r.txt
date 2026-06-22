@@ -9,23 +9,23 @@ b <- list(
   collapse_level = "Genus", min_total_abundance = 0, drop_unassigned = TRUE,
   keep_top_n = 0L, tax_sep = ";", normalize_method = NULL
 )
-}
-
-#* Microbiome 16S workflow profile
-#* @post /api/workflows/microbiome_16s/profile
-#* @serializer unboxedJSON
-function(req, res) {
-  safe_api({
-
-    session_id <- b$session_id %||% NULL
-    experiment <- b$experiment %||% NULL
-    tax_sep <- b$tax_sep %||% ";"
-    profile <- m16s_profile(session_id = session_id, experiment = experiment, tax_sep = tax_sep)
-    list(success = TRUE, profile = profile)
+      tss_downstream = b$tss_downstream %||% 3000
+    )
   }, res)
 }
 
-#* Microbiome 16S workflow pre-check validation
-#* @post /api/workflows/microbiome_16s/validate
+#* ChIP-seq cross-omics integration with RNAseq / proteomics differential results
+#* @post /api/workflows/chipseq/analyze/cross_omics
 #* @serializer unboxedJSON
 function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    chip_cross_integrate(
+      session_id = b$session_id %||% NULL,
+      peak_annotation_csv = b$peak_annotation_csv %||% NULL,
+      rnaseq_experiment = b$rnaseq_experiment %||% NULL,
+      proteomics_experiment = b$proteomics_experiment %||% NULL,
+      rnaseq_p_cutoff = b$rnaseq_p_cutoff %||% 0.05,
+      rnaseq_fc_cutoff = b$rnaseq_fc_cutoff %||% 1.0,
+      proteomics_p_cutoff = b$proteomics_p_cutoff %||% 0.05,
+      proteomics_fc_cutoff = b$proteomics_fc_cutoff %||% 0.5

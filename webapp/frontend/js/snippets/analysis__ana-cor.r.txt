@@ -8,15 +8,15 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   use = "spearman"
 )
-      res$setHeader("Content-Disposition",
-                    sprintf('attachment; filename="%s_%s"', experiment, safe_kind))
-      return(readBin(path, what = "raw", n = file.info(path)$size))
-    }
-  }
-  res$status <- 404
-  charToRaw('{"success":false,"error":"PDF not found, generate the plot first"}')
+if (is.list(result_obj) && !is.data.frame(result_obj) &&
+    !is.null(result_obj$run_id %||% result_obj$zip_name)) {
+  result_obj$success <- TRUE
+  return(result_obj)
 }
-
-#* Dimension reduction
-#* @post /api/analyze/dimension
-#* @serializer unboxedJSON
+if (is.list(result_obj) && !is.data.frame(result_obj) &&
+    !is.null(result_obj$data) && is.data.frame(result_obj$data)) {
+  df <- result_obj$data
+  out <- result_obj
+  out$data    <- jsonlite::toJSON(df, na = "null", auto_unbox = TRUE)
+  out$n_rows  <- nrow(df)
+  out$columns <- names(df)

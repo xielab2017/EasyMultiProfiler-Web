@@ -8,15 +8,15 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   method = "PCA"
 )
-#* @get /api/download/plot/<session_id>/<experiment>/<kind>
-#* @serializer contentType list(type="application/pdf")
-function(session_id, experiment, kind, res) {
-  # Direct hit first (`kind` already is the on-disk filename, e.g.
-  # "clinical_cor_experiment.pdf" or "wgcna_modtrait_experiment.pdf").
-  plots_dir <- file.path(session_path(session_id), "plots")
-  safe_kind <- basename(kind)                             # strip path traversal
-  direct <- file.path(plots_dir, safe_kind)
-  if (nzchar(safe_kind) && grepl("\\.pdf$", safe_kind, ignore.case = TRUE) &&
-      file.exists(direct)) {
-    res$setHeader("Content-Disposition",
-                  sprintf('attachment; filename="%s"', safe_kind))
+#* Fetch the result of a completed job
+#* @get /api/jobs/<job_id>/result
+#* @serializer unboxedJSON
+function(job_id, res) {
+  safe_api({
+    st <- get_job_status(job_id)
+    if (is.null(st$status) || !identical(st$status, "done")) {
+      res$status <- 409
+      return(list(success = FALSE, error = "Job not finished",
+                  status = st$status %||% "unknown"))
+    }
+    result_obj <- get_job_result(job_id)

@@ -2,12 +2,12 @@
  * Code lab: reference snippets + optional **real** R execution via POST /api/user_r/run.
  * Drafts + edit history remain in localStorage.
  */
-import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-06-21-v5.0.1";
-import { codeLabArtifactURL, execUserR, optimizeRCode } from "./api.js?v=2026-06-21-v5.0.1";
-import { t } from "./locale.js?v=2026-06-21-v5.0.1";
+import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-06-21-v5.0.2";
+import { codeLabArtifactURL, execUserR, optimizeRCode } from "./api.js?v=2026-06-21-v5.0.2";
+import { t } from "./locale.js?v=2026-06-21-v5.0.2";
 
 const LS_KEY = "emp_code_lab_store_v1";
-const LLM_CFG_KEY = "emp_code_lab_llm_config_v1";
+const LLM_CFG_KEY = "emp_code_lab_llm_config_v2";
 const CAMPUS_LLM_PRESET = {
   provider: "campus",
   base_url: "http://10.22.18.12:9901/v1",
@@ -22,6 +22,131 @@ const CAMPUS_LLM_PRESET = {
   },
 };
 
+const LLM_PROVIDER_CATALOG = {
+  auto: {
+    models: [{ id: "", label: "自动依次尝试（见高级 Auto Providers）" }],
+    defaultModel: "",
+    baseUrl: "",
+    baseUrlEditable: false,
+    keyRequired: false,
+  },
+  campus: {
+    models: [
+      { id: "mixed", label: "混合（DeepSeek-v4-flash → Qwen3.6-35B-A3B）" },
+      { id: "deepseek-v4-flash", label: "deepseek-v4-flash" },
+      { id: "Qwen3.6-35B-A3B", label: "Qwen3.6-35B-A3B" },
+      { id: "Qwen3-VL-8B-Instruct", label: "Qwen3-VL-8B-Instruct" },
+    ],
+    defaultModel: "mixed",
+    baseUrl: CAMPUS_LLM_PRESET.base_url,
+    baseUrlEditable: false,
+    keyRequired: false,
+  },
+  chatgpt: {
+    models: [
+      { id: "gpt-4o-mini", label: "gpt-4o-mini（推荐）" },
+      { id: "gpt-4o", label: "gpt-4o" },
+      { id: "gpt-4.1-mini", label: "gpt-4.1-mini" },
+      { id: "gpt-4.1", label: "gpt-4.1" },
+      { id: "o3-mini", label: "o3-mini" },
+      { id: "__custom__", label: "自定义模型…" },
+    ],
+    defaultModel: "gpt-4o-mini",
+    baseUrl: "https://api.openai.com/v1",
+    baseUrlEditable: false,
+    keyRequired: true,
+  },
+  deepseek: {
+    models: [
+      { id: "deepseek-chat", label: "deepseek-chat（推荐）" },
+      { id: "deepseek-v4-flash", label: "deepseek-v4-flash" },
+      { id: "deepseek-reasoner", label: "deepseek-reasoner" },
+      { id: "__custom__", label: "自定义模型…" },
+    ],
+    defaultModel: "deepseek-chat",
+    baseUrl: "https://api.deepseek.com",
+    baseUrlEditable: false,
+    keyRequired: true,
+  },
+  qwen: {
+    models: [
+      { id: "qwen-plus", label: "qwen-plus（推荐）" },
+      { id: "qwen-max", label: "qwen-max" },
+      { id: "qwen-turbo", label: "qwen-turbo" },
+      { id: "qwen2.5-72b-instruct", label: "qwen2.5-72b-instruct" },
+      { id: "__custom__", label: "自定义模型…" },
+    ],
+    defaultModel: "qwen-plus",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    baseUrlEditable: false,
+    keyRequired: true,
+  },
+  minimax: {
+    models: [
+      { id: "MiniMax-M2.5", label: "MiniMax-M2.5（推荐）" },
+      { id: "MiniMax-M3", label: "MiniMax-M3" },
+      { id: "MiniMax-Text-01", label: "MiniMax-Text-01" },
+      { id: "__custom__", label: "自定义模型…" },
+    ],
+    defaultModel: "MiniMax-M2.5",
+    baseUrl: "https://api.minimax.chat/v1",
+    baseUrlEditable: false,
+    keyRequired: true,
+  },
+  gemini: {
+    models: [
+      { id: "gemini-2.0-flash", label: "gemini-2.0-flash（推荐）" },
+      { id: "gemini-1.5-pro", label: "gemini-1.5-pro" },
+      { id: "gemini-1.5-flash", label: "gemini-1.5-flash" },
+      { id: "__custom__", label: "自定义模型…" },
+    ],
+    defaultModel: "gemini-2.0-flash",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    baseUrlEditable: false,
+    keyRequired: true,
+  },
+  claude: {
+    models: [
+      { id: "claude-3-5-sonnet-latest", label: "claude-3-5-sonnet-latest（推荐）" },
+      { id: "claude-3-7-sonnet-latest", label: "claude-3-7-sonnet-latest" },
+      { id: "claude-3-5-haiku-latest", label: "claude-3-5-haiku-latest" },
+      { id: "__custom__", label: "自定义模型…" },
+    ],
+    defaultModel: "claude-3-5-sonnet-latest",
+    baseUrl: "https://api.anthropic.com/v1",
+    baseUrlEditable: false,
+    keyRequired: true,
+  },
+  nvidia: {
+    models: [
+      { id: "meta/llama-3.3-70b-instruct", label: "meta/llama-3.3-70b-instruct（推荐）" },
+      { id: "meta/llama-3.1-8b-instruct", label: "meta/llama-3.1-8b-instruct（快）" },
+      { id: "deepseek-ai/deepseek-r1", label: "deepseek-ai/deepseek-r1" },
+      { id: "microsoft/phi-3-mini-128k-instruct", label: "microsoft/phi-3-mini-128k-instruct（快）" },
+      { id: "nvidia/nemotron-4-340b-instruct", label: "nvidia/nemotron-4-340b-instruct" },
+      { id: "qwen/qwq-32b", label: "qwen/qwq-32b" },
+      { id: "__custom__", label: "自定义模型…" },
+    ],
+    defaultModel: "meta/llama-3.3-70b-instruct",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    baseUrlEditable: false,
+    keyRequired: true,
+  },
+  custom: {
+    models: [{ id: "__custom__", label: "自定义 OpenAI-compatible 模型" }],
+    defaultModel: "",
+    baseUrl: "",
+    baseUrlEditable: true,
+    keyRequired: true,
+  },
+  remote: {
+    models: [{ id: "", label: "由远程服务决定" }],
+    defaultModel: "",
+    baseUrl: "",
+    baseUrlEditable: false,
+    keyRequired: false,
+  },
+};
 const DEFAULT_LLM_PRESET = {
   provider: "auto",
   providers: ["campus", "deepseek", "chatgpt"],
@@ -239,13 +364,209 @@ function draftKey(workflow, tab) {
 
 function loadLlmConfig() {
   try {
-    const raw = localStorage.getItem(LLM_CFG_KEY);
-    if (!raw) return {};
+    const raw = localStorage.getItem(LLM_CFG_KEY) || localStorage.getItem("emp_code_lab_llm_config_v1");
+    if (!raw) return migrateLlmConfig({});
     const cfg = JSON.parse(raw);
-    return cfg && typeof cfg === "object" ? cfg : {};
+    return migrateLlmConfig(cfg && typeof cfg === "object" ? cfg : {});
   } catch {
-    return {};
+    return migrateLlmConfig({});
   }
+}
+
+function migrateLlmConfig(cfg) {
+  cfg = cfg && typeof cfg === "object" ? { ...cfg } : {};
+  if (!cfg.profiles || typeof cfg.profiles !== "object") {
+    cfg.profiles = {};
+    const legacyProvider = cfg.provider;
+    if (legacyProvider && legacyProvider !== "auto" &&
+        (cfg.api_key || cfg.model || cfg.base_url)) {
+      cfg.profiles[legacyProvider] = {
+        api_key: cfg.api_key || "",
+        model: cfg.model || "",
+        base_url: cfg.base_url || "",
+      };
+    }
+  }
+  if (cfg.provider === "campus" && !cfg.profiles.campus?.model) {
+    cfg.profiles.campus = {
+      ...(cfg.profiles.campus || {}),
+      model: cfg.profiles.campus?.model || "mixed",
+      base_url: cfg.profiles.campus?.base_url || CAMPUS_LLM_PRESET.base_url,
+      api_key: cfg.profiles.campus?.api_key || "",
+    };
+  }
+  return cfg;
+}
+
+function providerProfile(provider) {
+  const cfg = loadLlmConfig();
+  return cfg.profiles?.[provider] || {};
+}
+
+function providerHasPresetUrl(provider) {
+  const cat = LLM_PROVIDER_CATALOG[provider] || {};
+  return Boolean(cat.baseUrl);
+}
+
+function inferBaseUrlMode(provider, profile = {}) {
+  const cat = LLM_PROVIDER_CATALOG[provider] || {};
+  if (profile.base_url_mode === "custom" || profile.base_url_mode === "preset") {
+    return profile.base_url_mode;
+  }
+  const saved = (profile.base_url || "").trim();
+  if (saved && cat.baseUrl && saved !== cat.baseUrl) return "custom";
+  if (provider === "custom") return "custom";
+  return "preset";
+}
+
+function isBaseUrlCustomMode(provider) {
+  const cat = LLM_PROVIDER_CATALOG[provider] || {};
+  if (cat.baseUrlEditable && provider === "custom") return true;
+  if (!providerHasPresetUrl(provider)) return cat.baseUrlEditable;
+  return llmConfigEls.base_url_mode?.value === "custom";
+}
+
+function resolveBaseUrl(provider) {
+  const cat = LLM_PROVIDER_CATALOG[provider] || {};
+  const saved = (providerProfile(provider).base_url || "").trim();
+  if (provider === "custom") {
+    return llmConfigEls.base_url?.value?.trim() || saved || "";
+  }
+  if (isBaseUrlCustomMode(provider)) {
+    return llmConfigEls.base_url?.value?.trim() || saved || cat.baseUrl || "";
+  }
+  return cat.baseUrl || saved || "";
+}
+
+function getSelectedModel() {
+  const provider = llmConfigEls.provider?.value || "auto";
+  const cat = LLM_PROVIDER_CATALOG[provider] || {};
+  if (provider === "auto" || provider === "remote") {
+    return llmConfigEls.model?.value || "";
+  }
+  const picked = llmConfigEls.model?.value || "";
+  if (picked === "__custom__") {
+    return llmConfigEls.model_custom?.value?.trim() || "";
+  }
+  return picked || cat.defaultModel || "";
+}
+
+function populateModelSelect(provider, selectedModel = "") {
+  const sel = llmConfigEls.model;
+  const customWrap = llmConfigEls.model_custom_wrap;
+  const customInp = llmConfigEls.model_custom;
+  const cat = LLM_PROVIDER_CATALOG[provider];
+  if (!sel || !cat) return;
+  sel.innerHTML = cat.models.map((m) =>
+    `<option value="${String(m.id).replace(/"/g, "&quot;")}">${m.label}</option>`
+  ).join("");
+  const catalogIds = new Set(cat.models.map((m) => m.id));
+  const want = selectedModel || cat.defaultModel || cat.models[0]?.id || "";
+  if (want && !catalogIds.has(want)) {
+    sel.value = "__custom__";
+    customWrap?.classList.remove("hidden");
+    if (customInp) customInp.value = want;
+    return;
+  }
+  sel.value = want;
+  if (sel.value === "__custom__") {
+    customWrap?.classList.remove("hidden");
+    if (customInp && !customInp.value) customInp.value = "";
+  } else {
+    customWrap?.classList.add("hidden");
+    if (customInp) customInp.value = "";
+  }
+}
+
+function updateBaseUrlField(provider, { preferUiMode = false } = {}) {
+  const cat = LLM_PROVIDER_CATALOG[provider] || {};
+  const el = llmConfigEls.base_url;
+  const wrap = llmConfigEls.base_url_wrap;
+  const modeSel = llmConfigEls.base_url_mode;
+  if (!el) return;
+
+  const profile = providerProfile(provider);
+  const saved = (profile.base_url || "").trim();
+
+  if (provider === "custom" && cat.baseUrlEditable) {
+    modeSel?.classList.add("hidden");
+    el.readOnly = false;
+    el.classList.remove("code-lab-llm-readonly");
+    el.value = saved;
+    el.placeholder = "https://your-api.example.com/v1";
+    wrap?.classList.remove("hidden");
+    return;
+  }
+
+  if (!providerHasPresetUrl(provider)) {
+    modeSel?.classList.add("hidden");
+    if (cat.baseUrlEditable) {
+      el.readOnly = false;
+      el.classList.remove("code-lab-llm-readonly");
+      el.value = saved || cat.baseUrl || "";
+      wrap?.classList.remove("hidden");
+    } else {
+      el.readOnly = true;
+      el.classList.add("code-lab-llm-readonly");
+      el.value = provider === "auto" ? "（按各 Provider 默认地址依次尝试）" : "";
+      wrap?.classList.toggle("hidden", provider === "remote");
+    }
+    return;
+  }
+
+  modeSel?.classList.remove("hidden");
+  const mode = (preferUiMode && modeSel?.value)
+    ? modeSel.value
+    : inferBaseUrlMode(provider, profile);
+  if (modeSel && !preferUiMode) modeSel.value = mode;
+
+  if (mode === "custom") {
+    el.readOnly = false;
+    el.classList.remove("code-lab-llm-readonly");
+    el.value = saved;
+    el.placeholder = cat.baseUrl;
+  } else {
+    el.readOnly = true;
+    el.classList.add("code-lab-llm-readonly");
+    el.value = cat.baseUrl;
+    el.placeholder = "";
+  }
+  wrap?.classList.remove("hidden");
+}
+
+function applyProviderToForm(provider) {
+  const profile = providerProfile(provider);
+  populateModelSelect(provider, profile.model);
+  if (llmConfigEls.api_key) {
+    llmConfigEls.api_key.value = profile.api_key || "";
+  }
+  updateBaseUrlField(provider);
+  updateLlmFormHints(provider);
+}
+
+function saveCurrentProviderProfile() {
+  const provider = llmConfigEls.provider?.value;
+  if (!provider) return;
+  const cat = LLM_PROVIDER_CATALOG[provider] || {};
+  const mode = llmConfigEls.base_url_mode?.value || inferBaseUrlMode(provider, providerProfile(provider));
+  let baseUrl = "";
+  if (provider === "custom" && cat.baseUrlEditable) {
+    baseUrl = llmConfigEls.base_url?.value?.trim() || "";
+  } else if (isBaseUrlCustomMode(provider)) {
+    baseUrl = llmConfigEls.base_url?.value?.trim() || "";
+  }
+  const cfg = loadLlmConfig();
+  cfg.profiles = cfg.profiles || {};
+  cfg.profiles[provider] = {
+    api_key: llmConfigEls.api_key?.value || "",
+    model: getSelectedModel(),
+    base_url: baseUrl,
+    ...(providerHasPresetUrl(provider) ? { base_url_mode: mode } : {}),
+  };
+  cfg.provider = provider;
+  cfg.task_type = llmConfigEls.task_type?.value || cfg.task_type || "code_optimize";
+  saveLlmConfig(cfg);
+  setLlmStatus(`已保存 ${provider} 的配置（本机浏览器，切换 Provider 会自动恢复）`, "ok");
 }
 
 function saveLlmConfig(cfg) {
@@ -378,71 +699,78 @@ function setLlmStatus(message, kind = "muted") {
 
 function applyLlmConfigToForm() {
   const cfg = loadLlmConfig();
-  const entries = {
-    provider: cfg.provider || "auto",
-    mode: cfg.mode || "api",
-    api_key: cfg.api_key || "",
-    base_url: cfg.base_url || "",
-    model: cfg.model || "",
-    task_type: cfg.task_type || "code_optimize",
-    remote_host: cfg.remote_host || "",
-    remote_port: cfg.remote_port || "",
-    remote_path: cfg.remote_path || "/api/llm/optimize_r",
-    providers: Array.isArray(cfg.providers) ? cfg.providers.join(",") : (cfg.providers || ""),
-  };
-  for (const [key, val] of Object.entries(entries)) {
-    if (llmConfigEls[key]) llmConfigEls[key].value = val;
+  const provider = cfg.provider || "auto";
+  if (llmConfigEls.provider) llmConfigEls.provider.value = provider;
+  if (llmConfigEls.task_type) {
+    llmConfigEls.task_type.value = cfg.task_type || "code_optimize";
   }
-  updateLlmFormHints(entries.provider);
+  if (llmConfigEls.providers) {
+    llmConfigEls.providers.value = Array.isArray(cfg.providers)
+      ? cfg.providers.join(",")
+      : (cfg.providers || "");
+  }
+  if (llmConfigEls.remote_host) llmConfigEls.remote_host.value = cfg.remote_host || "";
+  if (llmConfigEls.remote_port) llmConfigEls.remote_port.value = cfg.remote_port || "";
+  if (llmConfigEls.remote_path) {
+    llmConfigEls.remote_path.value = cfg.remote_path || "/api/llm/optimize_r";
+  }
+  applyProviderToForm(provider);
 }
 
 function applyDefaultLlmPreset() {
-  const cfg = { ...DEFAULT_LLM_PRESET, ...loadLlmConfig() };
+  const cfg = loadLlmConfig();
+  cfg.provider = cfg.provider || "auto";
   if (!cfg.providers?.length) cfg.providers = [...DEFAULT_LLM_PRESET.providers];
   saveLlmConfig(cfg);
   applyLlmConfigToForm();
 }
 
 function applyCampusLlmPreset() {
-  const cfg = { ...loadLlmConfig(), ...CAMPUS_LLM_PRESET };
+  const cfg = loadLlmConfig();
+  cfg.provider = "campus";
+  cfg.profiles = cfg.profiles || {};
+  cfg.profiles.campus = {
+    ...(cfg.profiles.campus || {}),
+    model: cfg.profiles.campus?.model || "mixed",
+    base_url: CAMPUS_LLM_PRESET.base_url,
+    api_key: cfg.profiles.campus?.api_key || "",
+  };
   saveLlmConfig(cfg);
-  applyLlmConfigToForm();
+  applyProviderToForm("campus");
 }
 
 function updateLlmFormHints(provider) {
-  const modelEl = llmConfigEls.model;
   const keyEl = llmConfigEls.api_key;
-  const baseEl = llmConfigEls.base_url;
   const taskEl = llmConfigEls.task_type;
+  const cat = LLM_PROVIDER_CATALOG[provider] || {};
   if (taskEl) {
     const wrap = taskEl.closest("label");
     if (wrap) wrap.classList.toggle("hidden", provider !== "campus");
   }
-  if (!modelEl) return;
-  if (provider === "campus") {
-    modelEl.placeholder = "mixed = DeepSeek-v4-flash → Qwen3.6-35B-A3B";
-    if (keyEl) keyEl.placeholder = "校园内网 API Key（可选，留空使用服务端默认）";
-    if (baseEl) baseEl.placeholder = "http://10.22.18.12:9901/v1";
-  } else if (provider === "auto") {
-    modelEl.placeholder = "留空：按下方 Provider 列表依次尝试";
-    if (keyEl) keyEl.placeholder = "填写 DeepSeek / OpenAI 等 API Key（campus 可留空）";
-    if (baseEl) baseEl.placeholder = "留空使用各 Provider 默认地址";
-  } else {
-    modelEl.placeholder = "DeepSeek 推荐 deepseek-chat；可填 deepseek-v4-flash";
-    if (keyEl) keyEl.placeholder = "仅保存在本机浏览器";
-    if (baseEl) baseEl.placeholder = "留空使用对应 Provider 默认地址";
+  if (keyEl) {
+    if (provider === "campus") {
+      keyEl.placeholder = "可选：留空则使用服务端 webapp/config/campus_llm.json";
+    } else if (provider === "auto" || provider === "remote") {
+      keyEl.placeholder = cat.keyRequired ? "按实际 Provider 填写 API Key" : "可选";
+    } else {
+      keyEl.placeholder = "仅保存在本机浏览器（点「保存配置」）";
+    }
   }
+  const modelWrap = llmConfigEls.model?.closest("label");
+  modelWrap?.classList.toggle("hidden", provider === "remote");
 }
 
-function collectLlmConfig() {
-  const mode = llmConfigEls.mode?.value || "api";
-  const provider = llmConfigEls.provider?.value || "chatgpt";
-  const cfg = {
-    mode,
+function collectLlmConfig({ persistGlobal = false } = {}) {
+  const provider = llmConfigEls.provider?.value || "auto";
+  const profile = providerProfile(provider);
+  const cfg = loadLlmConfig();
+  const merged = {
+    ...cfg,
     provider,
-    api_key: llmConfigEls.api_key?.value || "",
-    base_url: llmConfigEls.base_url?.value || "",
-    model: llmConfigEls.model?.value || "",
+    mode: "api",
+    api_key: llmConfigEls.api_key?.value || profile.api_key || "",
+    model: getSelectedModel(),
+    base_url: resolveBaseUrl(provider),
     task_type: llmConfigEls.task_type?.value || "code_optimize",
     remote_host: llmConfigEls.remote_host?.value || "",
     remote_port: llmConfigEls.remote_port?.value || "",
@@ -451,14 +779,17 @@ function collectLlmConfig() {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    profiles: cfg.profiles || {},
   };
   if (provider === "campus") {
-    cfg.campus_models = { ...CAMPUS_LLM_PRESET.campus_models };
+    merged.campus_models = { ...CAMPUS_LLM_PRESET.campus_models };
   }
-  saveLlmConfig(cfg);
+  if (persistGlobal) {
+    saveLlmConfig(merged);
+  }
   return {
-    provider: mode === "remote" || provider === "remote" ? "remote" : provider,
-    config: cfg,
+    provider: provider === "remote" ? "remote" : provider,
+    config: merged,
   };
 }
 
@@ -689,6 +1020,16 @@ export function applyCodeLabI18n() {
   if (llmSum) llmSum.textContent = t("codelab.llmConfig");
   setText("#code-lab-exec", "codelab.runOptShort");
   setText("#code-lab-llm-optimize", "codelab.optimize");
+  setText("#code-lab-llm-save", "codelab.llmSave");
+  const baseModeSel = q("#code-lab-llm-base-url-mode");
+  if (baseModeSel) {
+    const presetOpt = baseModeSel.querySelector('option[value="preset"]');
+    const customOpt = baseModeSel.querySelector('option[value="custom"]');
+    if (presetOpt) presetOpt.textContent = t("codelab.llmBaseUrlPreset");
+    if (customOpt) customOpt.textContent = t("codelab.llmBaseUrlCustom");
+  }
+  const saveHint = q(".code-lab-llm-save-hint");
+  if (saveHint) saveHint.textContent = t("codelab.llmSaveHint");
   const hist = q(".code-lab-history summary");
   if (hist) hist.textContent = t("codelab.history");
   const instLab = q(".code-lab-llm-instruction");
@@ -860,6 +1201,7 @@ export async function initCodeLab() {
                 <option value="minimax">MiniMax</option>
                 <option value="gemini">Gemini</option>
                 <option value="claude">Claude</option>
+                <option value="nvidia">NVIDIA NIM</option>
                 <option value="custom">Custom OpenAI-compatible</option>
                 <option value="remote">Remote 远程服务</option>
               </select>
@@ -873,14 +1215,25 @@ export async function initCodeLab() {
               </select>
             </label>
             <label>Model
-              <input type="text" id="code-lab-llm-model" placeholder="mixed = DeepSeek-v4-flash → Qwen3.6-35B-A3B">
+              <select id="code-lab-llm-model"></select>
+            </label>
+            <label class="hidden" id="code-lab-llm-model-custom-wrap">自定义 Model
+              <input type="text" id="code-lab-llm-model-custom" placeholder="输入模型 ID">
             </label>
             <label>API Key
-              <input type="password" id="code-lab-llm-key" placeholder="仅保存在本机浏览器">
+              <input type="password" id="code-lab-llm-key" placeholder="填写后点「保存配置」">
             </label>
-            <label>Base URL（可选）
-              <input type="text" id="code-lab-llm-base-url" placeholder="留空使用对应 Provider 默认地址">
+            <label id="code-lab-llm-base-url-wrap">Base URL
+              <select id="code-lab-llm-base-url-mode" class="code-lab-llm-base-url-mode">
+                <option value="preset">标准配置</option>
+                <option value="custom">自定义</option>
+              </select>
+              <input type="text" id="code-lab-llm-base-url" readonly class="code-lab-llm-readonly">
             </label>
+          </div>
+          <div class="code-lab-llm-save-row">
+            <button type="button" class="btn btn-outline" id="code-lab-llm-save">保存配置</button>
+            <span class="code-lab-llm-save-hint">各 Provider 独立保存；切换时自动恢复 API Key / Model</span>
           </div>
           <details class="code-lab-llm-advanced">
             <summary>高级设置：Auto 多模型 / Remote IP + 端口</summary>
@@ -931,8 +1284,13 @@ export async function initCodeLab() {
     provider: rootEl.querySelector("#code-lab-llm-provider"),
     task_type: rootEl.querySelector("#code-lab-llm-task-type"),
     model: rootEl.querySelector("#code-lab-llm-model"),
+    model_custom: rootEl.querySelector("#code-lab-llm-model-custom"),
+    model_custom_wrap: rootEl.querySelector("#code-lab-llm-model-custom-wrap"),
     api_key: rootEl.querySelector("#code-lab-llm-key"),
     base_url: rootEl.querySelector("#code-lab-llm-base-url"),
+    base_url_mode: rootEl.querySelector("#code-lab-llm-base-url-mode"),
+    base_url_wrap: rootEl.querySelector("#code-lab-llm-base-url-wrap"),
+    save_btn: rootEl.querySelector("#code-lab-llm-save"),
     providers: rootEl.querySelector("#code-lab-llm-providers"),
     remote_host: rootEl.querySelector("#code-lab-llm-remote-host"),
     remote_port: rootEl.querySelector("#code-lab-llm-remote-port"),
@@ -941,16 +1299,33 @@ export async function initCodeLab() {
   applyLlmConfigToForm();
   const saved = loadLlmConfig();
   if (!saved.provider) applyDefaultLlmPreset();
-  else if (saved.provider === "campus" && !saved.base_url) applyCampusLlmPreset();
+  else if (saved.provider === "campus" && !saved.profiles?.campus?.base_url) applyCampusLlmPreset();
   llmConfigEls.provider?.addEventListener("change", () => {
-    if (llmConfigEls.provider.value === "campus") applyCampusLlmPreset();
-    else updateLlmFormHints(llmConfigEls.provider.value);
-    collectLlmConfig();
+    const provider = llmConfigEls.provider.value;
+    const cfg = loadLlmConfig();
+    cfg.provider = provider;
+    saveLlmConfig(cfg);
+    if (provider === "campus") applyCampusLlmPreset();
+    else applyProviderToForm(provider);
   });
-  Object.values(llmConfigEls).forEach((el) => {
-    el?.addEventListener("change", () => collectLlmConfig());
-    el?.addEventListener("blur", () => collectLlmConfig());
+  llmConfigEls.model?.addEventListener("change", () => {
+    const isCustom = llmConfigEls.model.value === "__custom__";
+    llmConfigEls.model_custom_wrap?.classList.toggle("hidden", !isCustom);
   });
+  llmConfigEls.base_url_mode?.addEventListener("change", (e) => {
+    e.stopPropagation();
+    const provider = llmConfigEls.provider?.value;
+    if (provider) updateBaseUrlField(provider, { preferUiMode: true });
+  });
+  llmConfigEls.base_url_mode?.addEventListener("click", (e) => e.stopPropagation());
+  llmConfigEls.save_btn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    saveCurrentProviderProfile();
+  });
+  [llmConfigEls.providers, llmConfigEls.remote_host, llmConfigEls.remote_port, llmConfigEls.remote_path, llmConfigEls.task_type]
+    .forEach((el) => {
+      el?.addEventListener("change", () => collectLlmConfig({ persistGlobal: true }));
+    });
   clinicalRow = rootEl.querySelector("#code-lab-clinical-row");
   clinicalSel = rootEl.querySelector("#code-lab-clinical-snippet");
   for (const [val, lab] of Object.entries(CLINICAL_SNIPPET_LABELS)) {

@@ -9,22 +9,22 @@ b <- list(
   method = "spearman", cutoff = 0.6, top_n = 40L,
   width = 8, height = 8
 )
-safe_api({
+    custom_colors <- b$custom_colors %||% NULL
 
-  session_id <- b$session_id %||% NULL
-  experiment <- b$experiment %||% NULL
-  tax_sep <- b$tax_sep %||% ";"
-  from_level <- b$from_level %||% "Phylum"
-  to_level <- b$to_level %||% "Genus"
-  top_n <- as.integer(b$top_n %||% 25L)
-  width <- as.numeric(b$width %||% 10)
-  height <- as.numeric(b$height %||% 6)
-  color_panel <- b$color_panel %||% NULL
-  custom_colors <- b$custom_colors %||% NULL
+    img <- mgx_make_heatmap(session_id, experiment, group = group,
+                              top_n = top_n, features = features,
+                              cluster_rows = cluster_rows, cluster_cols = cluster_cols,
+                              show_gene_names = show_gene_names,
+                              font_size = font_size, color_panel = color_panel,
+                              custom_colors = custom_colors)
+    .heatmap_response(img)
+  }, res)
+}
 
-  out <- m16s_visualize_sankey(
-    session_id = session_id,
-    experiment = experiment,
-    from_level = from_level,
-    to_level = to_level,
-    top_n = top_n,
+#* Metagenomics functional volcano plot
+#* @post /api/workflows/metagenomics/visualize/volcano
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+
+    session_id <- if (!is.null(b$session_id) && length(b$session_id) > 0) as.character(b$session_id[[1]]) else NULL

@@ -1,5 +1,5 @@
 // Self-evolution telemetry: anonymous user profile + event stream to backend.
-import * as API from "./api.js?v=2026-06-21-v5.0.1";
+import * as API from "./api.js?v=2026-06-21-v5.0.2";
 
 const USER_KEY = "emp_evolution_user_id";
 

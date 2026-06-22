@@ -180,7 +180,8 @@ exec_user_r_learning <- function(session_id, experiment, code, plot_width = 9, p
     "emp_pub_palette", "emp_normalize_color_panel", "emp_get_color_panel",
     "emp_scale_fill_pub", "emp_scale_color_pub", "emp_diverging_colors",
     "emp_conf_ellipse", "emp_pairwise_wilcox", "emp_permanova_p", "emp_permanova_bray",
-    "emp_caption"
+    "emp_caption", "emp_add_ordination_double_points",
+    ".viz_filter_scatter_groups", ".viz_ordination_compose", ".viz_load_empt",
   )) {
     if (exists(nm, inherits = TRUE)) {
       assign(nm, get(nm, inherits = TRUE), envir = env)

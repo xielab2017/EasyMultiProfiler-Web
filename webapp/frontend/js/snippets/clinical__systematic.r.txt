@@ -8,31 +8,31 @@ b <- list(
   source = "standalone", group_var = NULL, skip_high_cardinality = TRUE,
   max_levels = 20L, table_engine = "gtsummary", cohort_filter = NULL
 )
-  df <- tryCatch(
-    make_clinical_three_line_table(
-      session_id = session_id, group_var = group_var,
-      skip_high_cardinality = skip_high_cardinality, max_levels = max_levels,
-      table_engine = table_engine
-    ),
-    error = function(e) {
-      msg <- conditionMessage(e)
-      if (grepl("no variables|no standalone clinical data|empty", msg, ignore.case = TRUE)) {
-        data.frame(Variable = character(), stringsAsFactors = FALSE)
-      } else stop(e)
-    }
-  )
+    )
+    readBin(tmp, "raw", file.info(tmp)$size)
+  }, error = function(e) {
+    res$status <- 500
+    paste("Error:", e$message)
+  })
 }
-n_num <- if (!is.null(vars_df) && nrow(vars_df)) sum(vars_df$type == "numeric", na.rm = TRUE) else 0L
-warn_msg <- NULL
-if (n_num <= 0L) {
-  warn_msg <- "No numeric clinical indicators detected in selected source. Output is count-only summary."
+
+#* Download coldata as CSV
+#* @get /api/export/coldata/<session_id>/<experiment>
+#* @serializer contentType list(type="text/csv")
+function(session_id, experiment, res) {
+  tryCatch({
+    empt <- load_empt(session_id, experiment)
+    cd   <- as.data.frame(SummarizedExperiment::colData(empt))
+    cd   <- cbind(sample = rownames(cd), cd)
+    res$setHeader("Content-Disposition",
+                  paste0('attachment; filename="', experiment, '_metadata.csv"'))
+    .csv_response(cd)
+  }, error = function(e) {
+    res$status <- 500
+    paste("Error:", e$message)
+  })
 }
-if (!nrow(df)) {
-  warn_msg <- paste(c(warn_msg, "No clinical variables found in selected source."), collapse = " ")
-  warn_msg <- trimws(warn_msg)
-}
-list(
-  success = TRUE,
-  n_rows = nrow(df),
-  columns = names(df),
-  data = df,
+
+#* Download analysis result as CSV
+#* @get /api/export/result/<session_id>/<experiment>/<analysis>
+#* @serializer contentType list(type="text/csv")

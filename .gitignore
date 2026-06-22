@@ -4,3 +4,5 @@
 .Ruserdata
 .DS_Store
 .local_run/
+webapp/config/runtime.env
+webapp/config/campus_llm.json

@@ -1,7 +1,7 @@
 /**
  * Recommended filter / normalize / analysis defaults per omics pipeline.
  */
-import { t } from "./locale.js?v=2026-06-21-v5.0.1";
+import { t } from "./locale.js?v=2026-06-21-v5.0.2";
 
 export function omicsLabel(key) {
   const map = {
@@ -85,15 +85,16 @@ export const OMICS_RECOMMENDED = {
     "vol-use-padj": "true",
   },
   chipseq: {
-    "diff-method": "limma",
-    "diff-filter-low": "true",
-    "diff-subset": "true",
-    "deg-fc": "0.5",
-    "deg-p": "0.05",
-    "deg-use-padj": "true",
-    "vol-fc": "0.5",
-    "vol-p": "0.05",
-    "vol-use-padj": "true",
+    "chip-genome": "hs",
+    "chip-prefer-macs": "auto",
+    "chip-macs-preset": "chipseq_tf",
+    "chip-format": "BAM",
+    "chip-cutoff-type": "q",
+    "chip-qvalue": "0.01",
+    "chip-keep-dup": "auto",
+    "chip-score-cutoff": "5",
+    "chip-co-score-cutoff": "10",
+    "chip-min-counts": "100",
   },
   clinical: {
     "clin-cor-padj": "BH",

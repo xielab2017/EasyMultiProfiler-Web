@@ -8,23 +8,23 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   sample_size = 0L, prepare_mode = "stack"
 )
+    }
+    if (max_na     < 1) keep <- keep & apply(ad, 1, function(x) sum(is.na(x))/length(x)) <= max_na
+
+    empt_filtered <- empt[keep, ]
+
+    # Update MAE
+    mae            <- load_mae(session_id)
+    mae[[experiment]] <- empt_filtered
+    save_mae(session_id, mae)
+    save_empt(session_id, experiment, empt_filtered)
+    snap_id <- save_prepare_snapshot(session_id, experiment, empt_filtered, label = "filter")
+
+    list(success = TRUE,
+         kept    = sum(keep),
+         removed = sum(!keep),
+         prepare_mode = mode,
+         snapshot_id = snap_id,
+         preview_data = emp_prepare_preview_rows(empt_filtered))
   }, res)
 }
-
-#* Impute missing values
-#* @post /api/prepare/impute
-#* @serializer unboxedJSON
-function(req, res) {
-  safe_api({
-
-    session_id <- b$session_id
-    experiment <- b$experiment
-    method     <- b$method %||% "knn"
-
-    mode <- b$prepare_mode %||% "stack"
-    empt <- .prepare_load_base(session_id, experiment, mode = mode)
-    empt <- empt |> EasyMultiProfiler::EMP_impute(method = method)
-
-    mae            <- load_mae(session_id)
-    mae[[experiment]] <- empt
-    save_mae(session_id, mae)

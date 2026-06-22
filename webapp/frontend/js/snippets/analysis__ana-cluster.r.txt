@@ -8,16 +8,15 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   method = "hclust", k = 3L
 )
-    result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
-
-    list(success = TRUE,
-         n_rows  = nrow(result_df),
-         columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
   }, res)
 }
 
-#* Correlation analysis
-#* @post /api/analyze/correlation
+# ══════════════════════════════════════════════════════════
+#  One-click pipelines (RNAseq, 16S)
+# ══════════════════════════════════════════════════════════
+
+#* Run the full RNAseq pipeline in the background
+#* @post /api/workflows/rnaseq/run_all
 #* @serializer unboxedJSON
 function(req, res) {
+  safe_api({

@@ -1,7 +1,7 @@
 /**
  * Page-scoped i18n bindings for Analysis, Clinical, Visualize, Run All, Prepare extras.
  */
-import { t } from "./locale.js?v=2026-06-21-v5.0.1";
+import { t } from "./locale.js?v=2026-06-21-v5.0.2";
 
 function $(sel, root = document) {
   return root.querySelector(sel);
@@ -229,6 +229,7 @@ function applyAnalysisPage() {
     "ana-tx": "ana.tab.tx",
     "ana-mgx": "ana.tab.mgx",
     "ana-mbx": "ana.tab.mbx",
+    "ana-chipseq": "ana.tab.chipseq",
     "ana-cross": "ana.tab.cross",
   };
   $$(".tab-bar .tab", root).forEach((tab) => {

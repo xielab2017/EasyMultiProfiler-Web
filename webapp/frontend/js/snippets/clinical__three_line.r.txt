@@ -8,62 +8,62 @@ b <- list(
   source = "standalone", group_var = NULL, skip_high_cardinality = TRUE,
   max_levels = 20L, table_engine = "gtsummary"
 )
+    .csv_response(df)
+  }, error = function(e) {
+    res$status <- 500
+    paste("Error:", e$message)
   })
 }
 
-# ══════════════════════════════════════════════════════════
-# CLINICAL / PHENOTYPE ANALYSIS
-# ══════════════════════════════════════════════════════════
-
-#* List the numeric / categorical columns in an experiment's colData.
-#* Used by the frontend to populate the Clinical & Phenotype page dropdowns.
-#* @get /api/clinical/vars/<session_id>/<experiment>
-#* @serializer unboxedJSON
+#* Download assay matrix as CSV
+#* @get /api/export/assay/<session_id>/<experiment>
+#* @serializer contentType list(type="text/csv")
 function(session_id, experiment, res) {
-  safe_api({
-    df <- list_clinical_vars(session_id, experiment)
-    list(success = TRUE, n_rows = nrow(df), data = df)
-  }, res)
+  tryCatch({
+    empt <- load_empt(session_id, experiment)
+    ad   <- SummarizedExperiment::assays(empt)[[1]]
+    df   <- as.data.frame(ad)
+    df   <- cbind(feature = rownames(df), df)
+    res$setHeader("Content-Disposition",
+                  paste0('attachment; filename="', experiment, '_assay.csv"'))
+    .csv_response(df)
+  }, error = function(e) {
+    res$status <- 500
+    paste("Error:", e$message)
+  })
 }
 
-#* List variables from standalone uploaded clinical table (no experiment needed).
-#* @get /api/clinical/vars_standalone/<session_id>
-#* @serializer unboxedJSON
-function(session_id, res) {
-  safe_api({
-    df <- list_clinical_vars_standalone(session_id)
-    list(success = TRUE, n_rows = nrow(df), data = df)
-  }, res)
-}
-
-#* One-click clinical three-line table (experiment or standalone source).
-#* Body: { session_id, experiment, source, group_var, skip_high_cardinality, max_levels, table_engine }
-#* @post /api/clinical/three_line
+#* Prepare EMP-format object (EMPT) in background-safe step
+#* @post /api/export/empt/prepare
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
 
-    session_id <- b$session_id
+    session_id <- b$session_id %||% NULL
     experiment <- b$experiment %||% NULL
-    source <- b$source %||% "standalone"
-    group_var <- b$group_var %||% NULL
-    skip_high_cardinality <- if (is.null(b$skip_high_cardinality)) TRUE else isTRUE(b$skip_high_cardinality)
-    max_levels <- as.integer(b$max_levels %||% 20L)
-    table_engine <- b$table_engine %||% "gtsummary"
-    vars_df <- NULL
-    if (identical(source, "experiment")) {
-      if (is.null(experiment) || !nzchar(experiment)) stop("experiment is required when source='experiment'.")
-      vars_df <- list_clinical_vars(session_id, experiment)
-      df <- tryCatch(
-        make_clinical_three_line_table_experiment(
-          session_id = session_id, experiment = experiment, group_var = group_var,
-          skip_high_cardinality = skip_high_cardinality, max_levels = max_levels,
-          table_engine = table_engine
-        ),
-        error = function(e) {
-          msg <- conditionMessage(e)
-          if (grepl("no variables|no .*metadata|empty", msg, ignore.case = TRUE)) {
-            data.frame(Variable = character(), stringsAsFactors = FALSE)
-          } else stop(e)
-        }
-      )
+    if (is.null(session_id) || !nzchar(session_id)) stop("session_id is required")
+    if (is.null(experiment) || !nzchar(experiment)) stop("experiment is required")
+
+    empt <- load_empt(session_id, experiment)
+    save_empt(session_id, experiment, empt)
+    ad <- SummarizedExperiment::assays(empt)[[1]]
+    list(
+      success = TRUE,
+      ready = TRUE,
+      experiment = experiment,
+      n_samples = ncol(ad),
+      n_features = nrow(ad)
+    )
+  }, res)
+}
+
+#* Download current experiment as EMP-format RDS (EMPT)
+#* @get /api/export/empt/<session_id>/<experiment>
+#* @serializer contentType list(type="application/octet-stream")
+function(session_id, experiment, res) {
+  tryCatch({
+    empt <- load_empt(session_id, experiment)
+    tmp <- tempfile(fileext = ".rds")
+    on.exit(if (file.exists(tmp)) file.remove(tmp))
+    saveRDS(empt, tmp)
+    res$setHeader(

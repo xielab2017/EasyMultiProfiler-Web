@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EasyMultiProfiler Web v5.0.1</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-06-21-v5.0.1">
-  <link rel="stylesheet" href="css/code_lab.css?v=2026-06-21-v5.0.1">
-  <link rel="stylesheet" href="css/teaching.css?v=2026-06-21-v5.0.1">
+  <title>EasyMultiProfiler Web v5.0.2</title>
+  <link rel="stylesheet" href="css/style.css?v=2026-06-21-v5.0.2">
+  <link rel="stylesheet" href="css/code_lab.css?v=2026-06-21-v5.0.2">
+  <link rel="stylesheet" href="css/teaching.css?v=2026-06-21-v5.0.2">
   <script>
     (function () {
       var s = parseFloat(localStorage.getItem("emp_font_scale"));
@@ -123,7 +123,7 @@
       <div id="perf-last" class="perf-last">—</div>
     </div>
     <div id="locale-note" class="locale-note">
-      <span class="version-badge">v5.0.1</span>
+      <span class="version-badge">v5.0.2</span>
       <button type="button" class="btn-link" id="btn-help-guide" data-i18n="footer.guide">安装与使用指南</button>
       · <button type="button" class="btn-link" id="btn-help-course" data-i18n="footer.course">Course 入门</button>
       · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/master/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
@@ -184,7 +184,7 @@
   <section id="page-course" class="page active">
     <div class="card guide-course-banner">
       <p class="hint" style="margin:0">
-        <strong>v5.0.1</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
+        <strong>v5.0.2</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
         （Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」
       </p>
     </div>
@@ -209,14 +209,14 @@
     <div id="teaching-prompt-root"></div>
   </section>
 
-  <!-- ── PAGE: USER GUIDE (v5.0.1) ─────────────────────── -->
+  <!-- ── PAGE: USER GUIDE (v5.0.2) ─────────────────────── -->
   <section id="page-guide" class="page">
     <div id="guide-root"></div>
   </section>
 
   <section id="page-import" class="page">
     <div class="card welcome-card" id="welcome-card">
-      <h2>👋 欢迎使用 EasyMultiProfiler v5.0.1</h2>
+      <h2>👋 欢迎使用 EasyMultiProfiler v5.0.2</h2>
       <p class="hint">
         <strong>还没安装？</strong> 左侧点 <strong>Guide</strong> 查看 Mac / Windows 分平台安装步骤（两条路径不同，请勿混用）。
         <strong>已装好？</strong> 从 <strong>Course</strong> 学，或下方一键加载 16S / RNA-seq / Clinical 示例数据。
@@ -245,7 +245,7 @@
           <label>Data Type</label>
           <select id="import-data-type">
             <option value="normal">Normal (RNAseq / Metabolomics / Proteomics)</option>
-            <option value="chipseq">ChIP-seq (peak matrix / gene activity)</option>
+            <option value="chipseq">ChIP-seq (BAM/SAM → MACS → ChIPseeker)</option>
             <option value="tax">Microbiome / Taxonomy (16S)</option>
             <option value="clinical">Clinical Data</option>
           </select>
@@ -664,6 +664,8 @@
               data-omics="metagenomics">Metagenomics</button>
       <button class="tab" data-tab="ana-mbx"
               data-omics="metabolomics">Metabolomics</button>
+      <button class="tab" data-tab="ana-chipseq"
+              data-omics="chipseq">ChIP-seq</button>
       <button class="tab" data-tab="ana-cross"
               data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Cross-Omics</button>
     </div>
@@ -1152,6 +1154,227 @@
       <div id="mbx-status" class="alert hidden"></div>
       <div id="mbx-diff-result" class="result-area hidden"></div>
       <div id="mbx-volcano-out" class="plot-area hidden"></div>
+    </div>
+
+    <!-- ChIP-seq Workflow (BAM/SAM → MACS → ChIPseeker → RNA co-analysis) -->
+    <div id="ana-chipseq" class="tab-panel card hidden">
+      <h3>ChIP-seq Workflow</h3>
+      <p class="hint">Upload Treatment (IP/ChIP) and Control (Input/IgG) BAM/SAM separately, then run MACS2/3 peak calling, ChIPseeker annotation, and RNA-seq co-analysis.</p>
+
+      <h4 class="chip-section-title">1. Sample assignment (Treatment vs Control)</h4>
+      <div class="chip-sample-grid">
+        <div class="chip-sample-col chip-sample-col--treatment">
+          <div class="chip-sample-head">
+            <span class="chip-badge chip-badge--t">Treatment (T)</span>
+            <span class="chip-sample-sub">IP / ChIP / sample</span>
+          </div>
+          <input type="file" id="chip-bam-files-treatment" accept=".bam,.sam,.BAM,.SAM" multiple>
+          <button class="btn btn-outline btn-sm" id="chip-btn-upload-treatment" type="button">
+            <i data-lucide="upload"></i> Upload Treatment
+          </button>
+        </div>
+        <div class="chip-sample-col chip-sample-col--control">
+          <div class="chip-sample-head">
+            <span class="chip-badge chip-badge--c">Control (C)</span>
+            <span class="chip-sample-sub">Input / IgG / mock</span>
+          </div>
+          <input type="file" id="chip-bam-files-control" accept=".bam,.sam,.BAM,.SAM" multiple>
+          <button class="btn btn-outline btn-sm" id="chip-btn-upload-control" type="button">
+            <i data-lucide="upload"></i> Upload Control
+          </button>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-top:12px">
+        <div class="form-group form-group--full">
+          <label>Or server folder path (register all as Treatment first, then reassign Control in table)</label>
+          <div class="input-row">
+            <input type="text" id="chip-folder-path" placeholder="/path/to/alignments">
+            <button class="btn btn-outline btn-sm" id="chip-btn-scan-folder" type="button"><i data-lucide="folder-open"></i> Scan</button>
+          </div>
+        </div>
+      </div>
+      <div id="chip-bam-summary" class="chip-bam-summary hidden">
+        <span id="chip-count-treatment" class="chip-badge chip-badge--t">Treatment: 0</span>
+        <span id="chip-count-control" class="chip-badge chip-badge--c">Control: 0</span>
+      </div>
+      <div id="chip-bam-table-wrap" class="hidden" style="margin:12px 0">
+        <table class="data-table" id="chip-bam-table">
+          <thead><tr><th>File</th><th>Group</th><th>Path</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h4 class="chip-section-title">2. MACS2/3 parameters</h4>
+      <div class="form-grid">
+        <div class="form-group form-group--full">
+          <label>Assay preset</label>
+          <select id="chip-macs-preset">
+            <option value="chipseq_tf" selected>ChIP-seq TF (default model)</option>
+            <option value="chipseq_histone_broad">Histone / broad marks</option>
+            <option value="atac_paired">ATAC-seq (BAMPE)</option>
+            <option value="atac_cutting_site">ATAC/CUT&amp;Tag cutting site</option>
+            <option value="cuttag_tn5">CUT&amp;Tag insertion (shift -50 / ext 100)</option>
+            <option value="dnase_smoothed">DNase-seq (shift -100 / ext 200)</option>
+            <option value="no_control">No control (treatment only)</option>
+            <option value="custom">Custom (manual)</option>
+          </select>
+          <p class="hint" id="chip-macs-preset-hint">Standard TF ChIP-seq: MACS builds shifting model automatically.</p>
+        </div>
+        <div class="form-group">
+          <label>Genome (-g)</label>
+          <select id="chip-genome">
+            <option value="hs" selected>Human (hs)</option>
+            <option value="mm">Mouse (mm)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>MACS version</label>
+          <select id="chip-prefer-macs">
+            <option value="auto" selected>Auto (macs3 → macs2)</option>
+            <option value="macs3">macs3</option>
+            <option value="macs2">macs2</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Format (-f)</label>
+          <select id="chip-format">
+            <option value="BAM" selected>BAM (single-end)</option>
+            <option value="SAM">SAM</option>
+            <option value="BAMPE">BAMPE (paired-end)</option>
+            <option value="AUTO">AUTO</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cutoff type</label>
+          <select id="chip-cutoff-type">
+            <option value="q" selected>q-value (-q)</option>
+            <option value="p">p-value (-p)</option>
+          </select>
+        </div>
+        <div class="form-group" id="chip-qvalue-wrap">
+          <label>q-value (-q)</label>
+          <input type="number" id="chip-qvalue" value="0.01" min="0.0001" max="1" step="0.001">
+        </div>
+        <div class="form-group hidden" id="chip-pvalue-wrap">
+          <label>p-value (-p)</label>
+          <input type="number" id="chip-pvalue" value="0.05" min="0.0001" max="1" step="0.001">
+        </div>
+        <div class="form-group">
+          <label>Keep duplicates (--keep-dup)</label>
+          <select id="chip-keep-dup">
+            <option value="auto" selected>auto</option>
+            <option value="all">all</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label"><input type="checkbox" id="chip-broad"> Broad peaks (--broad)</label>
+        </div>
+        <div class="form-group">
+          <label>Broad cutoff (--broad-cutoff)</label>
+          <input type="number" id="chip-broad-cutoff" value="0.1" min="0.001" max="1" step="0.01">
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label"><input type="checkbox" id="chip-call-summits"> Call summits</label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label"><input type="checkbox" id="chip-save-bdg"> Save bedGraph (-B)</label>
+        </div>
+      </div>
+
+      <details class="chip-advanced" id="chip-macs-advanced">
+        <summary>Advanced / model optimization parameters</summary>
+        <div class="form-grid" style="margin-top:12px">
+          <div class="form-group">
+            <label class="checkbox-label"><input type="checkbox" id="chip-nomodel"> --nomodel (skip shifting model)</label>
+          </div>
+          <div class="form-group">
+            <label>--shift (bp)</label>
+            <input type="number" id="chip-shift" placeholder="0 (default)">
+          </div>
+          <div class="form-group">
+            <label>--extsize (bp)</label>
+            <input type="number" id="chip-extsize" placeholder="with --nomodel">
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label"><input type="checkbox" id="chip-fix-bimodal"> --fix-bimodal</label>
+          </div>
+          <div class="form-group">
+            <label>Tag size (-s)</label>
+            <input type="number" id="chip-tsize" placeholder="auto">
+          </div>
+          <div class="form-group">
+            <label>FE cutoff (--fe-cutoff)</label>
+            <input type="number" id="chip-fe-cutoff" value="1" min="1" step="0.5">
+          </div>
+          <div class="form-group">
+            <label>Min peak length (--min-length)</label>
+            <input type="number" id="chip-min-length" placeholder="default = fragment size">
+          </div>
+          <div class="form-group">
+            <label>Max gap (--max-gap)</label>
+            <input type="number" id="chip-max-gap" placeholder="default = read length">
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label"><input type="checkbox" id="chip-nolambda"> --nolambda (no local bias)</label>
+          </div>
+          <div class="form-group">
+            <label>Small local (--slocal)</label>
+            <input type="number" id="chip-slocal" value="1000" step="100">
+          </div>
+          <div class="form-group">
+            <label>Large local (--llocal)</label>
+            <input type="number" id="chip-llocal" value="10000" step="500">
+          </div>
+          <div class="form-group">
+            <label>Scale library (--scale-to)</label>
+            <select id="chip-scale-to">
+              <option value="" selected>default (small)</option>
+              <option value="small">small (scale large → small)</option>
+              <option value="large">large (scale small → large)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label"><input type="checkbox" id="chip-cutoff-analysis"> Cutoff analysis report</label>
+          </div>
+          <div class="form-group form-group--full">
+            <label>Extra MACS args (space-separated)</label>
+            <input type="text" id="chip-extra-args" placeholder="e.g. --trackline --SPMR">
+          </div>
+        </div>
+      </details>
+
+      <h4 class="chip-section-title">3. Annotation &amp; RNA-seq co-analysis</h4>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Peak score cutoff (annotation)</label>
+          <input type="number" id="chip-score-cutoff" value="5" min="1" step="1">
+        </div>
+        <div class="form-group">
+          <label>RNA-seq experiment</label>
+          <select id="chip-rnaseq-exp"></select>
+        </div>
+        <div class="form-group">
+          <label>Co-analysis score cutoff</label>
+          <input type="number" id="chip-co-score-cutoff" value="10" min="1" step="1">
+        </div>
+        <div class="form-group">
+          <label>Min total RNA counts</label>
+          <input type="number" id="chip-min-counts" value="100" min="0" step="10">
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-outline" id="chip-btn-profile"><i data-lucide="scan-search"></i> Profile</button>
+        <button class="btn btn-primary" id="chip-btn-peaks"><i data-lucide="play"></i> Call peaks (MACS)</button>
+        <button class="btn btn-outline" id="chip-btn-annotate"><i data-lucide="tags"></i> Annotate (ChIPseeker)</button>
+        <button class="btn btn-outline" id="chip-btn-coanalysis"><i data-lucide="git-merge"></i> RNA-seq co-analysis</button>
+      </div>
+      <div id="chip-profile-result" class="alert hidden"></div>
+      <div id="chip-analysis-result" class="result-area hidden"></div>
+      <div id="chip-plots" class="plot-grid hidden"></div>
     </div>
 
     <!-- Cross-omics -->
@@ -1788,14 +2011,43 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Axis 1 (index)</label>
-          <input type="number" id="scat-dim1" value="1" min="1">
+          <label>Axis X</label>
+          <select id="scat-dim1">
+            <option value="1" selected>1 (PC1 / Axis 1)</option>
+            <option value="2">2 (PC2 / Axis 2)</option>
+            <option value="3">3 (PC3 / Axis 3)</option>
+          </select>
         </div>
         <div class="form-group">
-          <label>Axis 2 (index)</label>
-          <input type="number" id="scat-dim2" value="2" min="1">
+          <label>Axis Y</label>
+          <select id="scat-dim2">
+            <option value="1">1 (PC1 / Axis 1)</option>
+            <option value="2" selected>2 (PC2 / Axis 2)</option>
+            <option value="3">3 (PC3 / Axis 3)</option>
+          </select>
+        </div>
+        <div class="form-group scat-groups-field" id="scat-groups-wrap">
+          <label>Groups to include</label>
+          <div id="scat-groups-filter" class="checkbox-grid muted">Select a group variable first.</div>
+        </div>
+        <div class="form-group">
+          <label>Core figure width (inch)</label>
+          <input type="number" id="scat-width" value="9" min="4" max="30" step="0.5">
+        </div>
+        <div class="form-group">
+          <label>Core figure height (inch)</label>
+          <input type="number" id="scat-height" value="7" min="4" max="30" step="0.5">
+        </div>
+        <div class="form-group">
+          <label>Projection width (inch)</label>
+          <input type="number" id="scat-proj-width" value="7" min="3" max="20" step="0.5">
+        </div>
+        <div class="form-group">
+          <label>Projection height (inch)</label>
+          <input type="number" id="scat-proj-height" value="4.5" min="2" max="16" step="0.5">
         </div>
       </div>
+      <p class="hint">Two axes only (pick 1–3 for X/Y). Choose which groups to compare. Outputs: <strong>core ordination</strong> (classic ggplot, double-circle points), <strong>two axis projections</strong>, and a <strong>statistics panel</strong> — download separately and assemble in Illustrator / PowerPoint.</p>
       <button class="btn btn-primary" id="btn-scatter"><i data-lucide="image"></i> Generate</button>
       <div id="scatter-out" class="plot-area hidden"></div>
     </div>
@@ -2210,7 +2462,7 @@
     else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
   }
 </script>
-<script type="module" src="js/app.js?v=2026-06-21-v5.0.1"></script>
+<script type="module" src="js/app.js?v=2026-06-21-v5.0.2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script>
   // Initialise Lucide icons after all content is ready

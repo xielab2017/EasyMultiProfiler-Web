@@ -874,6 +874,65 @@ function(req, res) {
   }, res)
 }
 
+#* List uploaded / registered BAM/SAM files (treatment vs control groups)
+#* @get /api/workflows/chipseq/bams/list
+#* @serializer unboxedJSON
+function(session_id = NULL, res) {
+  safe_api({
+  chip_list_bams(session_id)
+  }, res)
+}
+
+#* Upload one BAM/SAM file and assign treatment (t) or control (c) group
+#* @post /api/workflows/chipseq/bams/upload
+#* @parser multi
+#* @serializer unboxedJSON
+function(req, res, session_id = NULL, group = "t") {
+  safe_api({
+    if (is.null(session_id) || session_id == "") session_id <- create_session()
+    else ensure_session_dir(session_id)
+    body <- req$body
+    f <- .save_upload(body$bam_file %||% body$file %||% body$data_file)
+    if (is.null(f)) stop("bam_file is required (multipart field: bam_file).")
+    orig <- if (is.list(body$bam_file)) body$bam_file$filename %||% body$bam_file$name else ""
+    chip_upload_bam(session_id, f, original_name = orig, group = group)
+  }, res)
+}
+
+#* Register server-side BAM/SAM paths with group assignment
+#* @post /api/workflows/chipseq/bams/register
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    chip_register_bams(b$session_id %||% NULL, b$entries %||% b$files %||% list())
+  }, res)
+}
+
+#* Scan a server folder for BAM/SAM files and register them
+#* @post /api/workflows/chipseq/bams/scan_folder
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    chip_scan_folder(
+      session_id = b$session_id %||% NULL,
+      folder_path = b$folder_path %||% NULL,
+      default_group = b$default_group %||% "t"
+    )
+  }, res)
+}
+
+#* Update treatment/control group for a registered BAM
+#* @post /api/workflows/chipseq/bams/set_group
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    chip_set_bam_group(b$session_id %||% NULL, b$file_id %||% b$name, b$group %||% "t")
+  }, res)
+}
+
 #* ChIP-seq workflow pre-check validation
 #* @post /api/workflows/chipseq/validate
 #* @serializer unboxedJSON
@@ -883,6 +942,15 @@ function(req, res) {
     session_id <- b$session_id %||% NULL
     experiment <- b$experiment %||% NULL
     list(success = TRUE, validation = chip_validate(session_id, experiment))
+  }, res)
+}
+
+#* MACS2/3 recommended parameter presets (ChIP-seq, ATAC, CUT&Tag, etc.)
+#* @get /api/workflows/chipseq/macs/presets
+#* @serializer unboxedJSON
+function(res) {
+  safe_api({
+    list(success = TRUE, presets = chip_macs_presets())
   }, res)
 }
 
@@ -896,13 +964,33 @@ function(req, res) {
       session_id = b$session_id %||% NULL,
       treatment_bam = b$treatment_bam %||% NULL,
       control_bam = b$control_bam %||% NULL,
+      treatment_bams = b$treatment_bams %||% NULL,
+      control_bams = b$control_bams %||% NULL,
+      use_manifest = isTRUE(b$use_manifest),
       genome = b$genome %||% "hs",
       run_id = b$run_id %||% NULL,
       qvalue = b$qvalue %||% 0.01,
+      pvalue = b$pvalue %||% NULL,
+      format = b$format %||% NULL,
+      preset = b$preset %||% NULL,
       broad = isTRUE(b$broad),
+      broad_cutoff = b$broad_cutoff %||% NULL,
       keep_dup = b$keep_dup %||% "auto",
+      nomodel = isTRUE(b$nomodel),
       shift = b$shift %||% NULL,
       extsize = b$extsize %||% NULL,
+      fix_bimodal = isTRUE(b$fix_bimodal),
+      tsize = b$tsize %||% NULL,
+      call_summits = isTRUE(b$call_summits),
+      fe_cutoff = b$fe_cutoff %||% NULL,
+      min_length = b$min_length %||% NULL,
+      max_gap = b$max_gap %||% NULL,
+      nolambda = isTRUE(b$nolambda),
+      slocal = b$slocal %||% NULL,
+      llocal = b$llocal %||% NULL,
+      scale_to = b$scale_to %||% NULL,
+      cutoff_analysis = isTRUE(b$cutoff_analysis),
+      save_bdg = isTRUE(b$save_bdg),
       prefer_macs = b$prefer_macs %||% "auto",
       extra_args = b$extra_args %||% NULL
     )
@@ -923,6 +1011,42 @@ function(req, res) {
       anno_db = b$anno_db %||% "org.Hs.eg.db",
       tss_upstream = b$tss_upstream %||% -3000,
       tss_downstream = b$tss_downstream %||% 3000
+    )
+  }, res)
+}
+
+#* ChIP-seq full annotation: pie chart, promoter filters, GO/KEGG bubble plots
+#* @post /api/workflows/chipseq/analyze/annotation_full
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    chip_annotate_peaks_full(
+      session_id = b$session_id %||% NULL,
+      peak_file = b$peak_file %||% NULL,
+      genome = b$genome %||% "hs",
+      tss_upstream = b$tss_upstream %||% -3000,
+      tss_downstream = b$tss_downstream %||% 3000,
+      score_cutoff = b$score_cutoff %||% 5
+    )
+  }, res)
+}
+
+#* ChIP-seq + RNA-seq co-analysis (heatmap, volcano, GO/KEGG)
+#* @post /api/workflows/chipseq/analyze/rnaseq_coanalysis
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    chip_rnaseq_coanalysis(
+      session_id = b$session_id %||% NULL,
+      rnaseq_experiment = b$rnaseq_experiment %||% NULL,
+      peak_annotation_csv = b$peak_annotation_csv %||% NULL,
+      genome = b$genome %||% "hs",
+      score_cutoff = b$score_cutoff %||% 10,
+      min_total_counts = b$min_total_counts %||% 100,
+      rnaseq_p_cutoff = b$rnaseq_p_cutoff %||% 0.05,
+      promoter_filter = if (is.null(b$promoter_filter)) TRUE else isTRUE(b$promoter_filter)
     )
   }, res)
 }
@@ -2017,14 +2141,22 @@ function(req, res) {
     group      <- b$group %||% NULL
     dim1       <- as.integer(b$dim1 %||% 1L)
     dim2       <- as.integer(b$dim2 %||% 2L)
+    width      <- as.numeric(b$width %||% 9)
+    height     <- as.numeric(b$height %||% 7)
+    proj_width <- as.numeric(b$proj_width %||% 7)
+    proj_height <- as.numeric(b$proj_height %||% 4.5)
+    groups_include <- b$groups_include %||% NULL
     color_panel <- b$color_panel %||% NULL
     ordination <- b$ordination %||% "auto"
     custom_colors <- b$custom_colors %||% NULL
 
-    img <- make_scatter(session_id, experiment, group, dim1, dim2,
+    out <- make_scatter(session_id, experiment, group, dim1, dim2,
+                        width = width, height = height,
+                        proj_width = proj_width, proj_height = proj_height,
+                        groups_include = groups_include,
                         color_panel = color_panel, ordination = ordination,
                         custom_colors = custom_colors)
-    list(success = TRUE, plot = img)
+    c(list(success = TRUE), out)
   }, res)
 }
 

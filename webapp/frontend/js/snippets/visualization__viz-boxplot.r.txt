@@ -2,101 +2,101 @@
 # session_id (+ experiment) come from POST /api/user_r/run (Code Lab).
 # viz.R make_boxplot — viz.R lines 206-303
 
-  }
-  p <- p + emp_pub_theme()
-  plot_to_base64(p, width = width, height = height)
-}
-
-# -----------------------------------------------------------------------------
-# Boxplot: feature value across groups with Wilcoxon p-values
-# -----------------------------------------------------------------------------
-make_boxplot <- function(session_id, experiment, group = NULL, feature = NULL,
-                          width = 9, height = 6, color_panel = NULL, custom_colors = NULL) {
-  old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
-  on.exit(emp_restore_color_panel(old_panel), add = TRUE)
-  empt <- .viz_load_empt(session_id, experiment)
-  ad   <- SummarizedExperiment::assays(empt)[[1]]
-  cd   <- as.data.frame(SummarizedExperiment::colData(empt))
-
-  if (is.null(feature) || !nzchar(feature) || !(feature %in% rownames(ad))) {
-    feature <- rownames(ad)[which.max(rowMeans(ad, na.rm = TRUE))]
-  }
-  vals <- as.numeric(ad[feature, ])
-  df <- data.frame(sample = colnames(ad), value = vals)
-  pick <- .viz_pick_group(empt, group)
-  if (!is.null(pick)) {
-    df$group <- .viz_group_levels(pick$values)
-    grp_name <- pick$name
-  } else {
-    df$group <- factor("All")
-    grp_name <- "Group"
+        orientation = "y", width = 0.55, alpha = 0.32, outlier.shape = NA,
+        linewidth = 0.35, color = "grey35"
+      ) +
+      ggplot2::geom_jitter(height = 0.11, size = 1.8, alpha = 0.78, stroke = 0) +
+      ggplot2::scale_x_continuous(limits = c(v_lo, v_hi), expand = c(0, 0))
   }
 
-  feat_label <- .viz_feature_labels(empt, feature)
-  p <- ggplot2::ggplot(df, ggplot2::aes(x = group, y = value, fill = group)) +
-    ggplot2::geom_boxplot(alpha = 0.55, outlier.shape = NA, width = 0.55) +
-    ggplot2::geom_jitter(ggplot2::aes(color = group), width = 0.18, size = 1.6, alpha = 0.85) +
-    emp_scale_fill_pub(name = grp_name, n_hint = length(levels(df$group))) +
-    emp_scale_color_pub(name = grp_name, n_hint = length(levels(df$group))) +
-    ggplot2::labs(title = feat_label, x = grp_name, y = "Abundance") +
-    emp_pub_theme()
+  p <- p +
+    ggplot2::scale_fill_manual(values = pal) +
+    ggplot2::scale_color_manual(values = pal)
 
-  pw <- emp_pairwise_wilcox(df$value, df$group)
-  if (!is.null(pw) && nrow(pw) > 0 && requireNamespace("ggpubr", quietly = TRUE)) {
-    comps <- lapply(seq_len(nrow(pw)), function(i) c(pw$group1[i], pw$group2[i]))
-    p <- p + ggpubr::stat_compare_means(comparisons = comps, method = "wilcox.test",
-                                         label = "p.signif", tip.length = 0.01,
-                                         hide.ns = FALSE, size = 3.4)
-  }
-  ns <- table(df$group)
-  cap <- paste(paste0(names(ns), "=n", as.integer(ns)), collapse = ", ")
-  p <- emp_caption(p, paste("Wilcoxon rank-sum;", cap))
-  plot_to_base64(p, width = width, height = height)
-}
-
-# -----------------------------------------------------------------------------
-# Heatmap: top-variable features, z-scored, group-clustered, annotation bar
-# -----------------------------------------------------------------------------
-## Tolerant feature lookup used by make_heatmap() when the user paste-
-## selects genes.  The order of the returned integer vector follows the
-## order of `features` from the caller so the heatmap rows preserve the
-## user's input order (before optional hierarchical clustering).
-.match_features <- function(empt, features) {
-  if (is.null(features)) return(list(idx = integer(0), matched = character(0),
-                                      missing = character(0)))
-  features <- trimws(as.character(features))
-  features <- features[nzchar(features)]
-  features <- unique(features)
-  if (!length(features)) return(list(idx = integer(0), matched = character(0),
-                                       missing = character(0)))
-
-  ad <- SummarizedExperiment::assays(empt)[[1]]
-  rd <- tryCatch(as.data.frame(SummarizedExperiment::rowData(empt),
-                                 stringsAsFactors = FALSE),
-                 error = function(e) data.frame())
-  ids <- rownames(ad)
-
-  ## 1. exact rowname.  2. case-insensitive rowname.  3. rowData alias columns.
-  idx <- integer(length(features))
-  names(idx) <- features
-  for (i in seq_along(features)) {
-    q <- features[i]
-    h <- match(q, ids)
-    if (is.na(h)) h <- match(tolower(q), tolower(ids))
-    if (is.na(h) && nrow(rd)) {
-      alias_cols <- intersect(
-        c("Name", "name", "label", "gene", "gene_symbol", "symbol",
-          "SYMBOL", "Gene", "Genus", "Species", "feature"),
-        names(rd))
-      for (col in alias_cols) {
-        vals <- rd[[col]]
-        if (is.null(vals)) next
-        mh <- match(q, vals)
-        if (is.na(mh)) mh <- match(tolower(q), tolower(vals))
-        if (!is.na(mh)) { h <- mh; break }
-      }
+  if (isTRUE(standalone)) {
+    y_lab <- if (!is.null(title) && nzchar(title)) title else value_col
+    if (layout == "group_x") {
+      p <- p + ggplot2::labs(title = y_lab, x = "Group", y = y_lab)
+    } else {
+      p <- p + ggplot2::labs(title = y_lab, x = y_lab, y = "Group")
     }
-    idx[i] <- if (is.na(h)) NA_integer_ else as.integer(h)
+    ax_lbl <- .viz_group_label_axis(levels(df$group), plot_width_in = plot_width)
+    p <- p + emp_pub_theme() +
+      ggplot2::theme(
+        legend.position = "none",
+        axis.text.x = if (layout == "group_x") {
+          ggplot2::element_text(
+            angle = ax_lbl$angle, hjust = ax_lbl$hjust, vjust = ax_lbl$vjust,
+            size = ax_lbl$size
+          )
+        } else {
+          ggplot2::element_text()
+        },
+        axis.text.y = if (layout == "value_x") {
+          ggplot2::element_text(
+            angle = ax_lbl$angle, hjust = ax_lbl$hjust, vjust = ax_lbl$vjust,
+            size = ax_lbl$size
+          )
+        } else {
+          ggplot2::element_text()
+        },
+        plot.margin = ggplot2::margin(
+          t = 5, r = 8,
+          b = if (layout == "group_x") ax_lbl$margin_b else 8,
+          l = 8, unit = "pt"
+        )
+      )
+  } else {
+    p <- p + ggplot2::theme_void(base_size = 8) +
+      ggplot2::theme(
+        legend.position = "none",
+        plot.margin = grid::unit(c(1, 1, 1, 1), "pt")
+      )
   }
-  matched <- features[!is.na(idx)]
-  missing <- features[is.na(idx)]
+
+  if (is.finite(stat$p) && ng == 2L && stat$method == "wilcox" &&
+      layout == "group_x" && requireNamespace("ggsignif", quietly = TRUE)) {
+    y_br <- vr[2] + pad * 0.55
+    p <- p + ggsignif::geom_signif(
+      comparisons = list(levels(df$group)),
+      map_signif_level = FALSE,
+      annotations = stat$label,
+      textsize = 3.2,
+      tip_length = 0.02,
+      y_position = y_br,
+      vjust = 0.1
+    )
+  } else if (is.finite(stat$p)) {
+    if (layout == "group_x") {
+      p <- p + ggplot2::annotate(
+        "text", x = (ng + 1) / 2, y = vr[2] + pad * 0.35,
+        label = stat$label, size = 3.2, fontface = "bold"
+      )
+    } else {
+      p <- p + ggplot2::annotate(
+        "text", x = vr[2] + pad * 0.35, y = (ng + 1) / 2,
+        label = stat$label, size = 3.2, fontface = "bold"
+      )
+    }
+  }
+  p
+}
+
+.viz_stat_record <- function(stat, axis_label) {
+  if (is.null(stat)) return(NULL)
+  list(
+    axis = axis_label,
+    p = if (is.finite(stat$p)) unname(stat$p) else NULL,
+    label = stat$label %||% "",
+    method = stat$method %||% NA_character_
+  )
+}
+
+.viz_filter_scatter_groups <- function(scores, groups_include = NULL) {
+  if (is.null(groups_include) || !length(groups_include)) return(scores)
+  keep <- unique(trimws(as.character(unlist(groups_include, use.names = FALSE))))
+  keep <- keep[nzchar(keep)]
+  if (!length(keep)) return(scores)
+  scores <- scores[as.character(scores$group) %in% keep, , drop = FALSE]
+  if (!nrow(scores)) stop("No samples left after group filter.")
+  scores$group <- droplevels(scores$group)

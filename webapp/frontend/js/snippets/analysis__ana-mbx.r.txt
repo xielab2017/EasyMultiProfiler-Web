@@ -9,55 +9,55 @@ if (!exists("experiment", inherits = FALSE) || is.null(experiment) || !nzchar(as
 
 # --- POST /api/workflows/metabolomics/profile ---
 b <- list(session_id = session_id, experiment = as.character(experiment)[1])
-img <- mgx_make_heatmap(session_id, experiment, group = group,
-                          top_n = top_n, features = features,
-                          cluster_rows = cluster_rows, cluster_cols = cluster_cols,
-                          show_gene_names = show_gene_names,
-                          font_size = font_size, color_panel = color_panel,
+args = list(
+  session_id = session_id, experiment = experiment,
+  database   = database,   organism   = organism,
+  fc_cutoff  = fc_cutoff,  p_cutoff   = p_cutoff,
+  use_padj   = use_padj,   direction  = direction,
 
 
 # --- POST /api/workflows/metabolomics/validate ---
 b <- list(session_id = session_id, experiment = as.character(experiment)[1])
-function(req, res) {
-  safe_api({
-
-    session_id <- if (!is.null(b$session_id) && length(b$session_id) > 0) as.character(b$session_id[[1]]) else NULL
+#* List known enrichment species and whether the OrgDb is installed locally.
+#* Used by the frontend to render a dynamic organism dropdown.
+#* @get /api/enrichment/species
+#* @serializer unboxedJSON
 
 
 # --- POST /api/workflows/metabolomics/preprocess ---
 b <- list(session_id = session_id, experiment = as.character(experiment)[1], max_na = NULL, impute_method = NULL, normalize_method = NULL)
-    list(success = TRUE, plot = img)
-  }, res)
-}
-
-#* Metabolomics workflow profile (missingness/normalization defaults)
-#* @post /api/workflows/metabolomics/profile
+#* Body: { orgdb: "org.Xx.xx.db" }
+#* Returns a job_id that the frontend polls with its usual progress bar.
+#* @post /api/enrichment/install
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
 
-    session_id <- b$session_id %||% NULL
-    experiment <- b$experiment %||% NULL
-    profile <- mbx_profile(session_id, experiment)
-    list(success = TRUE, profile = profile)
-  }, res)
+    orgdb <- as.character(b$orgdb %||% "")
+    if (!nzchar(orgdb)) {
+      res$status <- 400
+      return(list(success = FALSE, error = "orgdb field is required"))
+    }
+    job_id <- submit_job(
+      kind = "orgdb_install",
+      fn   = "install_orgdb",
 
 
 # --- POST /api/workflows/metabolomics/analyze/differential ---
 b <- list(session_id = session_id, experiment = as.character(experiment)[1], method = NULL, group_var = NULL, ref_group = NULL, test_group = NULL)
-    session_id <- b$session_id %||% NULL
-    experiment <- b$experiment %||% NULL
-    list(success = TRUE, validation = mbx_validate(session_id, experiment))
-  }, res)
-}
-
-#* Metabolomics preprocessing with missingness-aware defaults
-#* @post /api/workflows/metabolomics/preprocess
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
 
-    session_id <- b$session_id %||% NULL
-    experiment <- b$experiment %||% NULL
-    max_na <- b$max_na %||% NULL
-    impute_method <- b$impute_method %||% NULL
+    session_id <- b$session_id
+    experiment <- b$experiment
+    method     <- b$method  %||% "spearman"
+    cutoff     <- as.numeric(b$cutoff %||% 0.6)
+
+    run_network(session_id, experiment, method, cutoff)
+    list(success = TRUE, message = "Network analysis completed.")
+  }, res)
+}
+
+# ══════════════════════════════════════════════════════════
+# VISUALIZATION

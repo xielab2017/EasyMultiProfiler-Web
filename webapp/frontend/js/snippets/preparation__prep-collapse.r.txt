@@ -8,23 +8,23 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   taxa_level = "Genus", prepare_mode = "stack"
 )
-
-#* Rarefy counts
-#* @post /api/prepare/rarefy
-#* @serializer unboxedJSON
-function(req, res) {
-  safe_api({
-
-    session_id <- b$session_id
     experiment <- b$experiment
-    sample_size<- as.integer(b$sample_size %||% 0L)
+    method     <- b$method %||% "rclr"
 
     mode <- b$prepare_mode %||% "stack"
     empt <- .prepare_load_base(session_id, experiment, mode = mode)
-    args <- list(empt)
-    if (sample_size > 0) args[["sample"]] <- sample_size
-    empt <- do.call(EasyMultiProfiler::EMP_rrarefy, args)
+    empt <- empt |> EasyMultiProfiler::EMP_decostand(method = method)
 
     mae            <- load_mae(session_id)
     mae[[experiment]] <- empt
     save_mae(session_id, mae)
+    save_empt(session_id, experiment, empt)
+    snap_id <- save_prepare_snapshot(session_id, experiment, empt, label = paste0("normalize_", method))
+
+    list(success = TRUE, method = method, prepare_mode = mode,
+         snapshot_id = snap_id,
+         preview_data = emp_prepare_preview_rows(empt))
+  }, res)
+}
+
+#* Impute missing values

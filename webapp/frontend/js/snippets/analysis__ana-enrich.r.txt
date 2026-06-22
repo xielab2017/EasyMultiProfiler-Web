@@ -9,33 +9,33 @@ b <- list(
   database = "KEGG", organism = "hsa", fc_cutoff = 1.0, p_cutoff = 0.05,
   use_padj = TRUE, direction = "both", top_n = 20L
 )
-         n_rows  = nrow(result_df),
-         columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+      args = list(
+        session_id     = b$session_id,
+        experiment     = b$experiment,
+        group_var      = b$group_var %||% NULL,
+        taxonomy_level = b$taxonomy_level %||% "Genus",
+        alpha_index    = b$alpha_index %||% "shannon",
+        beta_method    = b$beta_method %||% "bray",
+        ord_method     = b$ord_method  %||% "PCoA"
+      ),
+      session_id = b$session_id
+    )
+    list(success = TRUE, job_id = job_id, kind = "m16s_run_all")
   }, res)
 }
 
-#* Marker (biomarker) analysis
-#* @post /api/analyze/marker
+#* List bundles produced for a session
+#* @get /api/bundles/<session_id>
 #* @serializer unboxedJSON
-function(req, res) {
+function(session_id, res) {
   safe_api({
-
-    session_id <- b$session_id
-    experiment <- b$experiment
-    method     <- b$method    %||% "randomForest"
-    group_var  <- b$group_var %||% NULL
-    ref_group  <- b$ref_group %||% NULL
-    test_group <- b$test_group %||% NULL
-
-    result    <- run_marker(session_id, experiment, method, group_var, ref_group = ref_group, test_group = test_group)
-    result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
-
-    list(success = TRUE,
-         n_rows  = nrow(result_df),
-         columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+    root <- file.path(session_path(session_id), "bundles")
+    if (!dir.exists(root)) return(list(success = TRUE, bundles = list()))
+    zips <- list.files(root, pattern = "\\.zip$", full.names = TRUE)
+    info <- lapply(zips, function(z) {
+      list(name = basename(z),
+           size_kb = round(file.size(z) / 1024, 1),
+           mtime = format(file.mtime(z), "%Y-%m-%dT%H:%M:%S"))
+    })
+    list(success = TRUE, bundles = info)
   }, res)
-}
-
-#* Enrichment analysis (KEGG / GO via clusterProfiler on the cached DEG list)

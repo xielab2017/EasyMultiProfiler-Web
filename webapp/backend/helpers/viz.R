@@ -146,107 +146,170 @@
   )
 }
 
-.viz_ordination_marginal <- function(df, axis = c("x", "y"), pal, stat = NULL) {
-  axis <- match.arg(axis)
-  val_col <- if (axis == "x") "PC_x" else "PC_y"
+.viz_group_label_axis <- function(labels, plot_width_in = 7) {
+  labels <- as.character(labels)
+  labels <- labels[nzchar(labels)]
+  ng <- length(labels)
+  if (ng < 1L) {
+    return(list(angle = 0, hjust = 0.5, vjust = 1, size = 9, margin_b = 8))
+  }
+  max_len <- max(nchar(labels), na.rm = TRUE)
+  avg_len <- mean(nchar(labels), na.rm = TRUE)
+  # Rough capacity: wider plot + fewer groups → horizontal labels fit.
+  slot_chars <- (plot_width_in / ng) * 2.4
+  crowded <- ng >= 5L ||
+    max_len > 12L ||
+    avg_len > slot_chars ||
+    (ng * avg_len) > (plot_width_in * 5)
+  if (isTRUE(crowded)) {
+    list(
+      angle = 45, hjust = 1, vjust = 1,
+      size = if (ng > 8L) 7 else 8,
+      margin_b = if (max_len > 16L) 22 else 18
+    )
+  } else {
+    list(angle = 0, hjust = 0.5, vjust = 1, size = 9, margin_b = 8)
+  }
+}
+
+.viz_ordination_projection <- function(df, value_col, pal, stat = NULL,
+                                       layout = c("group_x", "value_x"),
+                                       title = NULL, standalone = TRUE,
+                                       plot_width = 7) {
+  layout <- match.arg(layout)
   ng <- nlevels(df$group)
-  if (is.null(stat)) stat <- .viz_axis_projection_test(df[[val_col]], df$group)
-  vr <- range(df[[val_col]], na.rm = TRUE)
+  vals <- df[[value_col]]
+  if (is.null(stat)) stat <- .viz_axis_projection_test(vals, df$group)
+  vr <- range(vals, na.rm = TRUE)
   pad <- diff(vr) * 0.14
   if (!is.finite(pad) || pad < 1e-9) pad <- max(abs(vr), na.rm = TRUE) * 0.1 + 1
-  y_lo <- vr[1] - pad * 0.25
-  y_hi <- vr[2] + pad * (if (ng == 2L && stat$method == "wilcox") 1.6 else 1.1)
+  v_lo <- vr[1] - pad * 0.25
+  v_hi <- vr[2] + pad * (if (ng == 2L && stat$method == "wilcox") 1.55 else 1.05)
 
-  if (axis == "x") {
+  if (layout == "group_x") {
     p <- ggplot2::ggplot(df, ggplot2::aes(
-      x = .data[["group"]], y = .data[[val_col]],
+      x = .data[["group"]], y = .data[[value_col]],
       fill = group, color = group
     )) +
       ggplot2::geom_boxplot(
         width = 0.55, alpha = 0.32, outlier.shape = NA,
         linewidth = 0.35, color = "grey35"
       ) +
-      ggplot2::geom_jitter(width = 0.11, size = 1.5, alpha = 0.78, stroke = 0) +
-      ggplot2::scale_y_continuous(limits = c(y_lo, y_hi), expand = c(0, 0)) +
-      ggplot2::theme(axis.text.x = ggplot2::element_blank())
+      ggplot2::geom_jitter(width = 0.11, size = 1.8, alpha = 0.78, stroke = 0) +
+      ggplot2::scale_y_continuous(limits = c(v_lo, v_hi), expand = c(0, 0))
   } else {
     p <- ggplot2::ggplot(df, ggplot2::aes(
-      x = .data[[val_col]], y = .data[["group"]],
+      x = .data[[value_col]], y = .data[["group"]],
       fill = group, color = group
     )) +
       ggplot2::geom_boxplot(
         orientation = "y", width = 0.55, alpha = 0.32, outlier.shape = NA,
         linewidth = 0.35, color = "grey35"
       ) +
-      ggplot2::geom_jitter(height = 0.11, size = 1.5, alpha = 0.78, stroke = 0) +
-      ggplot2::scale_x_continuous(limits = c(y_lo, y_hi), expand = c(0, 0)) +
-      ggplot2::theme(axis.text.y = ggplot2::element_blank())
+      ggplot2::geom_jitter(height = 0.11, size = 1.8, alpha = 0.78, stroke = 0) +
+      ggplot2::scale_x_continuous(limits = c(v_lo, v_hi), expand = c(0, 0))
   }
 
   p <- p +
     ggplot2::scale_fill_manual(values = pal) +
-    ggplot2::scale_color_manual(values = pal) +
-    ggplot2::theme_void(base_size = 8) +
-    ggplot2::theme(
-      legend.position = "none",
-      plot.margin = grid::unit(c(1, 1, 1, 1), "pt")
-    )
+    ggplot2::scale_color_manual(values = pal)
+
+  if (isTRUE(standalone)) {
+    y_lab <- if (!is.null(title) && nzchar(title)) title else value_col
+    if (layout == "group_x") {
+      p <- p + ggplot2::labs(title = y_lab, x = "Group", y = y_lab)
+    } else {
+      p <- p + ggplot2::labs(title = y_lab, x = y_lab, y = "Group")
+    }
+    ax_lbl <- .viz_group_label_axis(levels(df$group), plot_width_in = plot_width)
+    p <- p + emp_pub_theme() +
+      ggplot2::theme(
+        legend.position = "none",
+        axis.text.x = if (layout == "group_x") {
+          ggplot2::element_text(
+            angle = ax_lbl$angle, hjust = ax_lbl$hjust, vjust = ax_lbl$vjust,
+            size = ax_lbl$size
+          )
+        } else {
+          ggplot2::element_text()
+        },
+        axis.text.y = if (layout == "value_x") {
+          ggplot2::element_text(
+            angle = ax_lbl$angle, hjust = ax_lbl$hjust, vjust = ax_lbl$vjust,
+            size = ax_lbl$size
+          )
+        } else {
+          ggplot2::element_text()
+        },
+        plot.margin = ggplot2::margin(
+          t = 5, r = 8,
+          b = if (layout == "group_x") ax_lbl$margin_b else 8,
+          l = 8, unit = "pt"
+        )
+      )
+  } else {
+    p <- p + ggplot2::theme_void(base_size = 8) +
+      ggplot2::theme(
+        legend.position = "none",
+        plot.margin = grid::unit(c(1, 1, 1, 1), "pt")
+      )
+  }
 
   if (is.finite(stat$p) && ng == 2L && stat$method == "wilcox" &&
-      axis == "x" && requireNamespace("ggsignif", quietly = TRUE)) {
+      layout == "group_x" && requireNamespace("ggsignif", quietly = TRUE)) {
     y_br <- vr[2] + pad * 0.55
     p <- p + ggsignif::geom_signif(
       comparisons = list(levels(df$group)),
       map_signif_level = FALSE,
       annotations = stat$label,
-      textsize = 2.6,
+      textsize = 3.2,
       tip_length = 0.02,
       y_position = y_br,
       vjust = 0.1
     )
   } else if (is.finite(stat$p)) {
-    if (axis == "x") {
+    if (layout == "group_x") {
       p <- p + ggplot2::annotate(
         "text", x = (ng + 1) / 2, y = vr[2] + pad * 0.35,
-        label = stat$label, size = 2.6, fontface = "bold"
+        label = stat$label, size = 3.2, fontface = "bold"
       )
     } else {
       p <- p + ggplot2::annotate(
         "text", x = vr[2] + pad * 0.35, y = (ng + 1) / 2,
-        label = stat$label, size = 2.6, fontface = "bold", angle = 90
+        label = stat$label, size = 3.2, fontface = "bold"
       )
     }
   }
   p
 }
 
+.viz_stat_record <- function(stat, axis_label) {
+  if (is.null(stat)) return(NULL)
+  list(
+    axis = axis_label,
+    p = if (is.finite(stat$p)) unname(stat$p) else NULL,
+    label = stat$label %||% "",
+    method = stat$method %||% NA_character_
+  )
+}
+
+.viz_filter_scatter_groups <- function(scores, groups_include = NULL) {
+  if (is.null(groups_include) || !length(groups_include)) return(scores)
+  keep <- unique(trimws(as.character(unlist(groups_include, use.names = FALSE))))
+  keep <- keep[nzchar(keep)]
+  if (!length(keep)) return(scores)
+  scores <- scores[as.character(scores$group) %in% keep, , drop = FALSE]
+  if (!nrow(scores)) stop("No samples left after group filter.")
+  scores$group <- droplevels(scores$group)
+  scores
+}
+
 .viz_ordination_compose <- function(scores, plot_title, xlab, ylab, grp_name,
                                   caption = NULL, subtitle = NULL,
-                                  width = 9, height = 7) {
+                                  width = 9, height = 7, proj_width = 7) {
   ng <- length(levels(scores$group))
   pal <- emp_pub_palette(ng)
   names(pal) <- levels(scores$group)
-
-  ell_in  <- emp_conf_ellipse(scores$PC_x, scores$PC_y, scores$group, level = 0.95)
-  ell_out <- emp_conf_ellipse(scores$PC_x, scores$PC_y, scores$group, level = 0.99)
-
-  cent <- stats::aggregate(
-    cbind(PC_x, PC_y) ~ group, data = scores, FUN = mean, na.rm = TRUE
-  )
-  names(cent) <- c("group", "PC_x_cen", "PC_y_cen")
-  scores <- merge(scores, cent, by = "group", sort = FALSE)
-
-  # Robust bounds prevent extreme points/ellipses from stretching the panel.
-  x_raw <- range(scores$PC_x, na.rm = TRUE)
-  y_raw <- range(scores$PC_y, na.rm = TRUE)
-  x_q <- stats::quantile(scores$PC_x, probs = c(0.02, 0.98), na.rm = TRUE, names = FALSE)
-  y_q <- stats::quantile(scores$PC_y, probs = c(0.02, 0.98), na.rm = TRUE, names = FALSE)
-  xlim <- c(min(x_raw[1], x_q[1]), max(x_raw[2], x_q[2]))
-  ylim <- c(min(y_raw[1], y_q[1]), max(y_raw[2], y_q[2]))
-  xpad <- diff(xlim) * 0.08
-  ypad <- diff(ylim) * 0.08
-  if (!is.finite(xpad) || xpad < 1e-9) xpad <- abs(xlim[1]) * 0.06 + 1
-  if (!is.finite(ypad) || ypad < 1e-9) ypad <- abs(ylim[1]) * 0.06 + 1
 
   p_main <- ggplot2::ggplot(
     scores, ggplot2::aes(x = PC_x, y = PC_y, color = group, fill = group)
@@ -254,74 +317,64 @@
     ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "grey82", linewidth = 0.3) +
     ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = "grey82", linewidth = 0.3)
 
-  if (!is.null(ell_out) && nrow(ell_out) > 0) {
-    p_main <- p_main + ggplot2::geom_polygon(
-      data = ell_out,
-      ggplot2::aes(x = x, y = y, fill = group, group = group),
-      alpha = 0.04, inherit.aes = FALSE, color = NA
-    )
-  }
-  if (!is.null(ell_in) && nrow(ell_in) > 0) {
-    p_main <- p_main + ggplot2::geom_polygon(
-      data = ell_in,
-      ggplot2::aes(x = x, y = y, fill = group, group = group),
-      alpha = 0.12, inherit.aes = FALSE, color = NA
-    )
-  }
-
-  if (ng >= 2L) {
-    p_main <- p_main + ggplot2::geom_segment(
-      ggplot2::aes(x = PC_x, y = PC_y, xend = PC_x_cen, yend = PC_y_cen, color = group),
-      alpha = 0.28, linewidth = 0.28, lineend = "round"
-    )
-  }
-
-  p_main <- p_main +
-    ggplot2::geom_point(shape = 21, size = 5.2, alpha = 0.20, stroke = 0.42) +
-    ggplot2::geom_point(shape = 21, size = 2.9, alpha = 0.97, color = "grey22", stroke = 0.33)
-
   if (ng >= 2L && ng <= 8L) {
-    p_main <- p_main + ggplot2::geom_label(
-      data = cent,
-      ggplot2::aes(x = PC_x_cen, y = PC_y_cen, label = group, color = group, fill = group),
-      size = 2.6, fontface = "bold", alpha = 0.88,
-      label.padding = grid::unit(0.12, "lines"),
-      show.legend = FALSE
-    )
+    ell <- emp_conf_ellipse(scores$PC_x, scores$PC_y, scores$group, level = 0.95)
+    if (!is.null(ell) && nrow(ell) > 0) {
+      p_main <- p_main + ggplot2::geom_polygon(
+        data = ell,
+        ggplot2::aes(x = x, y = y, fill = group, group = group),
+        alpha = 0.12, inherit.aes = FALSE, color = NA
+      )
+    }
   }
 
+  # Double-circle points (outer halo + inner core) per group.
+  p_main <- emp_add_ordination_double_points(p_main)
+
+  legend_pos <- if (ng > 6L) "right" else "top"
   p_main <- p_main +
     emp_scale_color_pub(name = grp_name, n_hint = ng) +
     emp_scale_fill_pub(name = grp_name, n_hint = ng) +
-    ggplot2::labs(title = plot_title, subtitle = subtitle, x = xlab, y = ylab,
-                  caption = caption) +
-    ggplot2::coord_fixed(
-      xlim = c(xlim[1] - xpad, xlim[2] + xpad),
-      ylim = c(ylim[1] - ypad, ylim[2] + ypad),
-      expand = FALSE
-    ) +
+    ggplot2::labs(title = plot_title, x = xlab, y = ylab) +
     emp_pub_theme() +
     ggplot2::theme(
-      legend.position = "top",
+      legend.position = legend_pos,
       legend.title = ggplot2::element_text(face = "bold", size = 9),
-      legend.text = ggplot2::element_text(size = 8)
+      legend.text = ggplot2::element_text(size = if (ng > 6L) 7 else 8),
+      legend.key.size = grid::unit(if (ng > 6L) 0.4 else 0.5, "cm")
     )
 
-  if (ng < 2L || !requireNamespace("patchwork", quietly = TRUE)) {
-    return(list(plot = p_main, width = width, height = height))
+  out <- list(
+    main = p_main,
+    width = width,
+    height = height,
+    stats = list(
+      title = plot_title,
+      subtitle = subtitle,
+      caption = caption,
+      axis_x = xlab,
+      axis_y = ylab
+    )
+  )
+
+  if (ng >= 2L) {
+    stat_x <- .viz_axis_projection_test(scores$PC_x, scores$group)
+    stat_y <- .viz_axis_projection_test(scores$PC_y, scores$group)
+    out$proj_x <- .viz_ordination_projection(
+      scores, "PC_x", pal = pal, stat = stat_x,
+      layout = "group_x", title = xlab, standalone = TRUE,
+      plot_width = proj_width
+    )
+    out$proj_y <- .viz_ordination_projection(
+      scores, "PC_y", pal = pal, stat = stat_y,
+      layout = "group_x", title = ylab, standalone = TRUE,
+      plot_width = proj_width
+    )
+    out$stats$proj_x <- .viz_stat_record(stat_x, xlab)
+    out$stats$proj_y <- .viz_stat_record(stat_y, ylab)
   }
 
-  stat_x <- .viz_axis_projection_test(scores$PC_x, scores$group)
-  stat_y <- .viz_axis_projection_test(scores$PC_y, scores$group)
-  p_top <- .viz_ordination_marginal(scores, axis = "x", pal = pal, stat = stat_x)
-  p_right <- .viz_ordination_marginal(scores, axis = "y", pal = pal, stat = stat_y)
-
-  combined <- patchwork::wrap_plots(
-    p_top, patchwork::plot_spacer(), p_main, p_right,
-    design = "12\n34"
-  ) + patchwork::plot_layout(widths = c(4, 1), heights = c(1, 4))
-
-  list(plot = combined, width = width + 1.5, height = height + 0.8)
+  out
 }
 
 # -----------------------------------------------------------------------------
@@ -1018,7 +1071,10 @@ make_deg_heatmap <- function(session_id, experiment, group = NULL,
 # no longer match the assay (e.g. after feature filtering).
 # -----------------------------------------------------------------------------
 make_scatter <- function(session_id, experiment, group = NULL,
-                          dim1 = 1L, dim2 = 2L, width = 9, height = 7,
+                          dim1 = 1L, dim2 = 2L,
+                          width = 9, height = 7,
+                          proj_width = 7, proj_height = 4.5,
+                          groups_include = NULL,
                           color_panel = NULL, ordination = "auto", custom_colors = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
@@ -1026,6 +1082,14 @@ make_scatter <- function(session_id, experiment, group = NULL,
     tolower(trimws(as.character(ordination %||% "auto")[1])),
     c("auto", "emp", "assay_pca")
   )
+  width <- max(4, as.numeric(width)[1])
+  height <- max(4, as.numeric(height)[1])
+  proj_width <- max(3, as.numeric(proj_width)[1])
+  proj_height <- max(2, as.numeric(proj_height)[1])
+  if (!is.finite(width)) width <- 9
+  if (!is.finite(height)) height <- 7
+  if (!is.finite(proj_width)) proj_width <- 7
+  if (!is.finite(proj_height)) proj_height <- 4.5
 
   empt <- .viz_load_empt(session_id, experiment)
   ad   <- SummarizedExperiment::assays(empt)[[1]]
@@ -1051,8 +1115,12 @@ make_scatter <- function(session_id, experiment, group = NULL,
                  "date after filtering/collapse). Try ordination = auto or assay_pca."))
   }
 
-  d1 <- max(1L, as.integer(dim1))
-  d2 <- max(1L, as.integer(dim2))
+  d1 <- max(1L, min(3L, as.integer(dim1)))
+  d2 <- max(1L, min(3L, as.integer(dim2)))
+  if (d1 == d2) {
+    d2 <- if (d1 < 3L) d1 + 1L else d1 - 1L
+    if (d2 < 1L) d2 <- 2L
+  }
   plot_title <- "Ordination"
   xlab <- "Axis 1"
   ylab <- "Axis 2"
@@ -1123,6 +1191,12 @@ make_scatter <- function(session_id, experiment, group = NULL,
     grp_name <- "Group"
   }
 
+  scores <- .viz_filter_scatter_groups(scores, groups_include)
+  if (!is.null(groups_include) && length(unlist(groups_include, use.names = FALSE)) &&
+      length(levels(scores$group)) < 2L) {
+    stop("Need at least two groups after filtering. Select more groups to compare.")
+  }
+
   caption <- NULL
   subtitle <- NULL
   if (length(levels(scores$group)) >= 2) {
@@ -1154,9 +1228,21 @@ make_scatter <- function(session_id, experiment, group = NULL,
   out <- .viz_ordination_compose(
     scores, plot_title = plot_title, xlab = xlab, ylab = ylab,
     grp_name = grp_name, caption = caption, subtitle = subtitle,
-    width = width, height = height
+    width = width, height = height, proj_width = proj_width
   )
-  plot_to_base64(out$plot, width = out$width, height = out$height)
+
+  result <- list(
+    plot = plot_to_base64(out$main, width = width, height = height),
+    plot_main = plot_to_base64(out$main, width = width, height = height),
+    stats = out$stats
+  )
+  if (!is.null(out$proj_x)) {
+    result$plot_proj_x <- plot_to_base64(out$proj_x, width = proj_width, height = proj_height)
+  }
+  if (!is.null(out$proj_y)) {
+    result$plot_proj_y <- plot_to_base64(out$proj_y, width = proj_width, height = proj_height)
+  }
+  result
 }
 
 # -----------------------------------------------------------------------------

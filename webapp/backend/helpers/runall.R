@@ -584,18 +584,18 @@ run_all_m16s <- function(session_id, experiment,
   p <- ggplot2::ggplot(scores, ggplot2::aes(x = PC1, y = PC2,
                                               color = group, fill = group)) +
     ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "grey80", linewidth = 0.3) +
-    ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = "grey80", linewidth = 0.3) +
-    ggplot2::geom_point(size = 3.2, alpha = 0.9, stroke = 0.3, shape = 21, color = "grey20") +
-    emp_scale_color_pub(name = grp_name, n_hint = length(levels(scores$group))) +
-    emp_scale_fill_pub(name = grp_name, n_hint = length(levels(scores$group))) +
-    ggplot2::labs(title = title_by_method,
-                   x = axis_labels[1], y = axis_labels[2]) +
-    emp_pub_theme()
+    ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = "grey80", linewidth = 0.3)
   if (!is.null(ell) && nrow(ell) > 0) {
     p <- p + ggplot2::geom_polygon(data = ell,
               ggplot2::aes(x = x, y = y, fill = group, group = group),
               alpha = 0.12, inherit.aes = FALSE, color = NA)
   }
+  p <- emp_add_ordination_double_points(p) +
+    emp_scale_color_pub(name = grp_name, n_hint = length(levels(scores$group))) +
+    emp_scale_fill_pub(name = grp_name, n_hint = length(levels(scores$group))) +
+    ggplot2::labs(title = title_by_method,
+                   x = axis_labels[1], y = axis_labels[2]) +
+    emp_pub_theme()
   if (isTRUE(return_scores)) {
     scores_out <- data.frame(
       sample = scores$sample,

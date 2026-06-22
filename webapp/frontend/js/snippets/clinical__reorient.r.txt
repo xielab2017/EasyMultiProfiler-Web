@@ -3,10 +3,10 @@
 # plumber.R clinical/reorient — plumber.R lines 244-250
 
 b <- list(session_id = session_id, mode = "auto")
-success = TRUE,
-session_id = session_id,
-import_mode = "clinical_standalone",
-updated_experiments = 0L,
-columns = setdiff(names(merged_preview), "primary"),
-orientation = attr(meta, "orientation_note") %||% "samples in rows",
-meta_columns = if (!is.null(paired_meta_upload)) setdiff(names(paired_meta_upload), "primary") else character()
+  p_legacy <- file.path(dirname(mae_path(session_id)), "clinical_uploaded.csv")
+  write_standalone_clinical(meta, p_legacy)
+}
+merged_preview <- tryCatch(.clin_merge_external_tables(meta, paired_meta_upload), error = function(e) meta)
+list(
+  success = TRUE,
+  session_id = session_id,

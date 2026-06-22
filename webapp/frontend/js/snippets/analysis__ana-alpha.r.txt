@@ -8,16 +8,16 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   method = "shannon", source = "current"
 )
-
-#* Microbiome 16S taxonomy-aware preparation
-#* @post /api/workflows/microbiome_16s/prepare/taxonomy
-#* @serializer unboxedJSON
-function(req, res) {
   safe_api({
 
     session_id <- b$session_id %||% NULL
     experiment <- b$experiment %||% NULL
-    collapse_level <- b$collapse_level %||% "Genus"
-    min_total_abundance <- as.numeric(b$min_total_abundance %||% 0)
-    drop_unassigned <- as.logical(b$drop_unassigned %||% TRUE)
-    keep_top_n <- as.integer(b$keep_top_n %||% 0L)
+    id_type <- b$id_type %||% "auto"
+    profile <- mgx_profile(session_id, experiment, id_type)
+    list(success = TRUE, profile = profile)
+  }, res)
+}
+
+#* Metagenomics workflow pre-check validation
+#* @post /api/workflows/metagenomics/validate
+#* @serializer unboxedJSON

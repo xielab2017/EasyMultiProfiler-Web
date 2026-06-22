@@ -9,26 +9,26 @@ b <- list(
   feature = "REPLACE_FEATURE", trait = "REPLACE_TRAIT", group = NULL,
   method = "lm", log_y = FALSE, clinical_source = "experiment"
 )
-#* Feature × Trait correlation (synchronous, typically < 5 s).
-#* Body: { session_id, experiment, traits:[..], method, top_n_features, p_adjust, clinical_source }
-#* @post /api/clinical/cor
+function(session_id, experiment, res) {
+  tryCatch({
+    df <- mbx_export_diff_csv(session_id, experiment)
+    res$setHeader("Content-Disposition",
+                  paste0('attachment; filename="', experiment, '_metabolomics_differential.csv"'))
+    .csv_response(df)
+  }, error = function(e) {
+    res$status <- 500
+    paste("Error:", e$message)
+  })
+}
+
+# ══════════════════════════════════════════════════════════
+# CLINICAL / PHENOTYPE ANALYSIS
+# ══════════════════════════════════════════════════════════
+
+#* List the numeric / categorical columns in an experiment's colData.
+#* Used by the frontend to populate the Clinical & Phenotype page dropdowns.
+#* @get /api/clinical/vars/<session_id>/<experiment>
 #* @serializer unboxedJSON
-function(req, res) {
+function(session_id, experiment, res) {
   safe_api({
-
-    session_id     <- b$session_id
-    experiment     <- b$experiment
-    traits         <- as.character(b$traits)
-    method         <- b$method %||% "spearman"
-    top_n_features <- as.integer(b$top_n_features %||% 30L)
-    p_adjust       <- b$p_adjust %||% "BH"
-    clinical_source<- b$clinical_source %||% "experiment"
-
-    pdf_dir <- file.path(session_path(session_id), "plots")
-    dir.create(pdf_dir, recursive = TRUE, showWarnings = FALSE)
-    pdf_path <- file.path(pdf_dir, paste0("clinical_cor_", make.names(experiment), ".pdf"))
-
-    out <- run_clinical_cor(session_id, experiment,
-                             traits = traits, method = method,
-                             top_n_features = top_n_features,
-                             p_adjust = p_adjust,
+    df <- list_clinical_vars(session_id, experiment)

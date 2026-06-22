@@ -430,10 +430,18 @@ VIZ_SLICES: list[tuple[str, Path, int, int, str]] = [
     ("visualization__viz-boxplot.r.txt", VZ, 206, 303, "viz.R make_boxplot"),
     ("visualization__viz-heatmap.r.txt", VZ, 304, 452, "viz.R make_heatmap"),
     ("visualization__viz-volcano.r.txt", VZ, 453, 806, "viz.R make_volcano"),
-    ("visualization__viz-scatter.r.txt", VZ, 807, 960, "viz.R make_scatter"),
     ("visualization__viz-structure.r.txt", VZ, 961, 1023, "viz.R make_structure"),
     ("visualization__viz-alpha.r.txt", VZ, 1024, 1119, "viz.R make_alpha_plot"),
 ]
+
+VIZ_SCATTER_BODY = """make_scatter(
+  session_id, experiment,
+  group = NULL, dim1 = 1L, dim2 = 2L,
+  width = 9, height = 7, proj_width = 7, proj_height = 4.5,
+  groups_include = NULL, ordination = "auto",
+  color_panel = NULL, custom_colors = NULL
+)
+"""
 
 
 def clinical_overview_body() -> str:
@@ -628,6 +636,12 @@ def main() -> None:
 
     for fname, src, lo, hi, note in VIZ_SLICES:
         write(fname, dedent_block(slurp(src, lo, hi)), f"{note} — {src.name} lines {lo}-{hi}")
+
+    write(
+        "visualization__viz-scatter.r.txt",
+        VIZ_SCATTER_BODY,
+        "viz.R make_scatter — calls server helper (double-circle points + projections)",
+    )
 
     write("clinical__overview.r.txt", clinical_overview_body(), "clinical vars (GET) — hand-built from plumber.R")
     write("analysis__ana-tx.r.txt", tx_workflow_bundle(), "transcriptomics routes — bundled cores from plumber.R")

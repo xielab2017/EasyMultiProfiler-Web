@@ -9,19 +9,19 @@ b <- list(
   group_var = NULL, taxonomy_level = "Genus", alpha_index = "shannon",
   beta_method = "bray", ord_method = "PCoA"
 )
+    result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
-#* Run the full RNAseq pipeline in the background
-#* @post /api/workflows/rnaseq/run_all
+    list(success = TRUE,
+         n_rows  = nrow(result_df),
+         columns = names(result_df),
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+  }, res)
+}
+
+#* Differential analysis (synchronous)
+#* @post /api/analyze/differential
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
 
-    job_id <- submit_job(
-      kind = "rnaseq_run_all",
-      fn   = "run_all_rnaseq",
-      args = list(
-        session_id    = b$session_id,
-        experiment    = b$experiment,
-        group_var     = b$group_var %||% "Group",
-        ref_group     = b$ref_group %||% NULL,
-        test_group    = b$test_group %||% NULL,
+    session_id <- b$session_id

@@ -12,25 +12,25 @@ b <- list(
   cluster_cols = TRUE, show_gene_names = NULL, font_size = 11,
   color_panel = NULL, custom_colors = NULL
 )
-    job_id <- submit_job(
-      kind = "orgdb_install",
-      fn   = "install_orgdb",
-      args = list(orgdb = orgdb)
-    )
-    list(success = TRUE, job_id = job_id, orgdb = orgdb)
+    experiment <- b$experiment
+    method     <- b$method %||% "hclust"
+    k          <- as.integer(b$k %||% 3L)
+
+    result    <- run_cluster(session_id, experiment, method, k)
+    result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
+
+    list(success = TRUE,
+         n_rows  = nrow(result_df),
+         columns = names(result_df),
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
   }, res)
 }
 
-#* Network analysis
-#* @post /api/analyze/network
+#* Marker (biomarker) analysis
+#* @post /api/analyze/marker
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
-
-    session_id <- b$session_id
-    experiment <- b$experiment
-    method     <- b$method  %||% "spearman"
-    cutoff     <- as.numeric(b$cutoff %||% 0.6)
 
 
 # --- POST /api/workflows/transcriptomics/visualize/volcano ---
@@ -38,14 +38,14 @@ b <- list(
   session_id = session_id, experiment = as.character(experiment)[1],
   fc_cutoff = 1.0, p_cutoff = 0.05, color_panel = NULL, custom_colors = NULL
 )
+    result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
-#* Transcriptomics heatmap
-#* @post /api/workflows/transcriptomics/visualize/heatmap
-#* @serializer unboxedJSON
-function(req, res) {
-  safe_api({
+    list(success = TRUE,
+         n_rows  = nrow(result_df),
+         columns = names(result_df),
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+  }, res)
+}
 
-    session_id <- if (!is.null(b$session_id) && length(b$session_id) > 0) as.character(b$session_id[[1]]) else NULL
-    experiment <- if (!is.null(b$experiment) && length(b$experiment) > 0) as.character(b$experiment[[1]]) else NULL
-    group <- if (!is.null(b$group) && length(b$group) > 0) as.character(b$group[[1]]) else NULL
-    top_n <- if (!is.null(b$top_n) && length(b$top_n) > 0) as.integer(b$top_n[[1]]) else 50L
+#* Enrichment analysis (KEGG / GO via clusterProfiler on the cached DEG list)
+#* @post /api/analyze/enrichment

@@ -7,7 +7,7 @@ This folder contains the non-Shiny web interface for EasyMultiProfiler.
 ### One-line install (recommended)
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v5.0.1/webapp/scripts/install_from_github.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v5.0.2/webapp/scripts/install_from_github.sh)"
 ```
 
 This command does everything automatically:

@@ -10,28 +10,28 @@ b <- list(
   method = "spearman", top_n_features = 30L, p_adjust = "BH",
   clinical_source = "experiment"
 )
-experiment <- b$experiment %||% NULL
-source <- b$source %||% "standalone"
-group_var <- b$group_var %||% NULL
-skip_high_cardinality <- if (is.null(b$skip_high_cardinality)) TRUE else isTRUE(b$skip_high_cardinality)
-max_levels <- as.integer(b$max_levels %||% 20L)
-table_engine <- b$table_engine %||% "gtsummary"
-cohort_filter <- b$cohort_filter %||% NULL
-out <- run_clinical_systematic_summary(
-  session_id = session_id,
-  source = source,
-  experiment = experiment,
-  group_var = group_var,
-  skip_high_cardinality = skip_high_cardinality,
-  max_levels = max_levels,
-  table_engine = table_engine,
-  cohort_filter = cohort_filter
-)
-list(
-  success = TRUE,
-  baseline = out$baseline,
-  within = out$within,
-  between = out$between,
-  n_baseline = nrow(out$baseline),
-  n_within = nrow(out$within),
-  n_between = nrow(out$between),
+    if (is.null(result_info) || !nzchar(result_info)) {
+      result_info <- paste0(analysis, "_result")
+    }
+    result <- EasyMultiProfiler::EMP_result(empt, info = result_info)
+    df     <- as.data.frame(result)
+    res$setHeader("Content-Disposition",
+                  paste0('attachment; filename="', experiment, '_', analysis, '.csv"'))
+    .csv_response(df)
+  }, error = function(e) {
+    res$status <- 500
+    paste("Error:", e$message)
+  })
+}
+
+#* Download full session as RDS
+#* @get /api/export/rds/<session_id>
+#* @serializer contentType list(type="application/octet-stream")
+function(session_id, res) {
+  tryCatch({
+    mae <- load_mae(session_id)
+    tmp <- tempfile(fileext = ".rds")
+    on.exit(if(file.exists(tmp)) file.remove(tmp))
+    saveRDS(mae, tmp)
+    res$setHeader("Content-Disposition", 'attachment; filename="EMP_session.rds"')
+    readBin(tmp, "raw", file.info(tmp)$size)

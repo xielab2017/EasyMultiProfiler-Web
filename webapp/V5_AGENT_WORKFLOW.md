@@ -1,4 +1,4 @@
-# EMP-Web v5.0.1 — 多 Agent 工作流（10+ 轮优化）
+# EMP-Web v5.0.2 — 多 Agent 工作流（10+ 轮优化）
 
 > **目标**：零基础用户（无 R/RStudio）在 Mac / Windows 上一键完成 R + EMP + EMP-Web 安装；用 tests/ 数据多轮优化分析/出图/Run All；AI 解读与脚本优化达到「可执行建议 + 一键复制到 Code Lab」。
 >
@@ -39,7 +39,7 @@
 | R10 | Mac 实机：launch_emp_web.sh + .command 双击（智能安装/日常启动） | ✅ 本轮 |
 | R11+ | AI vision 读图（多模态送图）、失败自动修复回环 | ✅ 本轮 |
 
-**v5.0.1 发布条件**：R1–R10 测试员签字 + smoke_v5 全绿 + GitHub INSTALL / USER_GUIDE 文档评审通过 + 网页 **Guide** 页与分平台安装说明一致。
+**v5.0.2 发布条件**：R1–R10 测试员签字 + smoke_v5 全绿 + GitHub INSTALL / USER_GUIDE 文档评审通过 + 网页 **Guide** 页与分平台安装说明一致。
 
 ---
 

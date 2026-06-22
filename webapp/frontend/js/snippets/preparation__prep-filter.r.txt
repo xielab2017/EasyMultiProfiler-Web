@@ -11,45 +11,45 @@ b <- list(
   min_detect_rate = NA_real_, max_detect_rate = NA_real_,
   min_prevalence = 0, max_na = 1, prepare_mode = "stack"
 )
-    available <- Filter(function(info) {
-      out <- tryCatch(EasyMultiProfiler::EMP_result(empt, info = info), error = function(e) NULL)
-      !is.null(out)
-    }, candidates)
-    list(success = TRUE, results = available)
+    }
+    list(success = TRUE, rows = jsonlite::toJSON(cd, na = "null", auto_unbox = TRUE))
   }, res)
 }
 
-#* Inspector: preview one EMP result table
-#* @get /api/inspect/result/<session_id>/<experiment>/<result_name>
+#* Inspector rowData preview
+#* @get /api/inspect/rowdata/<session_id>/<experiment>
 #* @serializer unboxedJSON
-function(session_id, experiment, result_name, res) {
+function(session_id, experiment, offset = 1, limit = 50, res) {
   safe_api({
     empt <- load_empt(session_id, experiment)
-    result <- EasyMultiProfiler::EMP_result(empt, info = result_name)
-    result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
+    rd <- as.data.frame(SummarizedExperiment::rowData(empt))
+    total <- nrow(rd)
+    offset_i <- max(1L, suppressWarnings(as.integer(offset %||% 1L)))
+    limit_i <- max(1L, min(500L, suppressWarnings(as.integer(limit %||% 50L))))
+    end_i <- min(total, offset_i + limit_i - 1L)
+    idx <- if (total == 0 || offset_i > total) integer(0) else seq.int(offset_i, end_i)
+    rd_slice <- rd[idx, , drop = FALSE]
+    if (nrow(rd_slice) > 0) {
+      rd_slice$feature <- rownames(rd_slice)
+      rd_slice <- rd_slice[, c("feature", setdiff(names(rd_slice), "feature")), drop = FALSE]
+    }
     list(
       success = TRUE,
-      result_name = result_name,
-      n_rows = nrow(result_df),
-      rows = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE)
+      total = total,
+      offset = offset_i,
+      limit = limit_i,
+      rows = jsonlite::toJSON(rd_slice, na = "null", auto_unbox = TRUE)
     )
   }, res)
 }
 
-# ══════════════════════════════════════════════════════════
-# DATA PREPARATION  (.prepare_load_base in helpers/session.R)
-# ══════════════════════════════════════════════════════════
-
-#* Filter features by count / prevalence
-#* @post /api/prepare/filter
+#* Inspector: list available EMP result tables
+#* @get /api/inspect/results/<session_id>/<experiment>
 #* @serializer unboxedJSON
-function(req, res) {
+function(session_id, experiment, res) {
   safe_api({
-
-    session_id <- b$session_id
-    experiment <- b$experiment
-    min_count  <- as.numeric(b$min_count  %||% 0)
-    min_samples<- as.integer(b$min_samples %||% 0L)
-    min_detect_rate <- as.numeric(b$min_detect_rate %||% NA_real_)
-    max_detect_rate <- as.numeric(b$max_detect_rate %||% NA_real_)
-    min_prevalence <- as.numeric(b$min_prevalence %||% 0)
+    empt <- load_empt(session_id, experiment)
+    candidates <- c(
+      "diversity_result", "diff_analysis_result", "dimension_coordinate",
+      "dimension_axis", "dimension_VIP", "sample_cluster_result",
+      "feature_cluster_result", "enrich_data", "rf_feature_importance",

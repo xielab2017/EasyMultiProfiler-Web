@@ -9,23 +9,23 @@ b <- list(
   method = "DESeq2", group_var = NULL, ref_group = NULL, test_group = NULL,
   filter_low = TRUE, subset_two_groups = TRUE, cores = "auto"
 )
-      drop_unassigned = drop_unassigned,
-      keep_top_n = keep_top_n,
-      tax_sep = tax_sep,
-      normalize_method = normalize_method
-    )
-  }, res)
 }
 
-#* Alpha diversity analysis
-#* @post /api/analyze/alpha
+#* Metagenomics preprocess with functional defaults
+#* @post /api/workflows/metagenomics/preprocess
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
 
-    session_id <- b$session_id
-    experiment <- b$experiment
-    method     <- b$method %||% "shannon"
-    source     <- b$source %||% "current"
+    session_id <- b$session_id %||% NULL
+    experiment <- b$experiment %||% NULL
+    max_na <- b$max_na %||% 0.2
+    normalize_method <- b$normalize_method %||% "rclr"
 
-    result <- run_alpha(session_id, experiment, method, source = source)
+    mgx_preprocess(session_id, experiment, max_na, normalize_method)
+  }, res)
+}
+
+#* Metagenomics differential analysis
+#* @post /api/workflows/metagenomics/analyze/differential
+#* @serializer unboxedJSON

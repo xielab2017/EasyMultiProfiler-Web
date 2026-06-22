@@ -1,6 +1,17 @@
 # LLM-assisted R code optimization for Code Lab.
 # The API key is supplied per request from the browser and is not persisted here.
 
+.LLM_OPENAI_COMPAT <- c(
+  "chatgpt", "openai", "deepseek", "qwen", "minimax", "nvidia", "custom", "campus"
+)
+
+.llm_is_openai_compat <- function(provider, base_url = "") {
+  provider <- tolower(trimws(.llm_chr(provider)))
+  if (provider %in% .LLM_OPENAI_COMPAT) return(TRUE)
+  bu <- tolower(trimws(.llm_chr(base_url)))
+  nzchar(bu) && grepl("integrate\\.api\\.nvidia\\.com", bu, fixed = TRUE)
+}
+
 .llm_chr <- function(x, default = "") {
   if (is.null(x) || length(x) < 1L) return(default)
   y <- tryCatch(as.character(x[[1L]]), error = function(e) default)
@@ -9,6 +20,8 @@
 
 .llm_clean_base_url <- function(x) {
   x <- trimws(.llm_chr(x))
+  x <- sub("/+$", "", x)
+  x <- sub("/chat/completions$", "", x, ignore.case = TRUE)
   sub("/+$", "", x)
 }
 
@@ -26,10 +39,30 @@
   paste0(host, path)
 }
 
+.llm_campus_config_path <- function() {
+  env_path <- trimws(Sys.getenv("EMP_CAMPUS_LLM_CONFIG", unset = ""))
+  if (nzchar(env_path) && file.exists(env_path)) return(normalizePath(env_path, winslash = "/", mustWork = FALSE))
+  backend <- trimws(Sys.getenv("EMP_BACKEND_DIR", unset = ""))
+  candidates <- character(0)
+  if (nzchar(backend)) {
+    candidates <- c(candidates, file.path(dirname(backend), "config", "campus_llm.json"))
+  }
+  candidates <- c(
+    candidates,
+    file.path(getwd(), "webapp", "config", "campus_llm.json"),
+    file.path(getwd(), "config", "campus_llm.json")
+  )
+  for (p in unique(candidates)) {
+    if (nzchar(p) && file.exists(p)) return(normalizePath(p, winslash = "/", mustWork = FALSE))
+  }
+  ""
+}
+
 .llm_campus_builtin_cfg <- function() {
-  list(
+  defaults <- list(
     base_url = Sys.getenv("EMP_CAMPUS_LLM_URL", "http://10.22.18.12:9901/v1"),
     api_key = Sys.getenv("EMP_CAMPUS_LLM_API_KEY", unset = ""),
+    timeout = suppressWarnings(as.numeric(Sys.getenv("EMP_CAMPUS_LLM_TIMEOUT", unset = "120"))),
     models = list(
       fast = "deepseek-v4-flash",
       accurate = "Qwen3.6-35B-A3B",
@@ -37,13 +70,49 @@
       embedding = "Qwen-embedding"
     )
   )
+  if (!is.finite(defaults$timeout) || defaults$timeout <= 0) defaults$timeout <- 120
+
+  path <- .llm_campus_config_path()
+  if (!nzchar(path)) return(defaults)
+
+  cfg <- tryCatch(
+    jsonlite::fromJSON(path, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  if (is.null(cfg)) return(defaults)
+
+  if (nzchar(trimws(.llm_chr(cfg$base_url)))) defaults$base_url <- trimws(.llm_chr(cfg$base_url))
+  if (nzchar(trimws(.llm_chr(cfg$api_key)))) defaults$api_key <- trimws(.llm_chr(cfg$api_key))
+  tmo <- suppressWarnings(as.numeric(cfg$timeout))
+  if (is.finite(tmo) && tmo > 0) defaults$timeout <- tmo
+  if (!is.null(cfg$models) && is.list(cfg$models)) {
+    for (nm in names(defaults$models)) {
+      val <- trimws(.llm_chr(cfg$models[[nm]]))
+      if (nzchar(val)) defaults$models[[nm]] <- val
+    }
+  }
+  defaults
 }
 
 .llm_campus_merge_cfg <- function(cfg) {
   builtin <- .llm_campus_builtin_cfg()
   cfg <- cfg %||% list()
   if (!nzchar(trimws(.llm_chr(cfg$base_url)))) cfg$base_url <- builtin$base_url
-  if (!nzchar(trimws(.llm_chr(cfg$api_key)))) cfg$api_key <- builtin$api_key
+  browser_key <- trimws(.llm_chr(cfg$api_key))
+  server_key <- trimws(.llm_chr(builtin$api_key))
+  if (!nzchar(browser_key)) cfg$api_key <- server_key
+  if (is.null(cfg$timeout) || !is.finite(suppressWarnings(as.numeric(cfg$timeout)))) {
+    cfg$timeout <- builtin$timeout
+  }
+  if (is.null(cfg$campus_models) || !is.list(cfg$campus_models)) {
+    cfg$campus_models <- builtin$models
+  } else {
+    for (nm in names(builtin$models)) {
+      if (!nzchar(trimws(.llm_chr(cfg$campus_models[[nm]])))) {
+        cfg$campus_models[[nm]] <- builtin$models[[nm]]
+      }
+    }
+  }
   cfg
 }
 
@@ -56,25 +125,32 @@
     if (nzchar(x)) x else fallback
   }
   switch(task,
-    code_optimize = c(pick("fast", "deepseek-v4-flash"), pick("accurate", "Qwen3.6-35B-A3B")),
+    code_optimize = c(pick("fast", "deepseek-v4-flash")),
     vision = c(pick("vision", "Qwen3-VL-8B-Instruct")),
     embedding = c(pick("embedding", "Qwen-embedding")),
     complex = c(pick("accurate", "Qwen3.6-35B-A3B"), pick("fast", "deepseek-v4-flash")),
-    c(pick("fast", "deepseek-v4-flash"), pick("accurate", "Qwen3.6-35B-A3B"))
+    c(pick("fast", "deepseek-v4-flash"))
   )
 }
 
 .llm_campus_optimize_once <- function(cfg, model, code, workflow, tab, instruction, ui_context = NULL) {
   cfg <- .llm_campus_merge_cfg(cfg)
   cfg$model <- model
-  if (is.null(cfg$timeout) || !is.finite(suppressWarnings(as.numeric(cfg$timeout)))) {
-    cfg$timeout <- 8
-  }
+  timeout <- suppressWarnings(as.numeric(cfg$timeout))
+  if (!is.finite(timeout) || timeout <= 0) timeout <- 120
+  cfg$timeout <- timeout
   .llm_optimize_once("campus", cfg, code, workflow, tab, instruction, ui_context)
 }
 
 .llm_campus_optimize <- function(cfg, code, workflow = NULL, tab = NULL, instruction = NULL, ui_context = NULL) {
   cfg <- .llm_campus_merge_cfg(cfg)
+  if (!nzchar(trimws(.llm_chr(cfg$api_key)))) {
+    stop(paste(
+      "Campus LLM API key is missing.",
+      "Set webapp/config/campus_llm.json (see campus_llm.json.example)",
+      "or EMP_CAMPUS_LLM_API_KEY, or paste the key in Code Lab LLM settings."
+    ))
+  }
   task <- tolower(trimws(.llm_chr(cfg$task_type %||% cfg$task, "code_optimize")))
   models <- unique(.llm_campus_task_models(task, cfg))
   explicit <- trimws(.llm_chr(cfg$model))
@@ -85,32 +161,27 @@
   conn_fails <- 0L
   for (model in models) {
     if (!nzchar(model)) next
-    aliases <- unique(c(.llm_model_aliases(model), model))
-    if (length(aliases) > 3L) aliases <- aliases[seq_len(3L)]
-    for (model_try in aliases) {
-      out <- tryCatch(
-        .llm_campus_optimize_once(cfg, model_try, code, workflow, tab, instruction %||% "", ui_context),
-        error = function(e) {
-          msg <- conditionMessage(e)
-          errors <<- c(errors, sprintf("%s: %s", model_try, msg))
-          if (grepl("timed out|connection refused|empty reply|url error|couldn't connect",
-                    msg, ignore.case = TRUE)) {
-            conn_fails <<- conn_fails + 1L
-          }
-          NULL
+    out <- tryCatch(
+      .llm_campus_optimize_once(cfg, model, code, workflow, tab, instruction %||% "", ui_context),
+      error = function(e) {
+        msg <- conditionMessage(e)
+        errors <<- c(errors, sprintf("%s: %s", model, msg))
+        if (grepl("timed out|connection refused|empty reply|url error|couldn't connect|403|401",
+                  msg, ignore.case = TRUE)) {
+          conn_fails <<- conn_fails + 1L
         }
-      )
-      if (is.character(out) && nzchar(trimws(out))) {
-        return(list(
-          success = TRUE,
-          provider = paste0("campus:", model_try),
-          model = model_try,
-          task_type = task,
-          optimized_code = out,
-          errors = errors
-        ))
+        NULL
       }
-      if (conn_fails >= 2L) break
+    )
+    if (is.character(out) && nzchar(trimws(out))) {
+      return(list(
+        success = TRUE,
+        provider = paste0("campus:", model),
+        model = model,
+        task_type = task,
+        optimized_code = out,
+        errors = errors
+      ))
     }
     if (conn_fails >= 2L) break
   }
@@ -132,6 +203,7 @@
       claude = if (nzchar(base_url)) base_url else "https://api.anthropic.com/v1",
       chatgpt = if (nzchar(base_url)) base_url else "https://api.openai.com/v1",
       openai = if (nzchar(base_url)) base_url else "https://api.openai.com/v1",
+      nvidia = if (nzchar(base_url)) base_url else "https://integrate.api.nvidia.com/v1",
       campus = if (nzchar(base_url)) base_url else campus_builtin$base_url,
       custom = base_url,
       remote = .llm_remote_url(cfg),
@@ -145,6 +217,7 @@
       claude = if (nzchar(model)) model else "claude-3-5-sonnet-latest",
       chatgpt = if (nzchar(model)) model else "gpt-4o-mini",
       openai = if (nzchar(model)) model else "gpt-4o-mini",
+      nvidia = if (nzchar(model)) model else "meta/llama-3.3-70b-instruct",
       campus = if (nzchar(model)) model else campus_builtin$models$fast,
       model
     )
@@ -202,7 +275,17 @@
   code
 }
 
+.llm_truncate_code <- function(code, max_chars = 14000L) {
+  code <- paste(as.character(code), collapse = "\n")
+  if (nchar(code) <= max_chars) return(code)
+  paste0(
+    "# [Code Lab: truncated to last ", max_chars, " chars of ", nchar(code), " total]\n",
+    substr(code, nchar(code) - max_chars + 1L, nchar(code))
+  )
+}
+
 .llm_prompt <- function(code, workflow, tab, instruction, ui_context = NULL) {
+  code <- .llm_truncate_code(code)
   ctx_lines <- character(0)
   if (!is.null(ui_context) && length(ui_context)) {
     ctx_lines <- vapply(names(ui_context), function(k) {
@@ -238,11 +321,14 @@
 .llm_chat_completion_urls <- function(base_url) {
   b <- .llm_normalize_openai_base(base_url)
   if (!nzchar(b)) return(character(0))
+  if (grepl("/chat/completions$", b, ignore.case = TRUE)) return(b)
+  if (grepl("/v1$", b, ignore.case = TRUE)) {
+    return(paste0(b, "/chat/completions"))
+  }
   root <- sub("/v1$", "", b, ignore.case = TRUE)
   unique(c(
     paste0(b, "/chat/completions"),
-    paste0(root, "/v1/chat/completions"),
-    paste0(root, "/api/v1/chat/completions")
+    paste0(root, "/v1/chat/completions")
   ))
 }
 
@@ -274,8 +360,10 @@
   if (nzchar(py_err)) {
     if (grepl("HTTP Error 404", py_err, fixed = TRUE)) {
       msg <- c(msg, "Endpoint or model not found (404). Check Base URL and Model name in Code Lab LLM settings.")
-    } else if (grepl("HTTP Error 401|403", py_err, perl = TRUE)) {
-      msg <- c(msg, "Authentication failed. Check API Key.")
+    } else if (grepl("HTTP Error 403", py_err, fixed = TRUE)) {
+      msg <- c(msg, "Authentication failed (403). Check API Key and provider permissions.")
+    } else if (grepl("HTTP Error 401", py_err, fixed = TRUE)) {
+      msg <- c(msg, "Authentication failed (401). Check API Key.")
     } else {
       msg <- c(msg, sub("\\s+", " ", gsub("Traceback.*", "", py_err, perl = TRUE)))
     }
@@ -424,7 +512,7 @@
       list(role = "system", content = "Return only pure executable R code."),
       list(role = "user", content = prompt)
     ),
-    max_tokens = as.integer(cfg$max_tokens %||% 4096L),
+    max_tokens = as.integer(cfg$max_tokens %||% 2048L),
     temperature = suppressWarnings(as.numeric(cfg$temperature %||% 0.2))
   )
   headers <- .llm_auth_headers(key, provider)
@@ -453,8 +541,13 @@
   provider <- d$provider
   prompt <- .llm_prompt(code, workflow, tab, instruction, ui_context)
   key <- trimws(.llm_chr(cfg$api_key))
-  timeout <- suppressWarnings(as.numeric(cfg$timeout %||% 120))
-  if (is.na(timeout) || timeout <= 0) timeout <- 120
+  timeout <- suppressWarnings(as.numeric(cfg$timeout %||% 90))
+  if (is.na(timeout) || timeout <= 0) timeout <- 90
+  fast_fail <- isTRUE(cfg$fast_fail)
+  if (fast_fail) {
+    ff <- suppressWarnings(as.numeric(cfg$fast_fail_timeout %||% 25))
+    if (is.finite(ff) && ff > 0) timeout <- min(timeout, ff)
+  }
 
   if (identical(provider, "remote")) {
     body <- list(
@@ -470,9 +563,17 @@
     return(.llm_pure_r_or_stop(.llm_extract_text(resp$raw_text %||% resp)))
   }
 
-  needs_key <- !provider %in% c("campus", "custom")
-  if (needs_key && !nzchar(key)) stop(sprintf("API key required for provider: %s", provider))
-  if (provider %in% c("chatgpt", "openai", "deepseek", "qwen", "minimax", "custom", "campus")) {
+  needs_key <- !provider %in% c("custom")
+  if (identical(provider, "campus")) {
+    cfg <- .llm_campus_merge_cfg(cfg)
+    key <- trimws(.llm_chr(cfg$api_key))
+    if (!nzchar(key)) {
+      stop("Campus LLM API key is missing. Configure webapp/config/campus_llm.json or Code Lab API Key.")
+    }
+  } else if (needs_key && !nzchar(key)) {
+    stop(sprintf("API key required for provider: %s", provider))
+  }
+  if (.llm_is_openai_compat(provider, d$base_url)) {
     return(.llm_openai_chat_call(
       d$base_url, d$model, key, prompt, cfg, timeout, provider = provider
     ))
@@ -481,7 +582,7 @@
     url <- paste0(d$base_url, "/messages")
     body <- list(
       model = d$model,
-      max_tokens = as.integer(cfg$max_tokens %||% 4096L),
+      max_tokens = as.integer(cfg$max_tokens %||% 2048L),
       temperature = suppressWarnings(as.numeric(cfg$temperature %||% 0.2)),
       messages = list(list(role = "user", content = prompt))
     )
@@ -513,14 +614,19 @@ optimize_r_with_llm <- function(provider, cfg, code, workflow = NULL, tab = NULL
       providers <- unlist(providers, use.names = FALSE)
       providers <- providers[nzchar(providers)]
       if (!length(providers)) {
-        providers <- c("campus", "deepseek", "qwen", "chatgpt", "claude", "gemini", "minimax")
+        providers <- c("campus", "nvidia", "deepseek", "qwen", "chatgpt")
       }
     } else {
       providers <- provider
     }
-    for (p in providers) {
+    for (i in seq_along(providers)) {
+      p <- providers[[i]]
+      attempt_cfg <- cfg
+      if (identical(provider, "auto") && i > 1L) {
+        attempt_cfg$fast_fail <- TRUE
+      }
       out <- tryCatch(
-        .llm_optimize_once(p, cfg, code, workflow, tab, instruction %||% "", ui_context),
+        .llm_optimize_once(p, attempt_cfg, code, workflow, tab, instruction %||% "", ui_context),
         error = function(e) {
           errors <<- c(errors, sprintf("%s: %s", p, conditionMessage(e)))
           NULL
