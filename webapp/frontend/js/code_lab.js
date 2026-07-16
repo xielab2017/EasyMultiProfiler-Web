@@ -2,9 +2,9 @@
  * Code lab: reference snippets + optional **real** R execution via POST /api/user_r/run.
  * Drafts + edit history remain in localStorage.
  */
-import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-06-21-v5.0.2";
-import { codeLabArtifactURL, execUserR, optimizeRCode } from "./api.js?v=2026-06-21-v5.0.2";
-import { t } from "./locale.js?v=2026-06-21-v5.0.2";
+import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-07-16-multi-demo";
+import { codeLabArtifactURL, execUserR, getOpenRouterVerified, optimizeRCode, probeOpenRouterModels } from "./api.js?v=2026-07-16-multi-demo";
+import { t } from "./locale.js?v=2026-07-16-multi-demo";
 
 const LS_KEY = "emp_code_lab_store_v1";
 const LLM_CFG_KEY = "emp_code_lab_llm_config_v2";
@@ -21,6 +21,269 @@ const CAMPUS_LLM_PRESET = {
     embedding: "Qwen-embedding",
   },
 };
+
+const OPENROUTER_PROBE_CANDIDATES = [
+  "deepseek/deepseek-v4-pro",
+  "deepseek/deepseek-v4-flash",
+  "moonshotai/kimi-k2.7-code",
+  "qwen/qwen3.7-max",
+  "z-ai/glm-5.2",
+  "z-ai/glm-5",
+  "openai/gpt-5.6-sol",
+  "openai/gpt-5.6-terra",
+  "openai/gpt-5.6-luna",
+  "openai/gpt-5.5",
+  "openai/gpt-5.5-pro",
+  "anthropic/claude-fable-5",
+  "anthropic/claude-sonnet-5",
+  "anthropic/claude-opus-4.8",
+  "google/gemini-3.1-pro-preview",
+  "google/gemini-3.5-flash",
+  "openai/gpt-4o-mini",
+  "deepseek/deepseek-chat",
+  "meta-llama/llama-3.3-70b-instruct",
+];
+const OPENROUTER_MODEL_LABELS = {
+  "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
+  "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash（快）",
+  "moonshotai/kimi-k2.7-code": "Kimi K2.7 Code",
+  "qwen/qwen3.7-max": "Qwen3.7 Max",
+  "z-ai/glm-5.2": "GLM 5.2",
+  "z-ai/glm-5": "GLM 5",
+  "openai/gpt-5.6-sol": "GPT-5.6 Sol",
+  "openai/gpt-5.6-terra": "GPT-5.6 Terra",
+  "openai/gpt-5.6-luna": "GPT-5.6 Luna（快）",
+  "openai/gpt-5.5": "GPT-5.5",
+  "openai/gpt-5.5-pro": "GPT-5.5 Pro",
+  "anthropic/claude-fable-5": "Claude Fable 5",
+  "anthropic/claude-sonnet-5": "Claude Sonnet 5",
+  "anthropic/claude-opus-4.8": "Claude Opus 4.8",
+  "google/gemini-3.1-pro-preview": "Gemini 3.1 Pro",
+  "google/gemini-3.5-flash": "Gemini 3.5 Flash（快）",
+  "openai/gpt-4o-mini": "GPT-4o mini",
+  "deepseek/deepseek-chat": "DeepSeek Chat",
+  "meta-llama/llama-3.3-70b-instruct": "Llama 3.3 70B",
+};
+let openRouterVerified = null;
+
+function openRouterModelLabel(id) {
+  return OPENROUTER_MODEL_LABELS[id] || id;
+}
+
+function applyOpenRouterVerifiedManifest(manifest = {}) {
+  const working = Array.isArray(manifest.working) ? manifest.working : [];
+  const workingIds = working.map((row) => row.model || row.id).filter(Boolean);
+  if (!workingIds.length) return false;
+
+  const verifiedModels = workingIds.map((id) => ({
+    id,
+    label: openRouterModelLabel(id),
+  }));
+  LLM_PROVIDER_CATALOG.openrouter.models = [
+    { id: "fusion", label: "Auto 融合 5 模型（推荐）" },
+    ...verifiedModels,
+    { id: "__custom__", label: "自定义 OpenRouter 模型…" },
+  ];
+
+  const fusionDefaults = Array.isArray(manifest.fusion_defaults) && manifest.fusion_defaults.length
+    ? manifest.fusion_defaults.slice(0, 5)
+    : workingIds.slice(0, 5);
+  OPENROUTER_DEFAULT_FUSION_MODELS.length = 0;
+  OPENROUTER_DEFAULT_FUSION_MODELS.push(...fusionDefaults);
+  OPENROUTER_LLM_PRESET.openrouter_models = [...fusionDefaults];
+  if (manifest.fusion_model) {
+    OPENROUTER_LLM_PRESET.fusion_model = manifest.fusion_model;
+  }
+  return true;
+}
+
+async function refreshOpenRouterVerifiedModels({ repopulate = true } = {}) {
+  try {
+    const res = await getOpenRouterVerified();
+    if (!res?.success) return false;
+    openRouterVerified = res;
+    const applied = applyOpenRouterVerifiedManifest(res);
+    if (applied && repopulate && llmConfigEls.provider?.value === "openrouter") {
+      applyProviderToForm("openrouter");
+    }
+    return applied;
+  } catch {
+    return false;
+  }
+}
+const OPENROUTER_DEFAULT_FUSION_MODELS = [
+  "deepseek/deepseek-v4-pro",
+  "deepseek/deepseek-v4-flash",
+  "moonshotai/kimi-k2.7-code",
+  "qwen/qwen3.7-max",
+  "z-ai/glm-5.2",
+];
+const OPENROUTER_FUSION_LEARN_KEY = "emp_openrouter_fusion_learn_v1";
+const OPENROUTER_LLM_PRESET = {
+  provider: "openrouter",
+  base_url: "https://openrouter.ai/api/v1",
+  api_key: "",
+  model: "fusion",
+  fusion_model: "deepseek/deepseek-v4-pro",
+  openrouter_models: OPENROUTER_DEFAULT_FUSION_MODELS,
+};
+
+function loadFusionLearnScores() {
+  try {
+    const raw = localStorage.getItem(OPENROUTER_FUSION_LEARN_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveFusionLearnScores(scores) {
+  try {
+    localStorage.setItem(OPENROUTER_FUSION_LEARN_KEY, JSON.stringify(scores || {}));
+  } catch {
+    /* quota */
+  }
+}
+
+function recordFusionLearn(models, delta = 1) {
+  const list = Array.isArray(models) ? models.filter(Boolean) : [models].filter(Boolean);
+  if (!list.length || !Number.isFinite(delta) || delta === 0) return;
+  const scores = loadFusionLearnScores();
+  for (const model of list) {
+    scores[model] = (Number(scores[model]) || 0) + delta;
+  }
+  saveFusionLearnScores(scores);
+}
+
+function rankFusionModels(models, scores = loadFusionLearnScores()) {
+  const uniq = [...new Set((models || []).filter(Boolean))];
+  return uniq
+    .map((id) => ({ id, score: Number(scores[id]) || 0 }))
+    .sort((a, b) => b.score - a.score || uniq.indexOf(a.id) - uniq.indexOf(b.id))
+    .map((x) => x.id);
+}
+
+function resolveOpenRouterFusionModels(extra = []) {
+  const pool = rankFusionModels([
+    ...OPENROUTER_DEFAULT_FUSION_MODELS,
+    ...extra,
+    ...Object.keys(loadFusionLearnScores()),
+  ]);
+  const picked = [];
+  for (const model of pool) {
+    if (!picked.includes(model)) picked.push(model);
+    if (picked.length >= 5) break;
+  }
+  for (const model of OPENROUTER_DEFAULT_FUSION_MODELS) {
+    if (!picked.includes(model)) picked.push(model);
+    if (picked.length >= 5) break;
+  }
+  return picked.slice(0, 5);
+}
+
+let lastLlmOptimizeMeta = null;
+
+/** NVIDIA NIM chat / instruct LLMs (from integrate.api.nvidia.com/v1/models). */
+const NVIDIA_NIM_CHAT_MODELS = [
+  { id: "nvidia/nemotron-3-ultra-550b-a55b", label: "nemotron-3-ultra-550b-a55b（旗舰）" },
+  { id: "nvidia/nemotron-3-super-120b-a12b", label: "nemotron-3-super-120b-a12b" },
+  { id: "nvidia/llama-3.1-nemotron-ultra-253b-v1", label: "llama-3.1-nemotron-ultra-253b-v1" },
+  { id: "deepseek-ai/deepseek-v4-pro", label: "deepseek-v4-pro" },
+  { id: "deepseek-ai/deepseek-v4-flash", label: "deepseek-v4-flash（快）" },
+  { id: "z-ai/glm-5.2", label: "glm-5.2" },
+  { id: "qwen/qwen3.5-397b-a17b", label: "qwen3.5-397b-a17b" },
+  { id: "meta/llama-3.3-70b-instruct", label: "llama-3.3-70b-instruct" },
+  { id: "01-ai/yi-large", label: "yi-large" },
+  { id: "abacusai/dracarys-llama-3.1-70b-instruct", label: "dracarys-llama-3.1-70b-instruct" },
+  { id: "adept/fuyu-8b", label: "fuyu-8b" },
+  { id: "ai21labs/jamba-1.5-large-instruct", label: "jamba-1.5-large-instruct" },
+  { id: "aisingapore/sea-lion-7b-instruct", label: "sea-lion-7b-instruct" },
+  { id: "bigcode/starcoder2-15b", label: "starcoder2-15b" },
+  { id: "bytedance/seed-oss-36b-instruct", label: "seed-oss-36b-instruct" },
+  { id: "databricks/dbrx-instruct", label: "dbrx-instruct" },
+  { id: "deepseek-ai/deepseek-coder-6.7b-instruct", label: "deepseek-coder-6.7b-instruct" },
+  { id: "google/codegemma-1.1-7b", label: "codegemma-1.1-7b" },
+  { id: "google/codegemma-7b", label: "codegemma-7b" },
+  { id: "google/diffusiongemma-26b-a4b-it", label: "diffusiongemma-26b-a4b-it" },
+  { id: "google/gemma-2-2b-it", label: "gemma-2-2b-it" },
+  { id: "google/gemma-2b", label: "gemma-2b" },
+  { id: "google/gemma-3-12b-it", label: "gemma-3-12b-it" },
+  { id: "google/gemma-3-4b-it", label: "gemma-3-4b-it" },
+  { id: "google/gemma-3n-e2b-it", label: "gemma-3n-e2b-it" },
+  { id: "google/gemma-3n-e4b-it", label: "gemma-3n-e4b-it" },
+  { id: "google/gemma-4-31b-it", label: "gemma-4-31b-it" },
+  { id: "google/recurrentgemma-2b", label: "recurrentgemma-2b" },
+  { id: "ibm/granite-3.0-3b-a800m-instruct", label: "granite-3.0-3b-a800m-instruct" },
+  { id: "ibm/granite-3.0-8b-instruct", label: "granite-3.0-8b-instruct" },
+  { id: "ibm/granite-34b-code-instruct", label: "granite-34b-code-instruct" },
+  { id: "ibm/granite-8b-code-instruct", label: "granite-8b-code-instruct" },
+  { id: "meta/codellama-70b", label: "codellama-70b" },
+  { id: "meta/llama-3.1-70b-instruct", label: "llama-3.1-70b-instruct" },
+  { id: "meta/llama-3.1-8b-instruct", label: "llama-3.1-8b-instruct" },
+  { id: "meta/llama-3.2-11b-vision-instruct", label: "llama-3.2-11b-vision-instruct" },
+  { id: "meta/llama-3.2-1b-instruct", label: "llama-3.2-1b-instruct" },
+  { id: "meta/llama-3.2-3b-instruct", label: "llama-3.2-3b-instruct" },
+  { id: "meta/llama-3.2-90b-vision-instruct", label: "llama-3.2-90b-vision-instruct" },
+  { id: "meta/llama-4-maverick-17b-128e-instruct", label: "llama-4-maverick-17b-128e-instruct" },
+  { id: "meta/llama-guard-4-12b", label: "llama-guard-4-12b" },
+  { id: "meta/llama2-70b", label: "llama2-70b" },
+  { id: "microsoft/kosmos-2", label: "kosmos-2" },
+  { id: "microsoft/phi-3-vision-128k-instruct", label: "phi-3-vision-128k-instruct" },
+  { id: "microsoft/phi-3.5-moe-instruct", label: "phi-3.5-moe-instruct" },
+  { id: "microsoft/phi-4-mini-instruct", label: "phi-4-mini-instruct" },
+  { id: "microsoft/phi-4-multimodal-instruct", label: "phi-4-multimodal-instruct" },
+  { id: "minimaxai/minimax-m2.7", label: "minimax-m2.7" },
+  { id: "minimaxai/minimax-m3", label: "minimax-m3" },
+  { id: "mistralai/codestral-22b-instruct-v0.1", label: "codestral-22b-instruct-v0.1" },
+  { id: "mistralai/ministral-14b-instruct-2512", label: "ministral-14b-instruct-2512" },
+  { id: "mistralai/mistral-7b-instruct-v0.3", label: "mistral-7b-instruct-v0.3" },
+  { id: "mistralai/mistral-large", label: "mistral-large" },
+  { id: "mistralai/mistral-large-2-instruct", label: "mistral-large-2-instruct" },
+  { id: "mistralai/mistral-large-3-675b-instruct-2512", label: "mistral-large-3-675b-instruct-2512" },
+  { id: "mistralai/mistral-medium-3.5-128b", label: "mistral-medium-3.5-128b" },
+  { id: "mistralai/mistral-nemotron", label: "mistral-nemotron" },
+  { id: "mistralai/mistral-small-4-119b-2603", label: "mistral-small-4-119b-2603" },
+  { id: "mistralai/mixtral-8x22b-v0.1", label: "mixtral-8x22b-v0.1" },
+  { id: "mistralai/mixtral-8x7b-instruct-v0.1", label: "mixtral-8x7b-instruct-v0.1" },
+  { id: "moonshotai/kimi-k2.6", label: "kimi-k2.6" },
+  { id: "nv-mistralai/mistral-nemo-12b-instruct", label: "mistral-nemo-12b-instruct" },
+  { id: "nvidia/cosmos-reason2-8b", label: "cosmos-reason2-8b" },
+  { id: "nvidia/ising-calibration-1-35b-a3b", label: "ising-calibration-1-35b-a3b" },
+  { id: "nvidia/llama-3.1-nemotron-51b-instruct", label: "llama-3.1-nemotron-51b-instruct" },
+  { id: "nvidia/llama-3.1-nemotron-70b-instruct", label: "llama-3.1-nemotron-70b-instruct" },
+  { id: "nvidia/llama-3.1-nemotron-nano-8b-v1", label: "llama-3.1-nemotron-nano-8b-v1" },
+  { id: "nvidia/llama-3.1-nemotron-nano-vl-8b-v1", label: "llama-3.1-nemotron-nano-vl-8b-v1" },
+  { id: "nvidia/llama-3.3-nemotron-super-49b-v1", label: "llama-3.3-nemotron-super-49b-v1" },
+  { id: "nvidia/llama-3.3-nemotron-super-49b-v1.5", label: "llama-3.3-nemotron-super-49b-v1.5" },
+  { id: "nvidia/llama3-chatqa-1.5-70b", label: "llama3-chatqa-1.5-70b" },
+  { id: "nvidia/mistral-nemo-minitron-8b-8k-instruct", label: "mistral-nemo-minitron-8b-8k-instruct" },
+  { id: "nvidia/nemoretriever-parse", label: "nemoretriever-parse" },
+  { id: "nvidia/nemotron-3-nano-30b-a3b", label: "nemotron-3-nano-30b-a3b" },
+  { id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", label: "nemotron-3-nano-omni-30b-a3b-reasoning" },
+  { id: "nvidia/nemotron-4-340b-instruct", label: "nemotron-4-340b-instruct" },
+  { id: "nvidia/nemotron-mini-4b-instruct", label: "nemotron-mini-4b-instruct" },
+  { id: "nvidia/nemotron-nano-12b-v2-vl", label: "nemotron-nano-12b-v2-vl" },
+  { id: "nvidia/nemotron-nano-3-30b-a3b", label: "nemotron-nano-3-30b-a3b" },
+  { id: "nvidia/nemotron-parse", label: "nemotron-parse" },
+  { id: "nvidia/neva-22b", label: "neva-22b" },
+  { id: "nvidia/nvidia-nemotron-nano-9b-v2", label: "nvidia-nemotron-nano-9b-v2" },
+  { id: "nvidia/vila", label: "vila" },
+  { id: "openai/gpt-oss-120b", label: "gpt-oss-120b" },
+  { id: "openai/gpt-oss-20b", label: "gpt-oss-20b" },
+  { id: "qwen/qwen3-next-80b-a3b-instruct", label: "qwen3-next-80b-a3b-instruct" },
+  { id: "qwen/qwen3.5-122b-a10b", label: "qwen3.5-122b-a10b" },
+  { id: "sarvamai/sarvam-m", label: "sarvam-m" },
+  { id: "stepfun-ai/step-3.5-flash", label: "step-3.5-flash" },
+  { id: "stepfun-ai/step-3.7-flash", label: "step-3.7-flash" },
+  { id: "stockmark/stockmark-2-100b-instruct", label: "stockmark-2-100b-instruct" },
+  { id: "upstage/solar-10.7b-instruct", label: "solar-10.7b-instruct" },
+  { id: "writer/palmyra-creative-122b", label: "palmyra-creative-122b" },
+  { id: "writer/palmyra-fin-70b-32k", label: "palmyra-fin-70b-32k" },
+  { id: "writer/palmyra-med-70b", label: "palmyra-med-70b" },
+  { id: "writer/palmyra-med-70b-32k", label: "palmyra-med-70b-32k" },
+  { id: "zyphra/zamba2-7b-instruct", label: "zamba2-7b-instruct" },
+];
 
 const LLM_PROVIDER_CATALOG = {
   auto: {
@@ -44,39 +307,46 @@ const LLM_PROVIDER_CATALOG = {
   },
   chatgpt: {
     models: [
-      { id: "gpt-4o-mini", label: "gpt-4o-mini（推荐）" },
+      { id: "gpt-5.6-sol", label: "gpt-5.6-sol（旗舰）" },
+      { id: "gpt-5.6-terra", label: "gpt-5.6-terra" },
+      { id: "gpt-5.6-luna", label: "gpt-5.6-luna（快）" },
+      { id: "gpt-5.5", label: "gpt-5.5" },
+      { id: "gpt-5.5-pro", label: "gpt-5.5-pro" },
+      { id: "gpt-4o-mini", label: "gpt-4o-mini" },
       { id: "gpt-4o", label: "gpt-4o" },
       { id: "gpt-4.1-mini", label: "gpt-4.1-mini" },
       { id: "gpt-4.1", label: "gpt-4.1" },
       { id: "o3-mini", label: "o3-mini" },
       { id: "__custom__", label: "自定义模型…" },
     ],
-    defaultModel: "gpt-4o-mini",
+    defaultModel: "gpt-5.6-sol",
     baseUrl: "https://api.openai.com/v1",
     baseUrlEditable: false,
     keyRequired: true,
   },
   deepseek: {
     models: [
-      { id: "deepseek-chat", label: "deepseek-chat（推荐）" },
-      { id: "deepseek-v4-flash", label: "deepseek-v4-flash" },
+      { id: "deepseek-v4-pro", label: "deepseek-v4-pro（推荐）" },
+      { id: "deepseek-v4-flash", label: "deepseek-v4-flash（快）" },
+      { id: "deepseek-chat", label: "deepseek-chat" },
       { id: "deepseek-reasoner", label: "deepseek-reasoner" },
       { id: "__custom__", label: "自定义模型…" },
     ],
-    defaultModel: "deepseek-chat",
+    defaultModel: "deepseek-v4-pro",
     baseUrl: "https://api.deepseek.com",
     baseUrlEditable: false,
     keyRequired: true,
   },
   qwen: {
     models: [
-      { id: "qwen-plus", label: "qwen-plus（推荐）" },
+      { id: "qwen3.7-max", label: "qwen3.7-max（推荐）" },
       { id: "qwen-max", label: "qwen-max" },
+      { id: "qwen-plus", label: "qwen-plus" },
       { id: "qwen-turbo", label: "qwen-turbo" },
       { id: "qwen2.5-72b-instruct", label: "qwen2.5-72b-instruct" },
       { id: "__custom__", label: "自定义模型…" },
     ],
-    defaultModel: "qwen-plus",
+    defaultModel: "qwen3.7-max",
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     baseUrlEditable: false,
     keyRequired: true,
@@ -95,40 +365,69 @@ const LLM_PROVIDER_CATALOG = {
   },
   gemini: {
     models: [
-      { id: "gemini-2.0-flash", label: "gemini-2.0-flash（推荐）" },
+      { id: "gemini-3.5-flash", label: "gemini-3.5-flash（推荐）" },
+      { id: "gemini-3.1-pro-preview", label: "gemini-3.1-pro-preview" },
+      { id: "gemini-2.0-flash", label: "gemini-2.0-flash" },
       { id: "gemini-1.5-pro", label: "gemini-1.5-pro" },
       { id: "gemini-1.5-flash", label: "gemini-1.5-flash" },
       { id: "__custom__", label: "自定义模型…" },
     ],
-    defaultModel: "gemini-2.0-flash",
+    defaultModel: "gemini-3.5-flash",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     baseUrlEditable: false,
     keyRequired: true,
   },
   claude: {
     models: [
-      { id: "claude-3-5-sonnet-latest", label: "claude-3-5-sonnet-latest（推荐）" },
+      { id: "claude-sonnet-5", label: "claude-sonnet-5（推荐）" },
+      { id: "claude-fable-5", label: "claude-fable-5" },
+      { id: "claude-opus-4.8", label: "claude-opus-4.8" },
       { id: "claude-3-7-sonnet-latest", label: "claude-3-7-sonnet-latest" },
+      { id: "claude-3-5-sonnet-latest", label: "claude-3-5-sonnet-latest" },
       { id: "claude-3-5-haiku-latest", label: "claude-3-5-haiku-latest" },
       { id: "__custom__", label: "自定义模型…" },
     ],
-    defaultModel: "claude-3-5-sonnet-latest",
+    defaultModel: "claude-sonnet-5",
     baseUrl: "https://api.anthropic.com/v1",
     baseUrlEditable: false,
     keyRequired: true,
   },
   nvidia: {
     models: [
-      { id: "meta/llama-3.3-70b-instruct", label: "meta/llama-3.3-70b-instruct（推荐）" },
-      { id: "meta/llama-3.1-8b-instruct", label: "meta/llama-3.1-8b-instruct（快）" },
-      { id: "deepseek-ai/deepseek-r1", label: "deepseek-ai/deepseek-r1" },
-      { id: "microsoft/phi-3-mini-128k-instruct", label: "microsoft/phi-3-mini-128k-instruct（快）" },
-      { id: "nvidia/nemotron-4-340b-instruct", label: "nvidia/nemotron-4-340b-instruct" },
-      { id: "qwen/qwq-32b", label: "qwen/qwq-32b" },
+      ...NVIDIA_NIM_CHAT_MODELS,
       { id: "__custom__", label: "自定义模型…" },
     ],
-    defaultModel: "meta/llama-3.3-70b-instruct",
+    defaultModel: "nvidia/nemotron-3-ultra-550b-a55b",
     baseUrl: "https://integrate.api.nvidia.com/v1",
+    baseUrlEditable: false,
+    keyRequired: true,
+  },
+  openrouter: {
+    models: [
+      { id: "fusion", label: "Auto 融合 5 模型（推荐）" },
+      { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro" },
+      { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash（快）" },
+      { id: "moonshotai/kimi-k2.7-code", label: "Kimi K2.7 Code" },
+      { id: "qwen/qwen3.7-max", label: "Qwen3.7 Max" },
+      { id: "z-ai/glm-5.2", label: "GLM 5.2" },
+      { id: "z-ai/glm-5", label: "GLM 5" },
+      { id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol" },
+      { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra" },
+      { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna（快）" },
+      { id: "openai/gpt-5.5", label: "GPT-5.5" },
+      { id: "openai/gpt-5.5-pro", label: "GPT-5.5 Pro" },
+      { id: "anthropic/claude-fable-5", label: "Claude Fable 5" },
+      { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5" },
+      { id: "anthropic/claude-opus-4.8", label: "Claude Opus 4.8" },
+      { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
+      { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash（快）" },
+      { id: "openai/gpt-4o-mini", label: "GPT-4o mini" },
+      { id: "deepseek/deepseek-chat", label: "DeepSeek Chat" },
+      { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B" },
+      { id: "__custom__", label: "自定义 OpenRouter 模型…" },
+    ],
+    defaultModel: "fusion",
+    baseUrl: OPENROUTER_LLM_PRESET.base_url,
     baseUrlEditable: false,
     keyRequired: true,
   },
@@ -563,6 +862,19 @@ function saveCurrentProviderProfile() {
     base_url: baseUrl,
     ...(providerHasPresetUrl(provider) ? { base_url_mode: mode } : {}),
   };
+  if (provider === "openrouter" && isOpenRouterFusionMode(provider)) {
+    const raw = llmConfigEls.openrouter_models?.value || "";
+    const models = raw
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    cfg.openrouter_models = resolveOpenRouterFusionModels(models);
+    cfg.fusion_model = llmConfigEls.fusion_model?.value?.trim() || OPENROUTER_LLM_PRESET.fusion_model;
+    cfg.fusion_max_models = 5;
+    cfg.fusion_learn_scores = loadFusionLearnScores();
+    cfg.profiles.openrouter.openrouter_models = cfg.openrouter_models;
+    cfg.profiles.openrouter.fusion_model = cfg.fusion_model;
+  }
   cfg.provider = provider;
   cfg.task_type = llmConfigEls.task_type?.value || cfg.task_type || "code_optimize";
   saveLlmConfig(cfg);
@@ -686,7 +998,10 @@ function formatLlmError(message) {
     return `${joined} — 请检查 Code Lab 中 LLM 的 Base URL 与 Model，或改用 Auto / DeepSeek 并填写 API Key。`;
   }
   if (/401|403|auth/i.test(joined)) {
-    return `${joined} — 请检查 API Key。`;
+    return `${joined} — 请检查 OpenRouter API Key、账户余额及该模型访问权限（部分旗舰模型需单独开通）。`;
+  }
+  if (/empty LLM response|non-parseable R code/i.test(joined)) {
+    return `${joined} — 推理模型可能超时或返回了解释而非代码，可重试或改用「Auto 融合 5 模型」。`;
   }
   return joined.slice(0, 480);
 }
@@ -714,6 +1029,19 @@ function applyLlmConfigToForm() {
   if (llmConfigEls.remote_path) {
     llmConfigEls.remote_path.value = cfg.remote_path || "/api/llm/optimize_r";
   }
+  if (llmConfigEls.openrouter_models) {
+    const models = resolveOpenRouterFusionModels(
+      Array.isArray(cfg.openrouter_models)
+        ? cfg.openrouter_models
+        : (cfg.profiles?.openrouter?.openrouter_models || OPENROUTER_DEFAULT_FUSION_MODELS)
+    );
+    llmConfigEls.openrouter_models.value = models.join(", ");
+  }
+  if (llmConfigEls.fusion_model) {
+    llmConfigEls.fusion_model.value = cfg.fusion_model
+      || cfg.profiles?.openrouter?.fusion_model
+      || OPENROUTER_LLM_PRESET.fusion_model;
+  }
   applyProviderToForm(provider);
 }
 
@@ -723,6 +1051,71 @@ function applyDefaultLlmPreset() {
   if (!cfg.providers?.length) cfg.providers = [...DEFAULT_LLM_PRESET.providers];
   saveLlmConfig(cfg);
   applyLlmConfigToForm();
+}
+
+function applyOpenRouterLlmPreset() {
+  const cfg = { ...loadLlmConfig(), ...OPENROUTER_LLM_PRESET };
+  cfg.openrouter_models = resolveOpenRouterFusionModels(cfg.openrouter_models || []);
+  cfg.profiles = {
+    ...(cfg.profiles || {}),
+    openrouter: {
+      ...(cfg.profiles?.openrouter || {}),
+      model: cfg.profiles?.openrouter?.model || "fusion",
+      base_url: OPENROUTER_LLM_PRESET.base_url,
+      api_key: cfg.profiles?.openrouter?.api_key || "",
+      openrouter_models: cfg.openrouter_models,
+      fusion_model: cfg.fusion_model || OPENROUTER_LLM_PRESET.fusion_model,
+    },
+  };
+  saveLlmConfig(cfg);
+  applyLlmConfigToForm();
+}
+
+async function runOpenRouterProbe() {
+  const cfg = collectLlmConfig({ persistGlobal: false });
+  const apiKey = (cfg.api_key || cfg.profiles?.openrouter?.api_key || "").trim();
+  if (!apiKey) {
+    setLlmStatus("请先填写 OpenRouter API Key，再点「探测可用模型」。", "error");
+    return;
+  }
+  const btn = llmConfigEls.probe_btn;
+  if (btn) btn.disabled = true;
+  setLlmStatus(`正在探测 ${OPENROUTER_PROBE_CANDIDATES.length} 个 OpenRouter 模型，请稍候…`, "muted");
+  try {
+    const res = await probeOpenRouterModels({
+      config: {
+        api_key: apiKey,
+        base_url: cfg.base_url || OPENROUTER_LLM_PRESET.base_url,
+        timeout: 60,
+        probe_models: OPENROUTER_PROBE_CANDIDATES,
+      },
+      models: OPENROUTER_PROBE_CANDIDATES,
+      write_manifest: true,
+    });
+    if (!res?.success) {
+      throw new Error(res?.error || "探测失败");
+    }
+    openRouterVerified = res;
+    applyOpenRouterVerifiedManifest(res);
+    applyProviderToForm("openrouter");
+    if (llmConfigEls.openrouter_models) {
+      llmConfigEls.openrouter_models.value = resolveOpenRouterFusionModels(res.fusion_defaults || []).join(", ");
+    }
+    if (llmConfigEls.fusion_model && res.fusion_model) {
+      llmConfigEls.fusion_model.value = res.fusion_model;
+    }
+    collectLlmConfig({ persistGlobal: true });
+    const failed = Array.isArray(res.failed) ? res.failed.map((row) => row.model).filter(Boolean) : [];
+    const failHint = failed.length ? `；不可用：${failed.join("、")}` : "";
+    setLlmStatus(
+      `探测完成：${res.working_count || 0}/${res.probed || OPENROUTER_PROBE_CANDIDATES.length} 可用，已更新 EMP 模型选项${failHint}`,
+      "ok"
+    );
+  } catch (err) {
+    setLlmStatus(err?.message || String(err), "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function applyCampusLlmPreset() {
@@ -747,9 +1140,16 @@ function updateLlmFormHints(provider) {
     const wrap = taskEl.closest("label");
     if (wrap) wrap.classList.toggle("hidden", provider !== "campus");
   }
+  llmConfigEls.openrouter_models?.closest("label")
+    ?.classList.toggle("hidden", !isOpenRouterFusionMode(provider));
+  llmConfigEls.fusion_model?.closest("label")
+    ?.classList.toggle("hidden", !isOpenRouterFusionMode(provider));
+  llmConfigEls.probe_btn?.classList.toggle("hidden", provider !== "openrouter");
   if (keyEl) {
     if (provider === "campus") {
       keyEl.placeholder = "可选：留空则使用服务端 webapp/config/campus_llm.json";
+    } else if (provider === "openrouter") {
+      keyEl.placeholder = "OpenRouter API Key（https://openrouter.ai/keys）";
     } else if (provider === "auto" || provider === "remote") {
       keyEl.placeholder = cat.keyRequired ? "按实际 Provider 填写 API Key" : "可选";
     } else {
@@ -760,6 +1160,20 @@ function updateLlmFormHints(provider) {
   modelWrap?.classList.toggle("hidden", provider === "remote");
 }
 
+function isOpenRouterFusionMode(provider = llmConfigEls.provider?.value || "auto") {
+  if (provider !== "openrouter") return false;
+  const model = getSelectedModel();
+  return !model || model === "fusion";
+}
+
+function resolveApiKey(provider, cfg = loadLlmConfig(), profile = providerProfile(provider)) {
+  return llmConfigEls.api_key?.value?.trim()
+    || profile.api_key?.trim()
+    || cfg.profiles?.[provider]?.api_key?.trim()
+    || cfg.api_key?.trim()
+    || "";
+}
+
 function collectLlmConfig({ persistGlobal = false } = {}) {
   const provider = llmConfigEls.provider?.value || "auto";
   const profile = providerProfile(provider);
@@ -768,7 +1182,7 @@ function collectLlmConfig({ persistGlobal = false } = {}) {
     ...cfg,
     provider,
     mode: "api",
-    api_key: llmConfigEls.api_key?.value || profile.api_key || "",
+    api_key: resolveApiKey(provider, cfg, profile),
     model: getSelectedModel(),
     base_url: resolveBaseUrl(provider),
     task_type: llmConfigEls.task_type?.value || "code_optimize",
@@ -783,6 +1197,26 @@ function collectLlmConfig({ persistGlobal = false } = {}) {
   };
   if (provider === "campus") {
     merged.campus_models = { ...CAMPUS_LLM_PRESET.campus_models };
+  }
+  if (provider === "openrouter") {
+    merged.fusion_mode = isOpenRouterFusionMode(provider);
+    merged.single_model_only = !merged.fusion_mode;
+    if (merged.fusion_mode) {
+      const raw = llmConfigEls.openrouter_models?.value || "";
+      const models = raw
+        .split(/[,;\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      merged.openrouter_models = resolveOpenRouterFusionModels(models);
+      merged.fusion_model = llmConfigEls.fusion_model?.value?.trim()
+        || profile.fusion_model
+        || OPENROUTER_LLM_PRESET.fusion_model;
+      merged.fusion_max_models = 5;
+      merged.fusion_learn_scores = loadFusionLearnScores();
+      if (llmConfigEls.openrouter_models) {
+        llmConfigEls.openrouter_models.value = merged.openrouter_models.join(", ");
+      }
+    }
   }
   if (persistGlobal) {
     saveLlmConfig(merged);
@@ -817,6 +1251,9 @@ async function runCodeInR(code, label = "优化脚本", sourceCode = null) {
       source_code: sourceCode ?? sourceCodeForCurrent(),
     });
     if (!res.success) {
+      if (lastLlmOptimizeMeta && label === "优化脚本" && lastLlmOptimizeMeta.fusion_models?.length) {
+        recordFusionLearn(lastLlmOptimizeMeta.fusion_models, -2);
+      }
       execOut.innerHTML = `<p class="code-lab-exec-err">${escapeHtml(res.error || "failed")}</p>`;
       return { ok: false, error: res.error || "failed" };
     }
@@ -842,8 +1279,15 @@ async function runCodeInR(code, label = "优化脚本", sourceCode = null) {
     if (!bits.length) bits.push(`<p>${escapeHtml(t("codelab.doneNoOutput", null, { label }))}</p>`);
     bits.push(`<p class="code-lab-exec-meta">${escapeHtml(`${label}; backend_ms=${res.backend_ms ?? "?"}`)}</p>`);
     execOut.innerHTML = bits.join("");
+    if (lastLlmOptimizeMeta && label === "优化脚本" && lastLlmOptimizeMeta.fusion_models?.length) {
+      const models = lastLlmOptimizeMeta.fusion_models;
+      recordFusionLearn(models, 3);
+      if (llmConfigEls.provider?.value === "openrouter" && llmConfigEls.openrouter_models) {
+        llmConfigEls.openrouter_models.value = resolveOpenRouterFusionModels(models).join(", ");
+      }
+    }
     consoleEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    return { ok: true };
+    return { ok: true, res };
   } catch (err) {
     const msg = err.message || String(err);
     execOut.innerHTML = `<p class="code-lab-exec-err">${escapeHtml(msg)}</p>`;
@@ -1202,6 +1646,7 @@ export async function initCodeLab() {
                 <option value="gemini">Gemini</option>
                 <option value="claude">Claude</option>
                 <option value="nvidia">NVIDIA NIM</option>
+                <option value="openrouter">OpenRouter 多模型</option>
                 <option value="custom">Custom OpenAI-compatible</option>
                 <option value="remote">Remote 远程服务</option>
               </select>
@@ -1230,10 +1675,17 @@ export async function initCodeLab() {
               </select>
               <input type="text" id="code-lab-llm-base-url" readonly class="code-lab-llm-readonly">
             </label>
+            <label class="hidden" id="code-lab-llm-openrouter-models-wrap">OpenRouter 融合 5 模型（自动学习排序）
+              <input type="text" id="code-lab-llm-openrouter-models" placeholder="deepseek/deepseek-v4-pro,deepseek/deepseek-v4-flash,moonshotai/kimi-k2.7-code,qwen/qwen3.7-max,z-ai/glm-5.2">
+            </label>
+            <label class="hidden" id="code-lab-llm-fusion-model-wrap">融合裁决 / 单模型备选
+              <input type="text" id="code-lab-llm-fusion-model" placeholder="deepseek/deepseek-v4-pro">
+            </label>
           </div>
           <div class="code-lab-llm-save-row">
             <button type="button" class="btn btn-outline" id="code-lab-llm-save">保存配置</button>
-            <span class="code-lab-llm-save-hint">各 Provider 独立保存；切换时自动恢复 API Key / Model</span>
+            <button type="button" class="btn btn-outline hidden" id="code-lab-llm-probe-openrouter">探测可用模型</button>
+            <span class="code-lab-llm-save-hint">各 Provider 独立保存；OpenRouter 可先探测再选模型</span>
           </div>
           <details class="code-lab-llm-advanced">
             <summary>高级设置：Auto 多模型 / Remote IP + 端口</summary>
@@ -1295,8 +1747,16 @@ export async function initCodeLab() {
     remote_host: rootEl.querySelector("#code-lab-llm-remote-host"),
     remote_port: rootEl.querySelector("#code-lab-llm-remote-port"),
     remote_path: rootEl.querySelector("#code-lab-llm-remote-path"),
+    openrouter_models: rootEl.querySelector("#code-lab-llm-openrouter-models"),
+    fusion_model: rootEl.querySelector("#code-lab-llm-fusion-model"),
+    probe_btn: rootEl.querySelector("#code-lab-llm-probe-openrouter"),
   };
   applyLlmConfigToForm();
+  refreshOpenRouterVerifiedModels({ repopulate: false }).then((applied) => {
+    if (applied && llmConfigEls.provider?.value === "openrouter") {
+      applyProviderToForm("openrouter");
+    }
+  });
   const saved = loadLlmConfig();
   if (!saved.provider) applyDefaultLlmPreset();
   else if (saved.provider === "campus" && !saved.profiles?.campus?.base_url) applyCampusLlmPreset();
@@ -1306,11 +1766,13 @@ export async function initCodeLab() {
     cfg.provider = provider;
     saveLlmConfig(cfg);
     if (provider === "campus") applyCampusLlmPreset();
+    else if (provider === "openrouter") applyOpenRouterLlmPreset();
     else applyProviderToForm(provider);
   });
   llmConfigEls.model?.addEventListener("change", () => {
     const isCustom = llmConfigEls.model.value === "__custom__";
     llmConfigEls.model_custom_wrap?.classList.toggle("hidden", !isCustom);
+    updateLlmFormHints(llmConfigEls.provider?.value || "auto");
   });
   llmConfigEls.base_url_mode?.addEventListener("change", (e) => {
     e.stopPropagation();
@@ -1322,7 +1784,11 @@ export async function initCodeLab() {
     e.stopPropagation();
     saveCurrentProviderProfile();
   });
-  [llmConfigEls.providers, llmConfigEls.remote_host, llmConfigEls.remote_port, llmConfigEls.remote_path, llmConfigEls.task_type]
+  llmConfigEls.probe_btn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    runOpenRouterProbe();
+  });
+  [llmConfigEls.providers, llmConfigEls.remote_host, llmConfigEls.remote_port, llmConfigEls.remote_path, llmConfigEls.task_type, llmConfigEls.openrouter_models, llmConfigEls.fusion_model]
     .forEach((el) => {
       el?.addEventListener("change", () => collectLlmConfig({ persistGlobal: true }));
     });
@@ -1409,12 +1875,40 @@ function collectUiContext() {
       });
       const code = res.optimized_code || res.code || "";
       if (!code.trim()) throw new Error("LLM 未返回可用 R 代码");
+      lastLlmOptimizeMeta = {
+        provider: res.provider || provider,
+        model: res.model || config.model,
+        fusion_models: (res.mode === "fusion" || res.mode === "fusion_fallback")
+          && Array.isArray(res.fusion_models) && res.fusion_models.length
+          ? res.fusion_models
+          : null,
+        mode: res.mode || null,
+      };
+      const fusionUsed = lastLlmOptimizeMeta.mode === "fusion"
+        || lastLlmOptimizeMeta.mode === "fusion_fallback";
+      if (!res.fallback && fusionUsed && lastLlmOptimizeMeta.fusion_models?.length) {
+        recordFusionLearn(lastLlmOptimizeMeta.fusion_models, 2);
+        if (provider === "openrouter" && llmConfigEls.openrouter_models) {
+          llmConfigEls.openrouter_models.value = resolveOpenRouterFusionModels(
+            lastLlmOptimizeMeta.fusion_models
+          ).join(", ");
+        }
+      }
       setOptimizedCode(code, `llm:${res.provider || res.model || provider}`);
       const modelHint = res.model ? `，模型 ${res.model}` : "";
+      const requestedHint = res.requested_model && res.requested_model !== res.model
+        ? `（请求 ${res.requested_model}）`
+        : "";
+      const fusionHint = fusionUsed && lastLlmOptimizeMeta.fusion_models?.length
+        ? `，融合 ${lastLlmOptimizeMeta.fusion_models.join(" + ")}`
+        : "";
       const fallbackHint = res.fallback
         ? "（LLM 不可达，已使用本地规则润色，请人工检查）"
         : "";
-      setLlmStatus(`已生成优化脚本（${res.provider || provider}${modelHint}）${fallbackHint}，请先检查再运行。`, "ok");
+      const learnHint = fusionUsed
+        ? `；已学习 ${Object.keys(loadFusionLearnScores()).length} 个模型偏好`
+        : "";
+      setLlmStatus(`已生成优化脚本（${res.provider || provider}${modelHint}${requestedHint}${fusionHint}）${fallbackHint}${learnHint}，请先检查再运行。`, "ok");
       import("./teaching.js?v=2026-06-19-course-v9")
         .then((m) => m.traceEvent?.({
           event_type: "llm_optimize",

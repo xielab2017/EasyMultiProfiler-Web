@@ -1,4 +1,11 @@
-get_geneSet_index <- getFromNamespace("get_geneSet_index", "DOSE")
+# DOSE >= 4.6 removed this internal helper. Keep the small, stable operation
+# local instead of depending on a non-exported upstream implementation.
+get_geneSet_index <- function(geneSets, minGSSize, maxGSSize) {
+    if (is.null(minGSSize) || is.na(minGSSize)) minGSSize <- 1
+    if (is.null(maxGSSize) || is.na(maxGSSize)) maxGSSize <- Inf
+    geneSet_size <- vapply(geneSets, length, integer(1))
+    minGSSize <= geneSet_size & geneSet_size <= maxGSSize
+}
 # get_enriched <- getFromNamespace("get_enriched", "DOSE")
 
 #' Title

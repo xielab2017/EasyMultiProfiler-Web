@@ -2,7 +2,7 @@
 # The API key is supplied per request from the browser and is not persisted here.
 
 .LLM_OPENAI_COMPAT <- c(
-  "chatgpt", "openai", "deepseek", "qwen", "minimax", "nvidia", "custom", "campus"
+  "chatgpt", "openai", "deepseek", "qwen", "minimax", "nvidia", "custom", "campus", "openrouter"
 )
 
 .llm_is_openai_compat <- function(provider, base_url = "") {
@@ -188,6 +188,339 @@
   stop(paste(c("Campus LLM models failed.", errors), collapse = "\n"))
 }
 
+.llm_openrouter_rank_models <- function(models, scores = NULL) {
+  models <- unique(trimws(as.character(unlist(models, use.names = FALSE))))
+  models <- models[nzchar(models)]
+  if (!length(models) || is.null(scores) || !length(scores)) return(models)
+  sc <- vapply(models, function(m) {
+    val <- scores[[m]]
+    if (is.null(val)) 0 else suppressWarnings(as.numeric(val))
+  }, numeric(1))
+  models[order(sc, decreasing = TRUE)]
+}
+
+.llm_openrouter_model_fallbacks <- function(model, pool = character(0)) {
+  m <- tolower(trimws(.llm_chr(model)))
+  table <- list(
+    "anthropic/claude-sonnet-5" = c("anthropic/claude-3.5-sonnet", "deepseek/deepseek-v4-flash"),
+    "anthropic/claude-fable-5" = c("anthropic/claude-sonnet-5", "anthropic/claude-3.5-sonnet"),
+    "anthropic/claude-opus-4.8" = c("anthropic/claude-sonnet-5", "deepseek/deepseek-v4-pro"),
+    "openai/gpt-5.6-sol" = c("openai/gpt-5.6-terra", "openai/gpt-4o-mini", "deepseek/deepseek-v4-flash"),
+    "openai/gpt-5.6-terra" = c("openai/gpt-5.6-luna", "openai/gpt-4o-mini"),
+    "openai/gpt-5.6-luna" = c("openai/gpt-4o-mini", "deepseek/deepseek-v4-flash"),
+    "openai/gpt-5.5" = c("openai/gpt-5.5-pro", "openai/gpt-4o-mini"),
+    "openai/gpt-5.5-pro" = c("openai/gpt-5.5", "openai/gpt-4o-mini"),
+    "qwen/qwen3.7-max" = c("deepseek/deepseek-v4-flash", "qwen/qwen-plus"),
+    "google/gemini-3.1-pro-preview" = c("google/gemini-3.5-flash", "google/gemini-2.0-flash-001"),
+    "google/gemini-3.5-flash" = c("google/gemini-2.0-flash-001", "deepseek/deepseek-v4-flash"),
+    "deepseek/deepseek-v4-pro" = c("deepseek/deepseek-v4-flash", "deepseek/deepseek-chat"),
+    "moonshotai/kimi-k2.7-code" = c("moonshotai/kimi-k2.6", "deepseek/deepseek-v4-flash"),
+    "z-ai/glm-5.2" = c("z-ai/glm-5", "deepseek/deepseek-v4-flash")
+  )
+  unique(c(
+    model,
+    table[[m]] %||% character(0),
+    "deepseek/deepseek-v4-flash",
+    "google/gemini-2.0-flash-001",
+    "openai/gpt-4o-mini",
+    pool
+  ))
+}
+
+.llm_normalize_direct_model <- function(provider, model) {
+  provider <- tolower(trimws(.llm_chr(provider)))
+  model <- trimws(.llm_chr(model))
+  if (!nzchar(model)) return(model)
+  if (provider == "openrouter") return(model)
+  if (provider %in% c("chatgpt", "openai")) {
+    if (grepl("^openai/", model, ignore.case = TRUE)) return(sub("^openai/", "", model))
+    return(model)
+  }
+  if (provider == "deepseek") {
+    return(switch(tolower(model),
+      "deepseek-v4-pro" = "deepseek-reasoner",
+      "deepseek-v4-flash" = "deepseek-chat",
+      model
+    ))
+  }
+  if (provider == "qwen") {
+    return(switch(tolower(model),
+      "qwen3.7-max" = "qwen-max",
+      model
+    ))
+  }
+  if (provider == "claude") {
+    return(switch(tolower(model),
+      "claude-sonnet-5" = "claude-sonnet-4-20250514",
+      "claude-fable-5" = "claude-sonnet-4-20250514",
+      "claude-opus-4.8" = "claude-opus-4-20250514",
+      model
+    ))
+  }
+  if (provider == "gemini") {
+    return(switch(tolower(model),
+      "gemini-3.5-flash" = "gemini-2.0-flash",
+      "gemini-3.1-pro-preview" = "gemini-1.5-pro",
+      model
+    ))
+  }
+  model
+}
+
+.llm_is_auth_or_access_error <- function(msg) {
+  grepl("403|401|auth|permission|forbidden|not found \\(404\\)|404", msg, ignore.case = TRUE)
+}
+
+.llm_openrouter_config_path <- function() {
+  env_path <- trimws(Sys.getenv("EMP_OPENROUTER_LLM_CONFIG", unset = ""))
+  if (nzchar(env_path) && file.exists(env_path)) return(normalizePath(env_path, winslash = "/", mustWork = FALSE))
+  backend <- trimws(Sys.getenv("EMP_BACKEND_DIR", unset = ""))
+  candidates <- character(0)
+  if (nzchar(backend)) {
+    candidates <- c(candidates, file.path(dirname(backend), "config", "openrouter_llm.json"))
+  }
+  candidates <- c(
+    candidates,
+    file.path(getwd(), "webapp", "config", "openrouter_llm.json"),
+    file.path(getwd(), "config", "openrouter_llm.json")
+  )
+  for (p in unique(candidates)) {
+    if (nzchar(p) && file.exists(p)) return(normalizePath(p, winslash = "/", mustWork = FALSE))
+  }
+  ""
+}
+
+.llm_openrouter_builtin_cfg <- function() {
+  defaults <- list(
+    base_url = Sys.getenv("EMP_OPENROUTER_LLM_URL", "https://openrouter.ai/api/v1"),
+    api_key = Sys.getenv("EMP_OPENROUTER_LLM_API_KEY", unset = ""),
+    timeout = suppressWarnings(as.numeric(Sys.getenv("EMP_OPENROUTER_LLM_TIMEOUT", unset = "90"))),
+    fusion_model = Sys.getenv("EMP_OPENROUTER_FUSION_MODEL", "deepseek/deepseek-v4-pro"),
+    fusion_max_models = 5L,
+    models = c(
+      "deepseek/deepseek-v4-pro",
+      "deepseek/deepseek-v4-flash",
+      "moonshotai/kimi-k2.7-code",
+      "qwen/qwen3.7-max",
+      "z-ai/glm-5.2"
+    )
+  )
+  if (!is.finite(defaults$timeout) || defaults$timeout <= 0) defaults$timeout <- 90
+
+  path <- .llm_openrouter_config_path()
+  if (!nzchar(path)) return(defaults)
+
+  cfg <- tryCatch(
+    jsonlite::fromJSON(path, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  if (is.null(cfg)) return(defaults)
+
+  if (nzchar(trimws(.llm_chr(cfg$base_url)))) defaults$base_url <- trimws(.llm_chr(cfg$base_url))
+  if (nzchar(trimws(.llm_chr(cfg$api_key)))) defaults$api_key <- trimws(.llm_chr(cfg$api_key))
+  tmo <- suppressWarnings(as.numeric(cfg$timeout))
+  if (is.finite(tmo) && tmo > 0) defaults$timeout <- tmo
+  if (nzchar(trimws(.llm_chr(cfg$fusion_model)))) defaults$fusion_model <- trimws(.llm_chr(cfg$fusion_model))
+  fm <- suppressWarnings(as.integer(cfg$fusion_max_models))
+  if (is.finite(fm) && fm >= 1L) defaults$fusion_max_models <- min(5L, fm)
+  if (!is.null(cfg$models)) {
+    models <- unlist(cfg$models, use.names = FALSE)
+    models <- unique(trimws(as.character(models)))
+    models <- models[nzchar(models)]
+    if (length(models)) defaults$models <- models[seq_len(min(length(models), 5L))]
+  }
+  defaults
+}
+
+.llm_openrouter_merge_cfg <- function(cfg) {
+  builtin <- .llm_openrouter_builtin_cfg()
+  cfg <- cfg %||% list()
+  if (!nzchar(trimws(.llm_chr(cfg$base_url)))) cfg$base_url <- builtin$base_url
+  browser_key <- trimws(.llm_chr(cfg$api_key))
+  server_key <- trimws(.llm_chr(builtin$api_key))
+  if (!nzchar(browser_key)) cfg$api_key <- server_key
+  if (is.null(cfg$timeout) || !is.finite(suppressWarnings(as.numeric(cfg$timeout)))) {
+    cfg$timeout <- builtin$timeout
+  }
+  if (!nzchar(trimws(.llm_chr(cfg$fusion_model)))) cfg$fusion_model <- builtin$fusion_model
+  fm <- suppressWarnings(as.integer(cfg$fusion_max_models %||% builtin$fusion_max_models))
+  if (!is.finite(fm) || fm < 1L) fm <- builtin$fusion_max_models
+  cfg$fusion_max_models <- min(5L, as.integer(fm))
+  models <- cfg$openrouter_models %||% cfg$fusion_models %||% cfg$models
+  if (is.character(models) && length(models) == 1L) {
+    models <- strsplit(models[[1L]], "[,;\\s]+", perl = TRUE)[[1L]]
+  }
+  models <- unique(trimws(as.character(unlist(models, use.names = FALSE))))
+  models <- models[nzchar(models)]
+  if (!length(models)) models <- builtin$models
+  cfg$openrouter_models <- models[seq_len(min(length(models), cfg$fusion_max_models))]
+  if (!is.null(cfg$fusion_learn_scores) && is.list(cfg$fusion_learn_scores)) {
+    cfg$openrouter_models <- .llm_openrouter_rank_models(cfg$openrouter_models, cfg$fusion_learn_scores)
+    cfg$openrouter_models <- cfg$openrouter_models[seq_len(min(length(cfg$openrouter_models), cfg$fusion_max_models))]
+  }
+  cfg
+}
+
+.llm_try_pure_r <- function(text) {
+  tryCatch(.llm_pure_r_or_stop(text), error = function(e) NULL)
+}
+
+.llm_openrouter_fusion_prompt <- function(code, workflow, tab, instruction, ui_context, candidates) {
+  blocks <- vapply(seq_along(candidates), function(i) {
+    c <- candidates[[i]]
+    paste0(
+      sprintf("--- Candidate %d (%s) ---\n", i, c$model),
+      c$code
+    )
+  }, character(1))
+  paste(
+    "You are fusing multiple LLM-generated R script optimizations into ONE best final script.",
+    "Return ONLY executable R code, with no markdown fences and no explanation.",
+    "Preserve the student's analysis intent; keep changes minimal but incorporate the strongest ideas from every candidate.",
+    "The result must be pure R compatible with POST /api/user_r/run.",
+    sprintf("Workflow: %s; Tab: %s.", .llm_chr(workflow, "unknown"), .llm_chr(tab, "unknown")),
+    if (nzchar(trimws(.llm_chr(instruction)))) paste("User instruction:", instruction) else "",
+    "Original R code:",
+    .llm_truncate_code(code),
+    "Candidate optimized scripts:",
+    paste(blocks, collapse = "\n\n"),
+    sep = "\n\n"
+  )
+}
+
+.llm_openrouter_optimize_once <- function(cfg, model, code, workflow, tab, instruction, ui_context = NULL) {
+  cfg <- .llm_openrouter_merge_cfg(cfg)
+  cfg$model <- model
+  cfg$single_model_only <- isFALSE(cfg$fusion_mode)
+  timeout <- suppressWarnings(as.numeric(cfg$timeout))
+  if (!is.finite(timeout) || timeout <= 0) timeout <- 90
+  if (.llm_openrouter_is_reasoning_model(model)) timeout <- max(timeout, 180)
+  cfg$timeout <- timeout
+  .llm_optimize_once("openrouter", cfg, code, workflow, tab, instruction, ui_context)
+}
+
+.llm_openrouter_optimize <- function(cfg, code, workflow = NULL, tab = NULL, instruction = NULL, ui_context = NULL) {
+  cfg <- .llm_openrouter_merge_cfg(cfg)
+  if (!nzchar(trimws(.llm_chr(cfg$api_key)))) {
+    stop(paste(
+      "OpenRouter API key is missing.",
+      "Set webapp/config/openrouter_llm.json (see openrouter_llm.json.example)",
+      "or EMP_OPENROUTER_LLM_API_KEY, or paste the key in Code Lab LLM settings."
+    ))
+  }
+  explicit <- trimws(.llm_chr(cfg$model))
+  fusion_mode <- !isFALSE(cfg$fusion_mode) && (
+    !nzchar(explicit) ||
+    tolower(explicit) %in% c("fusion", "auto", "mixed", "mix", "混合", "融合")
+  )
+  if (!fusion_mode) {
+    cfg$fusion_mode <- FALSE
+    cfg$single_model_only <- TRUE
+    out <- tryCatch(
+      .llm_openrouter_optimize_once(cfg, explicit, code, workflow, tab, instruction %||% "", ui_context),
+      error = function(e) {
+        stop(paste(
+          sprintf("OpenRouter single-model failed for %s.", explicit),
+          "Only the selected model is called in single-model mode.",
+          conditionMessage(e)
+        ))
+      }
+    )
+    return(list(
+      success = TRUE,
+      provider = paste0("openrouter:", explicit),
+      model = explicit,
+      mode = "single",
+      requested_model = explicit,
+      optimized_code = out,
+      errors = character(0)
+    ))
+  }
+
+  models <- cfg$openrouter_models
+  cfg$fusion_mode <- TRUE
+  cfg$single_model_only <- FALSE
+  errors <- character(0)
+  candidates <- list()
+  for (model in models) {
+    if (!nzchar(model)) next
+    out <- tryCatch(
+      .llm_openrouter_optimize_once(cfg, model, code, workflow, tab, instruction %||% "", ui_context),
+      error = function(e) {
+        errors <<- c(errors, sprintf("%s: %s", model, conditionMessage(e)))
+        NULL
+      }
+    )
+    if (is.character(out) && nzchar(trimws(out))) {
+      candidates[[length(candidates) + 1L]] <- list(model = model, code = out)
+    }
+  }
+  if (!length(candidates)) {
+    stop(paste(c("OpenRouter fusion failed: no model returned valid R code.", errors), collapse = "\n"))
+  }
+  if (length(candidates) == 1L) {
+    c1 <- candidates[[1L]]
+    return(list(
+      success = TRUE,
+      provider = paste0("openrouter:fusion:", c1$model),
+      model = c1$model,
+      mode = "fusion",
+      fusion_models = vapply(candidates, function(x) x$model, character(1)),
+      optimized_code = c1$code,
+      errors = errors
+    ))
+  }
+
+  fusion_model <- trimws(.llm_chr(cfg$fusion_model))
+  if (!nzchar(fusion_model)) fusion_model <- models[[1L]]
+  fusion_cfg <- cfg
+  fusion_cfg$model <- fusion_model
+  fusion_cfg$timeout <- min(
+    suppressWarnings(as.numeric(cfg$timeout %||% 90)),
+    max(45, 30L * length(candidates))
+  )
+  fusion_prompt <- .llm_openrouter_fusion_prompt(
+    code, workflow, tab, instruction %||% "", ui_context, candidates
+  )
+  fused <- tryCatch(
+    .llm_openai_chat_call(
+      fusion_cfg$base_url,
+      fusion_model,
+      fusion_cfg$api_key,
+      fusion_prompt,
+      fusion_cfg,
+      fusion_cfg$timeout,
+      provider = "openrouter"
+    ),
+    error = function(e) {
+      errors <<- c(errors, sprintf("fusion:%s: %s", fusion_model, conditionMessage(e)))
+      NULL
+    }
+  )
+  if (is.character(fused) && nzchar(trimws(fused))) {
+    return(list(
+      success = TRUE,
+      provider = paste0("openrouter:fusion:", fusion_model),
+      model = fusion_model,
+      mode = "fusion",
+      fusion_models = vapply(candidates, function(x) x$model, character(1)),
+      optimized_code = fused,
+      errors = errors
+    ))
+  }
+
+  best <- candidates[[1L]]
+  list(
+    success = TRUE,
+    provider = paste0("openrouter:fusion:fallback:", best$model),
+    model = best$model,
+    mode = "fusion_fallback",
+    fusion_models = vapply(candidates, function(x) x$model, character(1)),
+    optimized_code = best$code,
+    errors = errors
+  )
+}
+
 .llm_provider_defaults <- function(provider, cfg) {
   provider <- tolower(trimws(.llm_chr(provider, "chatgpt")))
   model <- trimws(.llm_chr(cfg$model))
@@ -204,6 +537,7 @@
       chatgpt = if (nzchar(base_url)) base_url else "https://api.openai.com/v1",
       openai = if (nzchar(base_url)) base_url else "https://api.openai.com/v1",
       nvidia = if (nzchar(base_url)) base_url else "https://integrate.api.nvidia.com/v1",
+      openrouter = if (nzchar(base_url)) base_url else .llm_openrouter_builtin_cfg()$base_url,
       campus = if (nzchar(base_url)) base_url else campus_builtin$base_url,
       custom = base_url,
       remote = .llm_remote_url(cfg),
@@ -218,6 +552,7 @@
       chatgpt = if (nzchar(model)) model else "gpt-4o-mini",
       openai = if (nzchar(model)) model else "gpt-4o-mini",
       nvidia = if (nzchar(model)) model else "meta/llama-3.3-70b-instruct",
+      openrouter = if (nzchar(model)) model else "fusion",
       campus = if (nzchar(model)) model else campus_builtin$models$fast,
       model
     )
@@ -236,8 +571,17 @@
   }
   if (!is.null(x$choices) && length(x$choices) >= 1L) {
     choice <- x$choices[[1L]]
-    y <- .llm_extract_text(choice$message$content %||% choice$message$reasoning_content %||% choice$text)
+    msg_obj <- choice$message %||% list()
+    y <- .llm_extract_text(msg_obj$content %||% msg_obj$reasoning_content %||% choice$text)
     if (nzchar(y)) return(y)
+    if (!is.null(msg_obj$reasoning_details)) {
+      y <- .llm_extract_text(msg_obj$reasoning_details)
+      if (nzchar(y)) return(y)
+    }
+  }
+  if (!is.null(x$error)) {
+    err_msg <- .llm_chr(x$error$message %||% x$error)
+    if (nzchar(err_msg)) stop(err_msg)
   }
   if (!is.null(x$content) && is.list(x$content)) {
     ys <- vapply(x$content, function(part) .llm_chr(part$text), character(1))
@@ -334,22 +678,90 @@
 
 .llm_model_aliases <- function(model) {
   m <- tolower(trimws(.llm_chr(model)))
-  if (!nzchar(m) || m %in% c("mixed", "auto", "mix", "混合")) return(character(0))
+  if (!nzchar(m) || m %in% c("mixed", "auto", "mix", "混合", "fusion", "融合")) return(character(0))
   table <- list(
     "deepseek-v4-flash" = c("deepseek-v4-flash", "deepseek-chat", "DeepSeek-V3", "deepseek-reasoner"),
+    "deepseek-v4-pro" = c("deepseek-v4-pro", "deepseek-reasoner", "deepseek-chat"),
     "deepseek-chat" = c("deepseek-chat", "deepseek-v4-flash", "DeepSeek-V3"),
+    "deepseek-reasoner" = c("deepseek-reasoner", "deepseek-v4-pro", "deepseek-chat"),
     "qwen3.6-35b-a3b" = c("Qwen3.6-35B-A3B", "qwen-plus", "qwen-max", "Qwen2.5-72B-Instruct"),
+    "qwen3.7-max" = c("qwen3.7-max", "qwen-max", "qwen-plus"),
+    "qwen-max" = c("qwen-max", "qwen-plus", "qwen3.7-max"),
     "qwen3-vl-8b-instruct" = c("Qwen3-VL-8B-Instruct", "qwen-vl-plus", "qwen-vl-max"),
-    "qwen-embedding" = c("Qwen-embedding", "text-embedding-v3", "qwen-embedding")
+    "qwen-embedding" = c("Qwen-embedding", "text-embedding-v3", "qwen-embedding"),
+    "gpt-5.6-sol" = c("gpt-5.6-sol", "gpt-4o-mini", "gpt-4o"),
+    "gpt-5.6-terra" = c("gpt-5.6-terra", "gpt-4o-mini"),
+    "gpt-5.6-luna" = c("gpt-5.6-luna", "gpt-4o-mini"),
+    "gpt-5.5" = c("gpt-5.5", "gpt-4o-mini"),
+    "gpt-5.5-pro" = c("gpt-5.5-pro", "gpt-4o-mini"),
+    "gpt-4o-mini" = c("gpt-4o-mini", "gpt-4o"),
+    "claude-sonnet-5" = c("claude-sonnet-5", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-latest"),
+    "claude-fable-5" = c("claude-fable-5", "claude-sonnet-5", "claude-3-5-sonnet-latest"),
+    "claude-opus-4.8" = c("claude-opus-4.8", "claude-sonnet-5", "claude-3-5-sonnet-latest"),
+    "gemini-3.5-flash" = c("gemini-3.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"),
+    "gemini-3.1-pro-preview" = c("gemini-3.1-pro-preview", "gemini-1.5-pro", "gemini-2.0-flash")
   )
   hits <- unique(c(model, table[[m]] %||% character(0)))
   hits[nzchar(hits)]
 }
 
+.llm_parse_api_error_body <- function(err_text) {
+  err_text <- paste(as.character(err_text), collapse = "\n")
+  if (!nzchar(err_text)) return("")
+  m <- regexpr("\\{[\\s\\S]*\\}", err_text, perl = TRUE)
+  if (m[1L] < 0) return("")
+  raw <- substr(err_text, m[1L], m[1L] + attr(m, "match.length") - 1L)
+  parsed <- tryCatch(jsonlite::fromJSON(raw, simplifyVector = FALSE), error = function(e) NULL)
+  if (is.null(parsed)) return("")
+  .llm_chr(parsed$error$message %||% parsed$message %||% parsed$error$code %||% "")
+}
+
+.llm_openrouter_is_reasoning_model <- function(model) {
+  grepl(
+    "kimi-k2\\.|gpt-5\\.[56]|claude-sonnet-5|claude-fable-5|claude-opus-4\\.8|deepseek-v|qwen3\\.7",
+    model,
+    ignore.case = TRUE
+  )
+}
+
+.llm_build_openrouter_body <- function(model, prompt, cfg) {
+  user_prompt <- paste0(
+    "Return ONLY pure executable R code. No markdown fences. No explanation.\n\n",
+    prompt
+  )
+  max_tok <- suppressWarnings(as.integer(cfg$max_tokens %||% NA_integer_))
+  if (!is.finite(max_tok) || max_tok < 512L) {
+    max_tok <- if (.llm_openrouter_is_reasoning_model(model)) 6144L else 4096L
+  }
+  body <- list(
+    model = model,
+    messages = list(list(role = "user", content = user_prompt)),
+    max_tokens = max_tok
+  )
+  if (!grepl("^(openai/)?gpt-5", model, ignore.case = TRUE)) {
+    temp <- suppressWarnings(as.numeric(cfg$temperature %||% 0.2))
+    if (is.finite(temp)) body$temperature <- temp
+  }
+  if (.llm_openrouter_is_reasoning_model(model)) {
+    body$reasoning <- list(effort = "low", exclude = TRUE)
+  }
+  if (isTRUE(cfg$single_model_only) || isFALSE(cfg$fusion_mode)) {
+    body$provider <- list(allow_fallbacks = FALSE)
+  }
+  body
+}
+
 .llm_auth_headers <- function(key, provider = NULL) {
   key <- trimws(.llm_chr(key))
   if (!nzchar(key)) return(character(0))
-  c(paste0("Authorization: Bearer ", key))
+  headers <- c(paste0("Authorization: Bearer ", key))
+  if (identical(tolower(trimws(.llm_chr(provider))), "openrouter")) {
+    referer <- trimws(Sys.getenv("EMP_OPENROUTER_HTTP_REFERER", "http://127.0.0.1:8080"))
+    title <- trimws(Sys.getenv("EMP_OPENROUTER_X_TITLE", "EasyMultiProfiler"))
+    if (nzchar(referer)) headers <- c(headers, paste0("HTTP-Referer: ", referer))
+    if (nzchar(title)) headers <- c(headers, paste0("X-Title: ", title))
+  }
+  headers
 }
 
 .llm_format_http_error <- function(url, py_err = "", curl_err = "", status = NULL) {
@@ -361,7 +773,9 @@
     if (grepl("HTTP Error 404", py_err, fixed = TRUE)) {
       msg <- c(msg, "Endpoint or model not found (404). Check Base URL and Model name in Code Lab LLM settings.")
     } else if (grepl("HTTP Error 403", py_err, fixed = TRUE)) {
-      msg <- c(msg, "Authentication failed (403). Check API Key and provider permissions.")
+      detail <- .llm_parse_api_error_body(py_err)
+      msg <- c(msg, "Authentication or model access failed (403). Check API Key, OpenRouter credits, and model permissions.")
+      if (nzchar(detail)) msg <- c(msg, detail)
     } else if (grepl("HTTP Error 401", py_err, fixed = TRUE)) {
       msg <- c(msg, "Authentication failed (401). Check API Key.")
     } else {
@@ -506,28 +920,61 @@
   urls <- .llm_chat_completion_urls(base_url)
   if (!length(urls)) stop("LLM base_url is empty or invalid")
   if (identical(provider, "campus") && length(urls) > 1L) urls <- urls[1L]
-  body <- list(
-    model = model,
-    messages = list(
-      list(role = "system", content = "Return only pure executable R code."),
-      list(role = "user", content = prompt)
-    ),
-    max_tokens = as.integer(cfg$max_tokens %||% 2048L),
-    temperature = suppressWarnings(as.numeric(cfg$temperature %||% 0.2))
-  )
+  provider_lc <- tolower(trimws(.llm_chr(provider)))
+  is_openrouter <- identical(provider_lc, "openrouter")
+  model <- .llm_normalize_direct_model(provider, model)
+  single_only <- isTRUE(cfg$single_model_only) || isFALSE(cfg$fusion_mode)
+  models_try <- if (single_only && is_openrouter) {
+    model
+  } else {
+    unique(c(model, .llm_model_aliases(model)))
+  }
+  if (is_openrouter && .llm_openrouter_is_reasoning_model(model)) {
+    timeout <- max(timeout, 180)
+  }
   headers <- .llm_auth_headers(key, provider)
   errors <- character(0)
-  for (url in urls) {
-    resp <- tryCatch(
-      .llm_call_curl(url, headers, body, timeout),
-      error = function(e) {
-        errors <<- c(errors, conditionMessage(e))
-        NULL
+  for (try_model in models_try) {
+    if (!nzchar(try_model)) next
+    body <- if (is_openrouter) {
+      cfg_try <- cfg
+      cfg_try$single_model_only <- single_only
+      .llm_build_openrouter_body(try_model, prompt, cfg_try)
+    } else {
+      list(
+        model = try_model,
+        messages = list(
+          list(role = "system", content = "Return only pure executable R code."),
+          list(role = "user", content = prompt)
+        ),
+        max_tokens = as.integer(cfg$max_tokens %||% 2048L),
+        temperature = suppressWarnings(as.numeric(cfg$temperature %||% 0.2))
+      )
+    }
+    for (url in urls) {
+      resp <- tryCatch(
+        .llm_call_curl(url, headers, body, timeout),
+        error = function(e) {
+          errors <<- c(errors, sprintf("%s@%s: %s", try_model, url, conditionMessage(e)))
+          NULL
+        }
+      )
+      if (!is.null(resp)) {
+        txt <- .llm_extract_text(resp)
+        if (nzchar(trimws(txt))) {
+          return(tryCatch(
+            .llm_pure_r_or_stop(txt),
+            error = function(e) {
+              errors <<- c(errors, sprintf("%s: %s", try_model, conditionMessage(e)))
+              NULL
+            }
+          ))
+        }
+        errors <<- c(errors, sprintf(
+          "%s: empty LLM response (reasoning model may need more max_tokens/time, or model returned no code)",
+          try_model
+        ))
       }
-    )
-    if (!is.null(resp)) {
-      txt <- .llm_extract_text(resp)
-      if (nzchar(trimws(txt))) return(.llm_pure_r_or_stop(txt))
     }
   }
   stop(paste(c("OpenAI-compatible chat/completions failed.", errors), collapse = "\n"))
@@ -536,6 +983,9 @@
 .llm_optimize_once <- function(provider, cfg, code, workflow, tab, instruction, ui_context = NULL) {
   if (identical(tolower(trimws(.llm_chr(provider))), "campus")) {
     cfg <- .llm_campus_merge_cfg(cfg)
+  }
+  if (identical(tolower(trimws(.llm_chr(provider))), "openrouter")) {
+    cfg <- .llm_openrouter_merge_cfg(cfg)
   }
   d <- .llm_provider_defaults(provider, cfg)
   provider <- d$provider
@@ -573,10 +1023,34 @@
   } else if (needs_key && !nzchar(key)) {
     stop(sprintf("API key required for provider: %s", provider))
   }
+  if (identical(provider, "openrouter")) {
+    cfg <- .llm_openrouter_merge_cfg(cfg)
+    key <- trimws(.llm_chr(cfg$api_key))
+    if (!nzchar(key)) {
+      stop("OpenRouter API key is missing. Configure webapp/config/openrouter_llm.json or Code Lab API Key.")
+    }
+  }
   if (.llm_is_openai_compat(provider, d$base_url)) {
-    return(.llm_openai_chat_call(
-      d$base_url, d$model, key, prompt, cfg, timeout, provider = provider
+    models_try <- unique(c(
+      d$model,
+      .llm_normalize_direct_model(provider, d$model),
+      .llm_model_aliases(d$model)
     ))
+    errors <- character(0)
+    for (try_model in models_try) {
+      if (!nzchar(try_model)) next
+      out <- tryCatch(
+        .llm_openai_chat_call(
+          d$base_url, try_model, key, prompt, cfg, timeout, provider = provider
+        ),
+        error = function(e) {
+          errors <<- c(errors, sprintf("%s: %s", try_model, conditionMessage(e)))
+          NULL
+        }
+      )
+      if (is.character(out) && nzchar(trimws(out))) return(out)
+    }
+    stop(paste(c("OpenAI-compatible chat/completions failed.", errors), collapse = "\n"))
   }
   if (identical(provider, "claude")) {
     url <- paste0(d$base_url, "/messages")
@@ -608,6 +1082,9 @@ optimize_r_with_llm <- function(provider, cfg, code, workflow = NULL, tab = NULL
   result <- tryCatch({
     if (identical(provider, "campus")) {
       return(.llm_campus_optimize(cfg, code, workflow, tab, instruction, ui_context))
+    }
+    if (identical(provider, "openrouter")) {
+      return(.llm_openrouter_optimize(cfg, code, workflow, tab, instruction, ui_context))
     }
     providers <- cfg$providers %||% provider
     if (identical(provider, "auto")) {
@@ -656,6 +1133,212 @@ optimize_r_with_llm <- function(provider, cfg, code, workflow = NULL, tab = NULL
   }
   stop(paste(c("All LLM providers failed and local polish could not improve the script.", errors),
              collapse = "\n"))
+}
+
+.LLM_OPENROUTER_PROBE_CANDIDATES <- c(
+  "deepseek/deepseek-v4-pro",
+  "deepseek/deepseek-v4-flash",
+  "moonshotai/kimi-k2.7-code",
+  "qwen/qwen3.7-max",
+  "z-ai/glm-5.2",
+  "z-ai/glm-5",
+  "openai/gpt-5.6-sol",
+  "openai/gpt-5.6-terra",
+  "openai/gpt-5.6-luna",
+  "openai/gpt-5.5",
+  "openai/gpt-5.5-pro",
+  "anthropic/claude-fable-5",
+  "anthropic/claude-sonnet-5",
+  "anthropic/claude-opus-4.8",
+  "google/gemini-3.1-pro-preview",
+  "google/gemini-3.5-flash",
+  "openai/gpt-4o-mini",
+  "deepseek/deepseek-chat",
+  "meta-llama/llama-3.3-70b-instruct"
+)
+
+.llm_openrouter_verified_path <- function() {
+  env_path <- trimws(Sys.getenv("EMP_OPENROUTER_VERIFIED_MODELS", unset = ""))
+  if (nzchar(env_path)) return(normalizePath(env_path, winslash = "/", mustWork = FALSE))
+  backend <- trimws(Sys.getenv("EMP_BACKEND_DIR", unset = ""))
+  candidates <- character(0)
+  if (nzchar(backend)) {
+    candidates <- c(candidates, file.path(dirname(backend), "config", "openrouter_verified_models.json"))
+  }
+  candidates <- c(
+    candidates,
+    file.path(getwd(), "webapp", "config", "openrouter_verified_models.json"),
+    file.path(getwd(), "config", "openrouter_verified_models.json")
+  )
+  for (p in unique(candidates)) {
+    if (nzchar(p)) return(normalizePath(p, winslash = "/", mustWork = FALSE))
+  }
+  normalizePath(file.path(getwd(), "webapp", "config", "openrouter_verified_models.json"),
+                  winslash = "/", mustWork = FALSE)
+}
+
+.llm_openrouter_read_verified <- function() {
+  path <- .llm_openrouter_verified_path()
+  if (!file.exists(path)) {
+    return(list(
+      probed_at = NULL,
+      fusion_defaults = .llm_openrouter_builtin_cfg()$models,
+      fusion_model = .llm_openrouter_builtin_cfg()$fusion_model,
+      working = list(),
+      failed = list()
+    ))
+  }
+  cfg <- tryCatch(
+    jsonlite::fromJSON(path, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  if (is.null(cfg)) {
+    return(list(
+      probed_at = NULL,
+      fusion_defaults = .llm_openrouter_builtin_cfg()$models,
+      fusion_model = .llm_openrouter_builtin_cfg()$fusion_model,
+      working = list(),
+      failed = list()
+    ))
+  }
+  cfg
+}
+
+.llm_openrouter_write_verified <- function(payload) {
+  path <- .llm_openrouter_verified_path()
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  writeLines(
+    jsonlite::toJSON(payload, auto_unbox = TRUE, null = "null", pretty = TRUE),
+    path,
+    useBytes = TRUE
+  )
+  normalizePath(path, winslash = "/", mustWork = FALSE)
+}
+
+.llm_openrouter_probe_one <- function(cfg, model) {
+  cfg_try <- list(
+    base_url = cfg$base_url,
+    api_key = cfg$api_key,
+    single_model_only = TRUE,
+    fusion_mode = FALSE,
+    timeout = min(90, max(25, suppressWarnings(as.numeric(cfg$timeout %||% 45)))),
+    max_tokens = 24L
+  )
+  started <- Sys.time()
+  out <- tryCatch({
+    text <- .llm_openai_chat_call(
+      cfg_try$base_url,
+      model,
+      cfg_try$api_key,
+      "Reply with exactly: OK",
+      cfg_try,
+      cfg_try$timeout,
+      provider = "openrouter"
+    )
+    elapsed <- as.numeric(difftime(Sys.time(), started, units = "secs"))
+    sample <- substr(trimws(paste(as.character(text), collapse = " ")), 1L, 120L)
+    list(
+      ok = TRUE,
+      model = model,
+      latency_s = round(elapsed, 2),
+      sample = sample
+    )
+  }, error = function(e) {
+    elapsed <- as.numeric(difftime(Sys.time(), started, units = "secs"))
+    list(
+      ok = FALSE,
+      model = model,
+      latency_s = round(elapsed, 2),
+      error = conditionMessage(e)
+    )
+  })
+  out
+}
+
+.llm_openrouter_probe_models <- function(cfg, models = NULL, write_manifest = TRUE) {
+  cfg <- .llm_openrouter_merge_cfg(cfg)
+  if (!nzchar(trimws(.llm_chr(cfg$api_key)))) {
+    stop(paste(
+      "OpenRouter API key is missing.",
+      "Set webapp/config/openrouter_llm.json, EMP_OPENROUTER_LLM_API_KEY,",
+      "or pass config.api_key from Code Lab."
+    ))
+  }
+  if (is.null(models) || !length(models)) {
+    models <- cfg$probe_models %||% .LLM_OPENROUTER_PROBE_CANDIDATES
+  }
+  if (is.character(models) && length(models) == 1L) {
+    models <- strsplit(models[[1L]], "[,;\\s]+", perl = TRUE)[[1L]]
+  }
+  models <- unique(trimws(as.character(unlist(models, use.names = FALSE))))
+  models <- models[nzchar(models)]
+
+  working <- list()
+  failed <- list()
+  for (model in models) {
+    row <- .llm_openrouter_probe_one(cfg, model)
+    if (isTRUE(row$ok)) {
+      working[[length(working) + 1L]] <- row
+    } else {
+      failed[[length(failed) + 1L]] <- row
+    }
+  }
+
+  working_ids <- vapply(working, function(x) x$model, character(1))
+  fusion_defaults <- working_ids[seq_len(min(length(working_ids), 5L))]
+  if (!length(fusion_defaults)) {
+    fusion_defaults <- .llm_openrouter_builtin_cfg()$models
+  }
+  fusion_model <- if (length(working_ids)) working_ids[[1L]] else cfg$fusion_model
+
+  payload <- list(
+    probed_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z", tz = Sys.timezone()),
+    fusion_defaults = as.list(fusion_defaults),
+    fusion_model = fusion_model,
+    working = working,
+    failed = failed
+  )
+  manifest_path <- NULL
+  if (isTRUE(write_manifest)) {
+    manifest_path <- .llm_openrouter_write_verified(payload)
+  }
+
+  list(
+    success = TRUE,
+    probed = length(models),
+    working_count = length(working),
+    failed_count = length(failed),
+    fusion_defaults = fusion_defaults,
+    fusion_model = fusion_model,
+    working = working,
+    failed = failed,
+    manifest_path = manifest_path
+  )
+}
+
+plumber_llm_openrouter_verified_get <- function(req, res) {
+  safe_api({ # nolint: object_usage_linter
+    verified <- .llm_openrouter_read_verified()
+    list(
+      success = TRUE,
+      manifest_path = .llm_openrouter_verified_path(),
+      probed_at = verified$probed_at %||% NULL,
+      fusion_defaults = unlist(verified$fusion_defaults %||% list(), use.names = FALSE),
+      fusion_model = verified$fusion_model %||% .llm_openrouter_builtin_cfg()$fusion_model,
+      working = verified$working %||% list(),
+      failed = verified$failed %||% list()
+    )
+  }, res)
+}
+
+plumber_llm_probe_openrouter_post <- function(req, res) {
+  safe_api({ # nolint: object_usage_linter
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    cfg <- b$config %||% list()
+    models <- b$models %||% cfg$probe_models %||% NULL
+    write_manifest <- !identical(b$write_manifest, FALSE)
+    .llm_openrouter_probe_models(cfg, models, write_manifest = write_manifest)
+  }, res)
 }
 
 plumber_llm_optimize_r_post <- function(req, res) {

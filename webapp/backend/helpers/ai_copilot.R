@@ -89,6 +89,206 @@
   unname(map[o]) %||% (.ai_chr(o, "组学数据"))
 }
 
+.ai_is_microbiome_omics <- function(omics) {
+  omics <- tolower(trimws(.ai_chr(omics)))
+  omics %in% c("microbiome_16s", "m16s", "16s")
+}
+
+.ai_feat_taxon_like <- function(x) {
+  s <- tolower(trimws(.ai_chr(x)))
+  if (!nzchar(s)) return(FALSE)
+  grepl(
+    "aceae|obacter|ota$|__|phylum|classis|order|genus|species|firmicutes|bacteroid|bifidobacter|fusobacter|prevotella|lactobacillus|streptococcus|clostridium|escherichia|blautia|roseburia|faecalibacterium|ruminococcus|desulfovibrio|agrobacterium|longicatena|ovatus|uniformis|gnavus|reuteri",
+    s
+  )
+}
+
+.ai_infer_feature_kind <- function(ctx, feats = NULL) {
+  omics <- tolower(trimws(.ai_chr(ctx$omics)))
+  if (.ai_is_microbiome_omics(omics)) return("microbiome_taxa")
+  if (omics %in% c("metagenomics", "mgx")) return("mgx_function")
+  if (omics %in% c("metabolomics", "mbx")) return("metabolite")
+  if (omics %in% c("transcriptomics", "rnaseq")) return("gene")
+  if (is.null(feats)) feats <- .ai_extract_visible_features(ctx)
+  if (length(feats) &&
+      sum(vapply(feats, .ai_feat_taxon_like, logical(1L))) >= max(1L, ceiling(length(feats) * 0.25))) {
+    return("microbiome_taxa")
+  }
+  "gene"
+}
+
+.ai_heatmap_mode <- function(ctx) {
+  params <- ctx$params %||% list()
+  m <- tolower(trimws(.ai_chr(params$heatmap_mode %||% ctx$heatmap_mode)))
+  if (nzchar(m)) return(m)
+  st <- ctx$stats %||% list()
+  if (!is.null(st$n_significant) || !is.null(st$n_sig) ||
+      !is.null(params$fc_cutoff) || !is.null(params$p_cutoff)) {
+    return("differential")
+  }
+  "exploratory"
+}
+
+.ai_heatmap_profile <- function(ctx) {
+  fk <- .ai_infer_feature_kind(ctx)
+  mode <- .ai_heatmap_mode(ctx)
+  key <- paste0(fk, "_", mode)
+  map <- c(
+    microbiome_taxa_differential = "m16s_diff",
+    microbiome_taxa_exploratory = "m16s_exploratory",
+    gene_differential = "rnaseq_deg",
+    gene_exploratory = "rnaseq_exploratory",
+    mgx_function_differential = "mgx_diff",
+    mgx_function_exploratory = "mgx_exploratory",
+    metabolite_differential = "mbx_diff",
+    metabolite_exploratory = "mbx_exploratory"
+  )
+  unname(map[key]) %||% key
+}
+
+.ai_feature_label <- function(ctx, locale = "zh", plural = TRUE) {
+  en <- .ai_resolve_locale(locale) == "en"
+  fk <- .ai_infer_feature_kind(ctx)
+  if (identical(fk, "microbiome_taxa")) {
+    if (en) if (plural) "differential taxa" else "taxon" else if (plural) "差异菌/分类单元" else "菌/分类单元"
+  } else if (identical(fk, "mgx_function")) {
+    if (en) if (plural) "functional features" else "functional feature" else if (plural) "功能特征" else "功能特征"
+  } else if (identical(fk, "metabolite")) {
+    if (en) if (plural) "metabolites" else "metabolite" else if (plural) "代谢物" else "代谢物"
+  } else {
+    if (en) if (plural) "genes" else "gene" else if (plural) "基因" else "基因"
+  }
+}
+
+.ai_heatmap_plot_rules <- function(ctx, locale = "zh") {
+  en <- .ai_resolve_locale(locale) == "en"
+  profile <- .ai_heatmap_profile(ctx)
+  if (profile %in% c("m16s_diff", "m16s_exploratory")) {
+    if (en) {
+      return(paste(
+        "For 16S / amplicon microbiome heatmaps, NEVER call taxa 'genes'.",
+        "CNS Results style (4 sentences in interpretation):",
+        "(1) compositional pattern & sample/taxa clustering by group;",
+        "(2) quantitative anchors — n taxa, thresholds (log2FC, p/padj), directional enrichment per group;",
+        "(3) cautious biology — dysbiosis/homeostasis, known commensals/pathobionts, IBD/IBS literature only as 'associated with';",
+        "(4) boundaries — compositional relative abundance, taxonomic resolution, no causality, need qPCR/shotgun/metabolomics validation.",
+        "limitations: compositional constraint, multiple-testing/FDR, sequencing depth, method choice (ALDEx2/ANCOM/DESeq2 pseudo-counts).",
+        "figure_optimization: 10–30 taxa main figure; genus italics; group annotation bar; Z-score on CLR/log-ratio; row dendrogram.",
+        "downstream: beta diversity PERMANOVA, indicator species/LEfSe, PICRUSt2, multi-omics integration."
+      ))
+    }
+    return(paste(
+      "16S/扩增子微生物组热图：严禁将菌/ASV/OTU 称为“基因”。",
+      "interpretation 按 CNS Results 四句式：",
+      "1）群落组成模式与样本/分类单元聚类（组内一致、组间分离）；",
+      "2）定量锚点——差异菌数量、|log2FC|/p 或 padj 阈值、各组富集/耗竭方向；",
+      "3）生物学指向——用“关联/富集/耗竭”描述，引用 dysbiosis、共生菌/条件致病菌时需克制，避免“致病/导致”；",
+      "4）结论边界——组成型相对丰度、分类分辨率限制、不能推断因果，需 qPCR/宏基因组/代谢组验证。",
+      "limitations 须提：组成性约束、多重检验/FDR、测序深度、差异方法适用性。",
+      "figure_optimization：主图 10–30 个 taxa、属名斜体、顶部分组 annotation、CLR/log-ratio 后 Z-score。",
+      "downstream：Beta 多样性+PERMANOVA、指示种/LEfSe、PICRUSt2、多组学整合。"
+    ))
+  }
+  if (profile %in% c("rnaseq_deg", "rnaseq_exploratory")) {
+    if (en) {
+      return(paste(
+        "RNA-seq heatmap: group clustering, co-expression modules, ECM/inflammation/metabolism genes if relevant;",
+        "state exploratory if no formal DEG stats; main figure 30–50 genes."
+      ))
+    }
+    return(paste(
+      "RNA-seq 热图：组内聚类、共表达模块、ECM/炎症/代谢相关基因；",
+      "无正式 DEG 统计时标明探索性；主图建议 30–50 个基因。"
+    ))
+  }
+  if (en) {
+    "Heatmap: match feature type to omics (taxa / genes / functions / metabolites); anchor claims to provided stats; no causality from color alone."
+  } else {
+    "热图：特征类型与组学一致（菌/基因/功能/代谢物）；结论锚定所给统计量；不能仅凭颜色推断因果。"
+  }
+}
+
+.ai_heatmap_supplement <- function(ctx, locale = "zh") {
+  atype <- tolower(trimws(.ai_chr(ctx$analysis_type)))
+  if (!identical(atype, "heatmap")) return("")
+  en <- .ai_resolve_locale(locale) == "en"
+  profile <- .ai_heatmap_profile(ctx)
+  params <- ctx$params %||% list()
+  feats <- .ai_extract_visible_features(ctx)
+  feat_txt <- if (length(feats)) paste(head(feats, 10L), collapse = if (en) ", " else "、") else ""
+  thr <- character(0)
+  if (!is.null(params$fc_cutoff)) thr <- c(thr, paste0("|log2FC|>=", .ai_chr(params$fc_cutoff)))
+  if (!is.null(params$p_cutoff)) thr <- c(thr, paste0("p<=", .ai_chr(params$p_cutoff)))
+  if (!is.null(ctx$groups)) thr <- c(thr, paste(as.character(unlist(ctx$groups)), collapse = if (en) " vs " else " vs "))
+  thr_txt <- if (length(thr)) paste(thr, collapse = if (en) "; " else "；") else NULL
+  hdr <- if (en) "[Heatmap supplement — profile: " else "【热图补充 — 类型: "
+  body <- .ai_heatmap_plot_rules(ctx, locale)
+  extra <- character(0)
+  if (nzchar(feat_txt)) {
+    extra <- c(extra, if (en) paste0("Visible features/taxa: ", feat_txt, ".") else
+      paste0("图中可见特征/菌名：", feat_txt, "。"))
+  }
+  if (!is.null(thr_txt)) {
+    extra <- c(extra, if (en) paste0("Stated thresholds/groups: ", thr_txt, ".") else
+      paste0("所给阈值/分组：", thr_txt, "。"))
+  }
+  paste0("\n\n", hdr, profile, if (en) "] " else "】", body,
+         if (length(extra)) paste0("\n", paste(extra, collapse = " ")) else "")
+}
+
+.ai_m16s_diff_interpretation <- function(ctx, locale = "zh") {
+  en <- .ai_resolve_locale(locale) == "en"
+  feats <- .ai_extract_visible_features(ctx)
+  st <- ctx$stats %||% list()
+  params <- ctx$params %||% list()
+  n_taxa <- .ai_num(st$n_significant %||% st$n_sig %||% st$n_total %||% ctx$table$n_rows)
+  n_show <- if (!is.na(n_taxa) && n_taxa > 0) as.integer(n_taxa) else length(feats)
+  if (is.na(n_show) || n_show <= 0) n_show <- length(feats)
+  feat_note <- if (length(feats)) {
+    paste0(if (en) "including " else "包括 ",
+           paste(head(feats, 6L), collapse = if (en) ", " else "、"))
+  } else ""
+  groups <- ctx$groups %||% NULL
+  grp_txt <- if (!is.null(groups) && length(groups)) {
+    paste(as.character(unlist(groups)), collapse = if (en) " and " else "与")
+  } else if (!is.null(ctx$group)) .ai_chr(ctx$group) else NULL
+  fc <- .ai_chr(params$fc_cutoff, "")
+  pcut <- .ai_chr(params$p_cutoff, "")
+  thr <- if (nzchar(fc) || nzchar(pcut)) {
+    if (en) paste0("|log2FC|>=", fc %||% "1", ", p<=", pcut %||% "0.05") else
+      paste0("|log2FC|>=", fc %||% "1", "、p<=", pcut %||% "0.05")
+  } else NULL
+
+  if (en) {
+    paste0(
+      "Z-score-scaled relative-abundance heatmap of differentially abundant taxa revealed compositional structuring across samples",
+      if (!is.null(grp_txt)) paste0(", with samples largely segregating by ", grp_txt, " status") else "",
+      ", and co-abundant taxa forming distinct row clusters. ",
+      if (!is.na(n_show) && n_show > 0) {
+        paste0("Under the applied differential filters",
+               if (!is.null(thr)) paste0(" (", thr, ")") else "",
+               ", ", n_show, " taxa were retained ", feat_note, "; color blocks indicate directional enrichment or depletion between groups rather than absolute abundance. ")
+      } else "",
+      "Shifts involving common gut commensals (e.g., Bifidobacterium, Bacteroides) may reflect dysbiosis–homeostasis transitions reported in intestinal disorders, but taxonomic resolution precludes strain-level mechanistic claims. ",
+      "These patterns are association-level evidence from compositional amplicon data; causality, functional activity, and clinical relevance require independent validation (qPCR, shotgun metagenomics, metabolomics, or intervention cohorts)."
+    )
+  } else {
+    paste0(
+      "基于相对丰度 Z-score 的差异菌群热图显示，样本间存在可辨的群落组成结构",
+      if (!is.null(grp_txt)) paste0("，且样本主要按", grp_txt, "分组聚集") else "",
+      "，共丰度的分类单元在行列聚类中形成模块。 ",
+      if (!is.na(n_show) && n_show > 0) {
+        paste0("在当前差异筛选条件下",
+               if (!is.null(thr)) paste0("（", thr, "）") else "",
+               "保留 ", n_show, " 个分类单元", if (nzchar(feat_note)) paste0("（", feat_note, "）") else "",
+               "；红/蓝区块反映组间富集或耗竭方向，而非绝对菌量。 ")
+      } else "",
+      "以 Bifidobacterium、Bacteroides 等常见肠道菌为代表的丰度偏移，可与肠道稳态/失调相关文献相呼应，但分类层级分辨率不足以支持菌株级机制推断。 ",
+      "该结果属于组成型扩增子数据的关联性证据，不能据此推断因果或体内功能活性，需 qPCR、鸟枪法宏基因组、代谢组或干预队列进一步验证。"
+    )
+  }
+}
+
 # Build a compact textual summary of the result context (used both for the LLM
 # prompt and as the backbone of the offline interpretation).
 .ai_summarise_context <- function(ctx) {
@@ -99,6 +299,10 @@
   atype <- .ai_chr(ctx$analysis_type, "analysis")
   add(.ai_L(locale, "分析类型: ", "Analysis: "), .ai_analysis_label(atype, locale))
   if (!is.null(ctx$omics)) add(.ai_L(locale, "组学: ", "Omics: "), .ai_omics_label(ctx$omics, locale))
+  if (tolower(atype) == "heatmap") {
+    add(.ai_L(locale, "热图谱系: ", "Heatmap profile: "), .ai_heatmap_profile(ctx))
+    add(.ai_L(locale, "特征实体: ", "Feature entity: "), .ai_feature_label(ctx, locale, plural = TRUE))
+  }
   if (!is.null(ctx$experiment)) add(.ai_L(locale, "实验对象: ", "Experiment: "), .ai_chr(ctx$experiment))
 
   ds <- ctx$dataset %||% list()
@@ -179,7 +383,32 @@
     btns[[length(btns) + 1L]] <<- list(label = label, prompt = prompt)
   }
   if (kind == "plot" && atype %in% c("heatmap", "cluster")) {
-    if (en) {
+    profile <- .ai_heatmap_profile(ctx)
+    if (profile %in% c("m16s_diff", "m16s_exploratory")) {
+      if (en) {
+        add("Optimize 16S differential-taxa heatmap",
+            "Optimize the 16S differential-abundance heatmap: genus-level italics, top 10-30 taxa, group annotation bar, Z-score on CLR/log-ratio, color-blind palette, ComplexHeatmap row dendrogram. Return runnable R code.")
+        add("Add phylum row annotation",
+            "Add a left-side phylum/family annotation bar to the taxa heatmap using ComplexHeatmap; keep group column annotation and publication export.")
+        add("Export taxa table for LEfSe / indicator species",
+            "From the current differential taxa result, export a LEfSe-ready table (taxon, group, LDA/log2FC, padj) and sketch indicator-species analysis in R.")
+        add("Write CNS-style figure legend",
+            "Write a Nature/Cell-style figure legend for this 16S differential-taxa heatmap: normalization, Z-score, clustering, groups, key taxa, no causal language.")
+        add("Link beta diversity + PICRUSt2",
+            "Design downstream Bray-Curtis PCoA with PERMANOVA plus PICRUSt2 functional prediction for taxa enriched in each group.")
+      } else {
+        add("优化 16S 差异菌群热图",
+            "请优化当前 16S 差异丰度热图：属级斜体命名、主图 10–30 个 taxa、顶部分组 annotation、CLR/log-ratio 后 Z-score、色盲友好配色、ComplexHeatmap 行聚类。输出可运行 R 代码。")
+        add("增加门/科水平行注释",
+            "用 ComplexHeatmap 为差异菌热图增加左侧门/科注释条，保留顶部分组注释与发表级导出。")
+        add("导出 LEfSe/指示种分析表",
+            "基于当前差异菌结果导出 LEfSe 格式表（taxon、group、LDA/log2FC、padj），并给出指示种分析 R 代码框架。")
+        add("撰写 CNS 风格图注",
+            "为这张 16S 差异菌群热图撰写 Nature/Cell 风格 figure legend：标准化、Z-score、聚类、分组、关键菌名，避免因果措辞。")
+        add("衔接 Beta 多样性 + PICRUSt2",
+            "设计下游 Bray-Curtis PCoA + PERMANOVA，并对各组富集菌做 PICRUSt2 功能预测分析流程。")
+      }
+    } else if (en) {
       add("Optimize heatmap colors & annotations",
           "Optimize the current R heatmap code: use publication red-white-blue or color-blind palette, fix Z-score scale to -2..2, add sample group annotation bar, improve label readability. Return complete runnable R code.")
       add("Filter core genes & redraw",
@@ -234,23 +463,31 @@
   has_deg_stats <- !is.na(n_sig) || !is.null(st$log2FC) || !is.null(st$p_adj)
 
   interpretation <- character(0)
-  if (kind == "plot" && atype == "heatmap") {
+  hm_profile <- if (kind == "plot" && atype == "heatmap") .ai_heatmap_profile(ctx) else NULL
+  if (kind == "plot" && atype == "heatmap" && hm_profile %in% c("m16s_diff", "m16s_exploratory")) {
+    interpretation <- .ai_m16s_diff_interpretation(ctx, locale)
+  } else if (kind == "plot" && atype == "heatmap") {
     gene_note <- if (length(feats)) paste0("`", paste(head(feats, 8L), collapse = if (en) "`, `" else "`、`"), "`") else NULL
+    flab <- .ai_feature_label(ctx, locale, plural = TRUE)
     interpretation <- if (en) {
       paste0(
-        "Heatmap visualization reveals transcriptomic expression heterogeneity across samples. ",
-        if (length(ecm_hit)) paste0("Several ECM remodeling genes (", paste(ecm_hit, collapse = ", "),
-                                    ") show coordinated trends, suggesting stromal remodeling or tissue repair programs. ") else "",
+        "Heatmap visualization reveals ", flab, " heterogeneity across samples. ",
+        if (length(ecm_hit) && identical(.ai_infer_feature_kind(ctx, feats), "gene")) {
+          paste0("Several ECM remodeling genes (", paste(ecm_hit, collapse = ", "),
+                 ") show coordinated trends, suggesting stromal remodeling or tissue repair programs. ")
+        } else "",
         if (!is.null(gene_note)) paste0("Visible features include ", gene_note, ". ") else "",
         "These patterns may capture biologically meaningful group differences and motivate formal differential and enrichment analyses."
       )
     } else {
       paste0(
-        "热图结果显示，不同样本之间存在较为明显的表达异质性。",
-        if (length(ecm_hit)) paste0("多个细胞外基质重塑相关基因（", paste(ecm_hit, collapse = "、"),
-                                    "）呈现协同变化趋势，提示 ECM remodeling、纤维化样反应或组织损伤修复可能是重要生物学方向。") else "",
+        "热图结果显示，不同样本之间的", flab, "模式存在可辨异质性。",
+        if (length(ecm_hit) && identical(.ai_infer_feature_kind(ctx, feats), "gene")) {
+          paste0("多个细胞外基质重塑相关基因（", paste(ecm_hit, collapse = "、"),
+                 "）呈现协同变化趋势，提示 ECM remodeling、纤维化样反应或组织损伤修复可能是重要生物学方向。")
+        } else "",
         if (!is.null(gene_note)) paste0("当前可见特征包括 ", gene_note, "。") else "",
-        "该模式可为后续差异表达与功能富集分析提供线索。"
+        "该模式可为后续差异与功能分析提供线索。"
       )
     }
   } else if (atype %in% c("differential", "diff", "volcano")) {
@@ -289,7 +526,25 @@
     }
   }
 
-  limitations <- if (kind == "plot" && atype == "heatmap" && !has_deg_stats) {
+  limitations <- if (kind == "plot" && atype == "heatmap" && hm_profile %in% c("m16s_diff", "m16s_exploratory")) {
+    if (en) {
+      paste(
+        "Amplicon data are compositional (relative abundance sums to 1); shifts in one taxon constrain others—avoid interpreting absolute abundance.",
+        "Report FDR/q-values alongside p-values for hundreds of taxa tested.",
+        "Taxonomic assignment and genus-level resolution limit strain-specific claims.",
+        "Sequencing depth and rarefaction/balancing can bias low-abundance taxa.",
+        "Heatmap color alone cannot establish statistical significance or causality without the underlying differential table."
+      )
+    } else {
+      paste(
+        "扩增子数据具有组成性（相对丰度总和为 1），某一 taxon 升高会约束其他 taxon，不宜解读为绝对菌量变化。",
+        "成百上千 taxa 同时检验时必须报告 FDR/q 值，不能只看原始 p 值。",
+        "分类注释与属级分辨率不足以支持菌株特异性机制结论。",
+        "测序深度与抽平/平衡策略会影响低丰度菌的稳定性。",
+        "仅凭热图颜色不能替代差异分析表格中的统计显著性，更不能推断因果。"
+      )
+    }
+  } else if (kind == "plot" && atype == "heatmap" && !has_deg_stats) {
     if (en) {
       "This heatmap is exploratory and cannot alone prove differential expression. Without formal DESeq2/edgeR/limma statistics (log2FC, adjusted p-values), avoid claiming significant up/down regulation from color alone. Dense gene/sample labels and missing group annotation bars may limit manuscript readability."
     } else {
@@ -304,7 +559,10 @@
   figure_optimization <- if (kind == "plot") {
     chk <- paste(seq_along(.ai_plot_visual_checklist(locale)), .ai_plot_visual_checklist(locale), sep = ". ", collapse = "\n")
     if (atype == "heatmap") {
-      if (en) paste0("Limit main-figure genes to 30-50; fix Z-score to -2..2; add Group/Batch/Time annotation bars; prefer ComplexHeatmap + PDF vector export.\n", chk)
+      if (hm_profile %in% c("m16s_diff", "m16s_exploratory")) {
+        if (en) paste0("Main figure: 10–30 differential taxa at genus level (italics); top group annotation bar; Z-score on CLR/log-ratio; fix scale ~ -2..2; PDF vector export.\n", chk)
+        else paste0("主图建议 10–30 个差异菌（属名斜体）；顶部分组 annotation；CLR/log-ratio 后 Z-score；色阶约 -2~2；PDF 矢量导出。\n", chk)
+      } else if (en) paste0("Limit main-figure genes to 30-50; fix Z-score to -2..2; add Group/Batch/Time annotation bars; prefer ComplexHeatmap + PDF vector export.\n", chk)
       else paste0("主图建议 30–50 个核心基因；固定 Z-score（如 -2 到 2）；增加 Group/Batch/Time 注释条；ComplexHeatmap + PDF 矢量导出。\n", chk)
     } else chk
   } else {
@@ -313,7 +571,14 @@
   }
 
   downstream <- paste(.ai_offline_next_steps(atype, omics, locale), collapse = if (en) " " else " ")
-  if (length(ecm_hit) && kind == "plot") {
+  if (hm_profile %in% c("m16s_diff", "m16s_exploratory") && kind == "plot") {
+    extra <- if (en) {
+      " Run beta-diversity PCoA with PERMANOVA; indicator species / LEfSe; PICRUSt2 functional prediction; validate top taxa by qPCR or shotgun metagenomics; integrate metabolomics/host phenotypes if available."
+    } else {
+      " 建议补充 Beta 多样性 PCoA + PERMANOVA、指示种/LEfSe、PICRUSt2 功能预测；用 qPCR 或鸟枪法宏基因组验证关键菌；如有条件整合代谢组/宿主表型。"
+    }
+    downstream <- paste0(downstream, extra)
+  } else if (length(ecm_hit) && kind == "plot") {
     extra <- if (en) {
       " Prioritize GO/KEGG/GSEA on ECM organization, collagen fibril organization, TGF-beta signaling, focal adhesion; validate top genes by qPCR/Western blot/IHC."
     } else {
@@ -322,7 +587,13 @@
     downstream <- paste0(downstream, extra)
   }
 
-  manuscript <- if (kind == "plot" && atype == "heatmap") {
+  manuscript <- if (kind == "plot" && atype == "heatmap" && hm_profile %in% c("m16s_diff", "m16s_exploratory")) {
+    if (en) {
+      "Suitable as a microbiome Results panel (e.g., Figure 2B–C): pair with alpha/beta diversity, differential bar/dot plot, and LEfSe/PICRUSt2; avoid standalone causal claims."
+    } else {
+      "适合作为微生物组 Results 中的一个 panel（如 Figure 2B–C）：与 alpha/beta 多样性、差异菌柱状/气泡图、LEfSe/PICRUSt2 组合；不宜单独承担因果叙事。"
+    }
+  } else if (kind == "plot" && atype == "heatmap") {
     if (en) {
       "Suitable as a DEG/expression panel (e.g. Figure 2B). Combine with experimental design, PCA/sample correlation, volcano plot, enrichment bubble plot, GSEA curves, and validation boxplots/qPCR."
     } else {
@@ -751,7 +1022,7 @@
 # ---------------------------------------------------------------------------
 # LLM layer
 # ---------------------------------------------------------------------------
-.ai_system_prompt <- function(kind = "table", locale = "zh", output_language = NULL) {
+.ai_system_prompt <- function(kind = "table", locale = "zh", output_language = NULL, ctx = NULL) {
   ol <- output_language %||% .ai_output_language(locale)
   lang_rule <- paste0(
     "Output language: ", ol, "\n",
@@ -766,6 +1037,16 @@
     "prompt_buttons is an array of {label, prompt} with 3-5 items for Code Lab optimization.",
     sep = "\n"
   )
+  heatmap_rule <- if (identical(tolower(kind), "plot") && !is.null(ctx) &&
+                      tolower(.ai_chr(ctx$analysis_type)) == "heatmap") {
+    .ai_heatmap_plot_rules(ctx, locale)
+  } else if (identical(tolower(kind), "plot")) {
+    if (.ai_resolve_locale(locale) == "en") {
+      "Section 2: critique as a reviewer (missing stats, batch effects, feature count, annotations). Section 3: concrete figure optimization."
+    } else {
+      "模块2模拟审稿人视角；模块3给出可操作的出图优化。"
+    }
+  } else ""
   if (.ai_resolve_locale(locale) == "en") {
     return(paste(
       "You are an expert bioinformatics assistant embedded in EasyMultiProfiler (EMP).",
@@ -775,13 +1056,7 @@
       "For `interpretation`, follow exactly: (1) Main pattern in one sentence; (2) Quantitative evidence sentence; (3) Biological implication sentence; (4) Conservative claim boundary sentence.",
       "Do not use vague filler such as 'results are ready' or generic teaching placeholders.",
       "Do not invent statistics not provided. Do not claim causality from heatmaps alone.",
-      if (identical(tolower(kind), "plot")) {
-        paste(
-          "Section 2: critique as a reviewer (missing stats, batch effects, gene count, annotations).",
-          "Section 3: concrete figure optimization (filtering, colors, clustering, export).",
-          "For heatmaps: treat as RNA-seq heatmap; check group clustering, modules, ECM/inflammation genes, main vs supp figure."
-        )
-      } else "",
+      heatmap_rule,
       json_rule,
       sep = "\n"
     ))
@@ -794,12 +1069,7 @@
     "interpretation 必须严格按 4 句结构输出：1) 主模式句；2) 定量证据句；3) 生物学指向句；4) 保守结论边界句。",
     "禁止使用“结果已生成”“可见差异”等空泛模板句。",
     "不要编造未提供的统计显著性；热图 alone 不能推断因果。",
-    if (identical(tolower(kind), "plot")) {
-      paste(
-        "模块2模拟审稿人视角；模块3给出可操作的出图优化；",
-        "热图需按 RNA-seq heatmap 解读：组内聚类、模块、ECM/炎症/代谢基因、主图基因数是否合适。"
-      )
-    } else "",
+    heatmap_rule,
     json_rule,
     sep = "\n"
   )
@@ -936,11 +1206,7 @@ ai_interpret <- function(ctx, provider = NULL, cfg = NULL, personalization = NUL
         paste0("\n\n用户画像提示：", .ai_chr(pers$summary))
     } else ""
     heatmap_supp <- if (identical(kind, "plot") && tolower(.ai_chr(ctx$analysis_type)) == "heatmap") {
-      if (en) paste0(
-        "\n\n[Heatmap supplement] Interpret as RNA-seq heatmap. Check same-group clustering, gene modules, ECM/inflammation/metabolism genes, gene count for main figure, need for annotation bars. State exploratory if no DEG stats."
-      ) else paste0(
-        "\n\n【热图补充】按 RNA-seq 热图解读：组内聚类、基因模块、ECM/炎症/代谢相关基因、主图基因数、是否需要 annotation bar。无正式 DEG 统计时必须说明为探索性。"
-      )
+      .ai_heatmap_supplement(ctx, locale)
     } else ""
     user_prompt <- paste0(
       if (en) "A student just finished an EMP analysis step. Context:\n\n" else
@@ -959,7 +1225,7 @@ ai_interpret <- function(ctx, provider = NULL, cfg = NULL, personalization = NUL
         paste0("\n\n请仅使用 ", output_language, "，并按系统说明返回 JSON。")
     )
     llm_err <- NULL
-    out <- tryCatch(.ai_llm_chat(provider, cfg, .ai_system_prompt(kind, locale, output_language), user_prompt, plot_image),
+    out <- tryCatch(.ai_llm_chat(provider, cfg, .ai_system_prompt(kind, locale, output_language, ctx), user_prompt, plot_image),
                     error = function(e) {
                       llm_err <<- conditionMessage(e)
                       NULL

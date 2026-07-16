@@ -23,10 +23,10 @@
     stop("The group_level parameter must have exactly 2 factors!")
   }
 
-  ## reduce the cost when using tidybulk::tidybulk
+  ## Keep the assay small before handing it to tidybulk.
   tiny_EMPT <- EMPT
 
-  new_coldata <- colData(tiny_EMPT) 
+  new_coldata <- colData(tiny_EMPT)
   new_coldata <- new_coldata[,c(estimate_group,batch_info),drop=FALSE]
 
   new_rowdata <- rowData(tiny_EMPT)
@@ -40,67 +40,92 @@
   rowData(tiny_EMPT) <- new_rowdata
   colData(tiny_EMPT) <- new_coldata
 
-  melt_EMPT <- tiny_EMPT %>% tidybulk::tidybulk()
+  # tidybulk >= 2.0 works directly with SummarizedExperiment and no longer
+  # exports the old tidybulk() converter. Keep compatibility with older
+  # releases that still provide it.
+  if ("tidybulk" %in% getNamespaceExports("tidybulk")) {
+    melt_EMPT <- tidybulk::tidybulk(tiny_EMPT)
+    try(melt_EMPT[[estimate_group]] <- droplevels(melt_EMPT[[estimate_group]]), silent = TRUE)
+    group_values <- melt_EMPT[[estimate_group]]
+  } else {
+    melt_EMPT <- tiny_EMPT
+    group_values <- colData(melt_EMPT)[[estimate_group]]
+    try(group_values <- droplevels(group_values), silent = TRUE)
+    colData(melt_EMPT)[[estimate_group]] <- group_values
+  }
 
-  try( melt_EMPT[[estimate_group]] <- droplevels(melt_EMPT[[estimate_group]]),silent = TRUE)
-
-  check_group <- melt_EMPT %>% dplyr::pull(estimate_group) %>% dplyr::n_distinct() == 2
+  check_group <- dplyr::n_distinct(group_values) == 2
   if(!check_group ) {
     stop('For ',method,' only support supports two-category group!')
   }
 
   origin_group_level <- group_level
 
-  if (!is.null(group_level)) {
-    switch(method,
-           "edgeR_quasi_likelihood" = {group_level <- paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2])},
-           "edgeR_likelihood_ratio"  = {group_level <- paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2])},
-           "edger_robust_likelihood_ratio"  = {group_level <- paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2])},
-           "DESeq2"  = {group_level <- list(c(estimate_group,group_level[1],group_level[2])) },
-           "limma_voom"  = {group_level <- paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2])},
-           "limma_voom_sample_weights"  = {group_level <- paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2])},
-           {
-             group_level <- group_level
-           }
+  # tidybulk >= 2.0 dropped action= and changed contrast parsing. When the
+  # assay is already restricted to two groups (web / EMP default), passing the
+  # legacy "GroupA-GroupB" strings breaks edgeR/limma. Keep those strings only
+  # for older tidybulk releases; modern releases use contrasts=NULL here and
+  # still use origin_group_level for result labeling.
+  tb_formals <- names(formals(tidybulk::test_differential_abundance))
+  modern_tidybulk <- !("action" %in% tb_formals)
+  contrasts_arg <- NULL
+  if (!is.null(group_level) && !modern_tidybulk) {
+    contrasts_arg <- switch(method,
+           "edgeR_quasi_likelihood" = paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2]),
+           "edgeR_likelihood_ratio"  = paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2]),
+           "edger_robust_likelihood_ratio"  = paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2]),
+           "DESeq2"  = list(c(estimate_group,group_level[1],group_level[2])),
+           "limma_voom"  = paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2]),
+           "limma_voom_sample_weights"  = paste0(estimate_group,group_level[1],'-',estimate_group,group_level[2]),
+           group_level
     )
   }
 
-  result <- melt_EMPT %>%
-    tidybulk::test_differential_abundance(
-      .formula,
-      method = method,action='get',contrasts=group_level,...) %>%
-    suppressWarnings()  %>% suppressMessages()
+  # Keep local name used by the labeling block below.
+  group_level <- origin_group_level
 
+  diff_args <- list(.data = melt_EMPT, .formula = .formula, method = method, contrasts = contrasts_arg)
+  if ("action" %in% tb_formals) diff_args$action <- "get"
+  dots <- list(...)
+  if (length(dots)) diff_args <- c(diff_args, dots)
+  result <- suppressWarnings(suppressMessages(do.call(tidybulk::test_differential_abundance, diff_args)))
+
+  # tidybulk >= 2.0 returns a SummarizedExperiment with statistics in rowData;
+  # older releases returned a tidy data frame.
+  if (is(result, "SummarizedExperiment")) {
+    result <- as.data.frame(SummarizedExperiment::rowData(result))
+    result$feature <- rownames(result)
+  }
 
   if (!is.null(group_level)) {
     #  design_raw_info <- result %>%
     #    dplyr::select(last_col()) %>% colnames() %>%
     #    strsplit(.,split = '___') %>% unlist()
-    #  
+    #
     #  design_fix <- paste0('___',design_raw_info[2])
-    #  
+    #
     #  result %<>%
     #    dplyr::rename_with(~stringr::str_remove(., design_fix))
-    #  
+    #
     #  design_info <- design_raw_info[2]
     #  design_info %<>% gsub(estimate_group, "",.) %>% trimws() %>%
     #    gsub("-", " vs ",.)
     design_info <- paste0(origin_group_level[1],' vs ', origin_group_level[2])
     design_info_detail <- strsplit(design_info,'vs') %>% unlist() %>% trimws()
   }else {
-    
-    if (!is.factor(melt_EMPT[[estimate_group]])) {
-      melt_EMPT[[estimate_group]] <- factor(melt_EMPT[[estimate_group]])
+
+    if (!is.factor(group_values)) {
+      group_values <- factor(group_values)
     }
 
-    design_raw_info <- melt_EMPT[[estimate_group]] %>% unique() %>% sort()
+    design_raw_info <- group_values %>% unique() %>% sort()
 
     design_info <- paste0(design_raw_info[2],' vs ',design_raw_info[1])
     design_info_detail <- rev(design_raw_info)
   }
 
   search_log2FC <- c("logFC", "log2FoldChange")
-  search_pvalue <- c("p.Value", "Pvalue")
+  search_pvalue <- c("p.Value", "PValue", "Pvalue")
 
   result %<>%
     dplyr::rename_with(~ "log2FC", matches(paste(search_log2FC, collapse = "|"))) %>%
@@ -157,9 +182,9 @@
 #' @export
 #'
 #' @section Detaild about p.adjust:
-#' When using common transcriptome differential analysis methods, such as DESeq2, it’s important to note that the method internally filters genes before adjusting p-values. 
-#' As a result, the adjusted p-values may differ from those obtained using unfiltered data. 
-#' To ensure consistency, you can first apply gene filtering using the EMP_identify_assay function with the edgeR method. 
+#' When using common transcriptome differential analysis methods, such as DESeq2, it’s important to note that the method internally filters genes before adjusting p-values.
+#' As a result, the adjusted p-values may differ from those obtained using unfiltered data.
+#' To ensure consistency, you can first apply gene filtering using the EMP_identify_assay function with the edgeR method.
 #' This approach ensures that the adjusted p-values remain consistent.
 #'
 #' @examples
@@ -168,21 +193,21 @@
 #' MAE |>
 #'   EMP_decostand(experiment = 'taxonomy',method = 'relative',pseudocount=0.0001) |>
 #'   EMP_diff_analysis(method = 't.test',estimate_group = 'Group',p.adjust = 'fdr')
-#' 
+#'
 #' MAE |>
 #'   EMP_assay_extract(experiment = 'taxonomy') |>
 #'   EMP_diff_analysis(method = 'wilcox.test',estimate_group = 'Group',p.adjust = 'BH')
-#' 
+#'
 #' ## DESeq2
 #' MAE |>
 #'   EMP_decostand(experiment = 'geno_ec',method = 'integer') |>
-#'   EMP_diff_analysis(method='DESeq2',.formula = ~Group)  
-#' 
+#'   EMP_diff_analysis(method='DESeq2',.formula = ~Group)
+#'
 #' MAE |>
 #'   EMP_decostand(experiment = 'geno_ec',method = 'integer') |>
 #'   EMP_diff_analysis(method='DESeq2',.formula = ~Region+Group)  ## Eliminate the batch_effect in DESeq2
-#' 
-#' 
+#'
+#'
 #' ## edgeR_quasi_likelihood
 #' MAE |>
 #'   EMP_assay_extract(experiment = 'geno_ec') |>
@@ -190,9 +215,9 @@
 #'                     .formula = ~0+Group,group_level = c('Group_B','Group_A')) ## Set the comparison order.
 #'
 #' ## Paired test
-#' MAE |> 
+#' MAE |>
 #'   EMP_assay_extract('host_gene',
-#'                     pattern = 'A1BG',pattern_ref = 'feature') |> 
+#'                     pattern = 'A1BG',pattern_ref = 'feature') |>
 #'   EMP_filter(sub_group %in% c('A','B')) |>
 #'   EMP_diff_analysis(method = 't.test',
 #'                     paired_group='patient', # Set the paired group
@@ -278,7 +303,7 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
               dplyr::select(primary,!!estimate_group,everything())
       paired <- TRUE
   }
-  
+
   .get.assay_name.EMPT(EMPT) -> assay_name
 
   if (is.null(feature_name)) {
@@ -292,7 +317,7 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
     assay_data %<>% dplyr::filter(!!dplyr::sym(estimate_group) %in% subgroup)
   }
 
-  
+
   # When feature num is not many, core = 1 will be more efficient
   if (core == 'auto' & length(feature_name) < 2000) {
     core <- 1
@@ -374,7 +399,7 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
     data <- data[data[[factorNames]] %in% subgroup, ,drop=FALSE]
     data[[factorNames]] <- factor(data[[factorNames]], levels=subgroup)
   }
-  
+
   if(length(subgroup) != 2){
     stop('Paired test only support 2 groups!')
   }
@@ -394,7 +419,7 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
       var2 <- data |> dplyr::filter(!!rlang::sym(factorNames) == subgroup[2]) |> dplyr::pull(x)
       if (length(var1) != length(var1)) {
        stop("Paired test requires equal-length pairs for feature!")
-      }      
+      }
       suppressWarnings(do.call(fun,list(var1,var2,paired=TRUE,...)))
     }
     ## set the core
@@ -409,7 +434,7 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
       var2 <- data |> dplyr::filter(!!rlang::sym(factorNames) == subgroup[2]) |> dplyr::pull(x)
       if (length(var1) != length(var1)) {
        stop("Paired test requires equal-length pairs for feature!")
-      }         
+      }
       suppressWarnings(do.call(fun,list(var1,var2,paired=TRUE,...)))
     }
     ## set the core
@@ -437,12 +462,12 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
      data <- data[data[[factorNames]] %in% subgroup, ,drop=FALSE]
      data[[factorNames]] <- factor(data[[factorNames]], levels=subgroup)
    }
- 
+
    if (core==1) {
      result <- lapply(feature,
             function(x){
               tmpformula <- rlang::new_formula(as.name(x), as.name(factorNames))
-              suppressWarnings(do.call(fun,list(tmpformula,data=data,...)))}) 
+              suppressWarnings(do.call(fun,list(tmpformula,data=data,...)))})
    }else if (core== 'auto'){
      myfun <- function(x){
        tmpformula <- rlang::new_formula(as.name(x), as.name(factorNames))
@@ -525,7 +550,7 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
   if (!requireNamespace("dplyr", quietly = TRUE)) {
     stop("Please install package 'dplyr' to use this function")
   }
-  
+
   # Validate input columns
   if (!group_col %in% names(data)) {
     stop("Group column '", group_col, "' not found in data")
@@ -533,7 +558,7 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
   if (!patient_col %in% names(data)) {
     stop("Patient column '", patient_col, "' not found in data")
   }
-  
+
   # Calculate group statistics
   group_stats <- data %>%
     dplyr::group_by(!!rlang::sym(group_col)) %>%
@@ -546,11 +571,11 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
       Count = dplyr::n(),
       .groups = "drop"
     )
-  
+
   # Check consistency
   all_patients_equal <- dplyr::n_distinct(group_stats$Patients) == 1
   all_counts_equal <- dplyr::n_distinct(group_stats$Count) == 1
-  
+
   # Generate result message
   result_message <- if (all_patients_equal) {
     "All groups have identical patient lists and sizes"
@@ -559,7 +584,7 @@ EMP_diff_analysis <- function(obj,experiment,.formula,
   } else {
     paste0("Both paired group and group sizes differ!")
   }
-  
+
   # Return comprehensive results
   list(
     group_stats = as.data.frame(group_stats),

@@ -1,0 +1,15 @@
+{
+  "base_url": "https://openrouter.ai/api/v1",
+  "api_key": "YOUR_OPENROUTER_API_KEY",
+  "timeout": 90,
+  "fusion_model": "deepseek/deepseek-v4-pro",
+  "fusion_max_models": 5,
+  "models": [
+    "deepseek/deepseek-v4-pro",
+    "deepseek/deepseek-v4-flash",
+    "moonshotai/kimi-k2.7-code",
+    "qwen/qwen3.7-max",
+    "z-ai/glm-5.2"
+  ],
+  "_comment": "Run: python3 webapp/scripts/probe_openrouter_models.py --direct  (writes webapp/config/openrouter_verified_models.json)"
+}

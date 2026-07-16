@@ -54,8 +54,9 @@ cran_pkgs <- c(
 )
 
 bioc_pkgs <- c(
-  "Biobase", "S4Vectors", "SummarizedExperiment", "MultiAssayExperiment",
-  "DESeq2", "edgeR", "limma", "WGCNA", "clusterProfiler", "enrichplot",
+  "Biobase", "biomformat", "S4Vectors", "SummarizedExperiment",
+  "MultiAssayExperiment", "DESeq2", "DOSE", "edgeR", "ggtree", "impute",
+  "limma", "qvalue", "tidybulk", "WGCNA", "clusterProfiler", "enrichplot",
   "org.Hs.eg.db", "org.Mm.eg.db", "BiocManager"
 )
 
@@ -94,7 +95,7 @@ safe({
   local_desc <- file.path(emp_root, "DESCRIPTION")
   if (file.exists(local_desc)) {
     msg("[LOCAL] Installing EasyMultiProfiler from repo: %s", emp_root)
-    remotes::install_local(emp_root, upgrade = "never", dependencies = TRUE, force = FALSE)
+    remotes::install_local(emp_root, upgrade = "never", dependencies = TRUE, force = TRUE)
   } else if (!requireNamespace("EasyMultiProfiler", quietly = TRUE)) {
     msg("[GITHUB] Installing EasyMultiProfiler from liubingdong/EasyMultiProfiler")
     remotes::install_github("liubingdong/EasyMultiProfiler", upgrade = "never", dependencies = TRUE)

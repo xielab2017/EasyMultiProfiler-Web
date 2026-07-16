@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">EasyMultiProfiler Web V6.0 technical mode diagram</title>
+  <desc id="desc">System architecture diagram showing omics inputs, browser UI, R Plumber API, session engine, workflow modules, AI copilot, and export outputs.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="0.48" stop-color="#10243a"/>
+      <stop offset="1" stop-color="#0b161f"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" x2="1">
+      <stop offset="0" stop-color="#3ee7ff"/>
+      <stop offset="1" stop-color="#47f5b2"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" x2="1">
+      <stop offset="0" stop-color="#8da2ff"/>
+      <stop offset="1" stop-color="#f08cff"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" x2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="1" stop-color="#ff9d6c"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowCyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#48e7d1"/>
+    </marker>
+    <marker id="arrowViolet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#bda2ff"/>
+    </marker>
+    <style>
+      .label{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#e8f7ff;font-weight:700;letter-spacing:0}
+      .small{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#a9c3d6;font-size:18px;letter-spacing:0}
+      .tiny{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#b7ccda;font-size:15px;letter-spacing:0}
+      .box{fill:rgba(9,25,41,.78);stroke:rgba(151,219,255,.35);stroke-width:1.4;rx:10}
+      .box2{fill:rgba(20,34,55,.82);stroke:rgba(199,162,255,.42);stroke-width:1.4;rx:10}
+      .box3{fill:rgba(36,32,28,.82);stroke:rgba(255,211,130,.45);stroke-width:1.4;rx:10}
+      .line{fill:none;stroke:url(#cyan);stroke-width:3;marker-end:url(#arrowCyan);filter:url(#glow)}
+      .line2{fill:none;stroke:url(#violet);stroke-width:2.5;marker-end:url(#arrowViolet);filter:url(#glow)}
+      .dash{stroke-dasharray:8 8}
+    </style>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <g opacity=".22">
+    <path d="M0 112 H1280 M0 224 H1280 M0 336 H1280 M0 448 H1280 M0 560 H1280" stroke="#7ec7ff" stroke-width="1"/>
+    <path d="M128 0 V720 M256 0 V720 M384 0 V720 M512 0 V720 M640 0 V720 M768 0 V720 M896 0 V720 M1024 0 V720 M1152 0 V720" stroke="#7ec7ff" stroke-width="1"/>
+  </g>
+  <circle cx="640" cy="360" r="295" fill="none" stroke="#45e6d0" stroke-opacity=".16" stroke-width="2"/>
+  <circle cx="640" cy="360" r="208" fill="none" stroke="#c59cff" stroke-opacity=".15" stroke-width="2"/>
+
+  <text x="64" y="72" class="label" font-size="34">EasyMultiProfiler Web V6.0</text>
+  <text x="64" y="105" class="small">Browser-first multi-omics analysis system with R workflows, session memory, teaching mode, and AI copilot.</text>
+  <rect x="1056" y="48" width="132" height="42" rx="21" fill="rgba(72,231,209,.14)" stroke="#48e7d1"/>
+  <text x="1085" y="76" class="label" font-size="18">V6.0 Mode</text>
+
+  <g>
+    <text x="70" y="165" class="label" font-size="22">Omics Inputs</text>
+    <rect class="box" x="56" y="190" width="212" height="56"/>
+    <text x="82" y="225" class="label" font-size="18">16S / Microbiome</text>
+    <rect class="box" x="56" y="262" width="212" height="56"/>
+    <text x="82" y="297" class="label" font-size="18">RNA-seq / GSEA</text>
+    <rect class="box" x="56" y="334" width="212" height="56"/>
+    <text x="82" y="369" class="label" font-size="18">Metabolomics</text>
+    <rect class="box" x="56" y="406" width="212" height="56"/>
+    <text x="82" y="441" class="label" font-size="18">Metagenomics</text>
+    <rect class="box" x="56" y="478" width="212" height="56"/>
+    <text x="82" y="513" class="label" font-size="18">ChIP-seq Peaks</text>
+    <text x="68" y="570" class="tiny">CSV, TSV, BIOM, BAM, metadata, demo cases</text>
+  </g>
+
+  <g>
+    <rect class="box2" x="345" y="168" width="250" height="384"/>
+    <text x="382" y="210" class="label" font-size="24">Browser UI</text>
+    <rect x="374" y="238" width="192" height="44" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
+    <text x="396" y="266" class="small">Course + Guide</text>
+    <rect x="374" y="298" width="192" height="44" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
+    <text x="399" y="326" class="small">Data Inspector</text>
+    <rect x="374" y="358" width="192" height="44" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
+    <text x="395" y="386" class="small">Run All Engine</text>
+    <rect x="374" y="418" width="192" height="44" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
+    <text x="398" y="446" class="small">Code Lab LLM</text>
+    <rect x="374" y="478" width="192" height="44" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
+    <text x="400" y="506" class="small">Visualization</text>
+  </g>
+
+  <g>
+    <rect x="670" y="154" width="286" height="412" rx="14" fill="rgba(8,22,34,.86)" stroke="#48e7d1" stroke-width="2" filter="url(#glow)"/>
+    <text x="706" y="202" class="label" font-size="25">R Plumber API</text>
+    <text x="706" y="230" class="tiny">REST routes + session-safe execution</text>
+
+    <rect class="box" x="704" y="260" width="218" height="50"/>
+    <text x="730" y="292" class="label" font-size="17">Session MAE Store</text>
+    <rect class="box" x="704" y="328" width="218" height="50"/>
+    <text x="730" y="360" class="label" font-size="17">Workflow Registry</text>
+    <rect class="box" x="704" y="396" width="218" height="50"/>
+    <text x="730" y="428" class="label" font-size="17">EMP R Analysis Core</text>
+    <rect class="box" x="704" y="464" width="218" height="50"/>
+    <text x="730" y="496" class="label" font-size="17">Plot Theme + Export</text>
+  </g>
+
+  <g>
+    <rect class="box3" x="1008" y="180" width="214" height="112"/>
+    <text x="1040" y="220" class="label" font-size="21">AI Copilot</text>
+    <text x="1030" y="252" class="tiny">OpenRouter / local rules</text>
+    <text x="1030" y="274" class="tiny">Prompt templates + repair</text>
+
+    <rect class="box" x="1008" y="340" width="214" height="58"/>
+    <text x="1043" y="375" class="label" font-size="18">Tables + QC</text>
+    <rect class="box" x="1008" y="424" width="214" height="58"/>
+    <text x="1039" y="459" class="label" font-size="18">Plots + PDF</text>
+    <rect class="box" x="1008" y="508" width="214" height="58"/>
+    <text x="1034" y="543" class="label" font-size="18">RDS + Reports</text>
+  </g>
+
+  <path class="line" d="M268 362 C300 362 310 360 345 360"/>
+  <path class="line" d="M595 360 C624 360 642 360 670 360"/>
+  <path class="line" d="M956 366 C984 366 989 366 1008 366"/>
+  <path class="line" d="M956 454 C988 454 990 454 1008 454"/>
+  <path class="line" d="M956 526 C988 526 990 526 1008 526"/>
+  <path class="line2 dash" d="M958 236 C980 226 990 226 1008 230"/>
+  <path class="line2 dash" d="M1114 292 C1114 314 1044 318 922 310"/>
+
+  <g>
+    <rect x="370" y="604" width="546" height="50" rx="25" fill="rgba(72,231,209,.12)" stroke="rgba(72,231,209,.5)"/>
+    <text x="405" y="635" class="small">Import -> Prepare -> Analyze -> Clinical -> Run All -> Visualize -> Export</text>
+  </g>
+</svg>

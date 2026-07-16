@@ -222,24 +222,26 @@
       p <- p + ggplot2::labs(title = y_lab, x = y_lab, y = "Group")
     }
     ax_lbl <- .viz_group_label_axis(levels(df$group), plot_width_in = plot_width)
+    txt_x <- emp_viz_axis_text_size("x", ax_lbl$size)
+    txt_y <- emp_viz_axis_text_size("y", ax_lbl$size)
     p <- p + emp_pub_theme() +
       ggplot2::theme(
         legend.position = "none",
         axis.text.x = if (layout == "group_x") {
           ggplot2::element_text(
             angle = ax_lbl$angle, hjust = ax_lbl$hjust, vjust = ax_lbl$vjust,
-            size = ax_lbl$size
+            size = txt_x
           )
         } else {
-          ggplot2::element_text()
+          ggplot2::element_text(size = txt_x)
         },
         axis.text.y = if (layout == "value_x") {
           ggplot2::element_text(
             angle = ax_lbl$angle, hjust = ax_lbl$hjust, vjust = ax_lbl$vjust,
-            size = ax_lbl$size
+            size = txt_y
           )
         } else {
-          ggplot2::element_text()
+          ggplot2::element_text(size = txt_y)
         },
         plot.margin = ggplot2::margin(
           t = 5, r = 8,
@@ -405,7 +407,7 @@ make_barplot <- function(session_id, experiment, group = NULL, feature = NULL,
       ggplot2::labs(title = feature, x = NULL, y = "Abundance") +
       emp_pub_theme() +
       ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
-    return(plot_to_base64(p, width = width, height = height))
+    return(viz_emit_ggplot(p, session_id, experiment, "barplot", width, height))
   }
 
   top_n <- max(3L, as.integer(top_n))
@@ -463,7 +465,7 @@ make_barplot <- function(session_id, experiment, group = NULL, feature = NULL,
                     x = NULL, y = "Mean abundance")
   }
   p <- p + emp_pub_theme()
-  plot_to_base64(p, width = width, height = height)
+  viz_emit_ggplot(p, session_id, experiment, "barplot", width, height)
 }
 
 # -----------------------------------------------------------------------------
@@ -510,7 +512,7 @@ make_boxplot <- function(session_id, experiment, group = NULL, feature = NULL,
   ns <- table(df$group)
   cap <- paste(paste0(names(ns), "=n", as.integer(ns)), collapse = ", ")
   p <- emp_caption(p, paste("Wilcoxon rank-sum;", cap))
-  plot_to_base64(p, width = width, height = height)
+  viz_emit_ggplot(p, session_id, experiment, "boxplot", width, height)
 }
 
 # -----------------------------------------------------------------------------
@@ -775,23 +777,26 @@ make_heatmap <- function(session_id, experiment, group = NULL,
     paste0("Top ", nrow(ad_s), " variable features (z-scored)")
   }
 
+  pdf_path <- viz_session_pdf_path(session_id, experiment, "heatmap")
   out <- .viz_render_pheatmap(
     ad_s, grp, title = heat_title,
     cluster_rows = cluster_rows, cluster_cols = cluster_cols,
     show_rownames = show_rn, font_size = font_size,
     color_panel = color_panel, width = width, height = height,
-    ann_name = pick$name
+    ann_name = pick$name, pdf_path = pdf_path
   )
+  pdf_meta <- viz_pdf_meta(out$pdf %||% NULL)
 
   if (use_custom) {
-    return(list(plot     = out$png,
-                 matched  = feat_info$matched,
-                 missing  = feat_info$missing,
-                 n_total  = length(feat_info$matched) + length(feat_info$missing),
-                 n_used   = length(feat_info$matched),
-                 n_missing= length(feat_info$missing)))
+    return(c(list(plot     = out$png,
+                  matched  = feat_info$matched,
+                  missing  = feat_info$missing,
+                  n_total  = length(feat_info$matched) + length(feat_info$missing),
+                  n_used   = length(feat_info$matched),
+                  n_missing= length(feat_info$missing)),
+             pdf_meta))
   }
-  out$png
+  c(list(plot = out$png), pdf_meta)
 }
 
 # -----------------------------------------------------------------------------
@@ -947,7 +952,7 @@ make_volcano <- function(session_id, experiment, fc_cutoff = 1.0, p_cutoff = 0.0
     }
   }
 
-  plot_to_base64(p, width = width, height = height)
+  viz_emit_ggplot(p, session_id, experiment, "volcano", width, height)
 }
 
 # -----------------------------------------------------------------------------
@@ -1231,17 +1236,27 @@ make_scatter <- function(session_id, experiment, group = NULL,
     width = width, height = height, proj_width = proj_width
   )
 
+  pdf_main <- viz_save_session_pdf(out$main, session_id, experiment,
+                                   "scatter_main", width, height)
   result <- list(
     plot = plot_to_base64(out$main, width = width, height = height),
     plot_main = plot_to_base64(out$main, width = width, height = height),
-    stats = out$stats
+    stats = out$stats,
+    pdf_main_name = if (!is.null(pdf_main)) basename(pdf_main) else ""
   )
   if (!is.null(out$proj_x)) {
+    pdf_px <- viz_save_session_pdf(out$proj_x, session_id, experiment,
+                                   "scatter_proj_x", proj_width, proj_height)
     result$plot_proj_x <- plot_to_base64(out$proj_x, width = proj_width, height = proj_height)
+    result$pdf_proj_x_name <- if (!is.null(pdf_px)) basename(pdf_px) else ""
   }
   if (!is.null(out$proj_y)) {
+    pdf_py <- viz_save_session_pdf(out$proj_y, session_id, experiment,
+                                   "scatter_proj_y", proj_width, proj_height)
     result$plot_proj_y <- plot_to_base64(out$proj_y, width = proj_width, height = proj_height)
+    result$pdf_proj_y_name <- if (!is.null(pdf_py)) basename(pdf_py) else ""
   }
+  result$pdf_available <- nzchar(result$pdf_main_name %||% "")
   result
 }
 
@@ -1305,7 +1320,7 @@ make_structure <- function(session_id, experiment, group = NULL,
     p <- p + ggplot2::facet_grid(~ group, scales = "free_x", space = "free_x") +
       ggplot2::theme(strip.background = ggplot2::element_rect(fill = "grey90"))
   }
-  plot_to_base64(p, width = width, height = height)
+  viz_emit_ggplot(p, session_id, experiment, "structure", width, height)
 }
 
 # -----------------------------------------------------------------------------
@@ -1405,5 +1420,5 @@ make_alpha_plot <- function(session_id, experiment, group = NULL,
   ns <- table(df$group)
   cap <- paste(paste0(names(ns), "=n", as.integer(ns)), collapse = ", ")
   p <- emp_caption(p, paste("Wilcoxon rank-sum;", cap))
-  plot_to_base64(p, width = width, height = height)
+  viz_emit_ggplot(p, session_id, experiment, "alpha", width, height)
 }

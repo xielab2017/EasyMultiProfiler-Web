@@ -115,7 +115,8 @@ m16s_prepare_taxonomy <- function(empt, tax_sep = ";", collapse_level = "Genus",
 
 m16s_make_sankey <- function(empt, tax_sep = ";", from_level = "Phylum", to_level = "Genus",
                              top_n = 25L, width = 11, height = 7,
-                             color_panel = NULL, custom_colors = NULL) {
+                             color_panel = NULL, custom_colors = NULL,
+                             session_id = NULL, experiment = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
   from_idx <- m16s_tax_index(from_level)
@@ -229,14 +230,21 @@ m16s_make_sankey <- function(empt, tax_sep = ";", from_level = "Phylum", to_leve
                    axis.line = ggplot2::element_blank(),
                    legend.position = "none")
 
-  list(plot = plot_to_base64(p, width = width, height = height),
+  result <- list(plot = plot_to_base64(p, width = width, height = height),
        edges = nrow(edges),
        from_nodes = length(from_nodes),
        to_nodes = length(to_nodes))
+  if (!is.null(session_id) && nzchar(session_id) &&
+      !is.null(experiment) && nzchar(experiment)) {
+    pdf <- viz_save_session_pdf(p, session_id, experiment, "sankey", width, height)
+    result <- c(result, viz_pdf_meta(pdf))
+  }
+  result
 }
 
 m16s_make_network <- function(empt, method = "spearman", cutoff = 0.6,
-                              top_n = 40L, width = 9, height = 8) {
+                              top_n = 40L, width = 9, height = 8,
+                              session_id = NULL, experiment = NULL) {
   method <- tolower(method)
   if (!method %in% c("spearman", "pearson")) stop("method must be 'spearman' or 'pearson'.")
   if (cutoff <= 0 || cutoff > 1) stop("cutoff must be in (0, 1].")
@@ -339,9 +347,15 @@ m16s_make_network <- function(empt, method = "spearman", cutoff = 0.6,
                                  nudge_y = 0.06, size = 2.6)
   }
 
-  list(plot = plot_to_base64(p, width = width, height = height),
+  result <- list(plot = plot_to_base64(p, width = width, height = height),
        nodes = nrow(nodes),
        edges = nrow(edges),
        method = method,
        cutoff = cutoff)
+  if (!is.null(session_id) && nzchar(session_id) &&
+      !is.null(experiment) && nzchar(experiment)) {
+    pdf <- viz_save_session_pdf(p, session_id, experiment, "network", width, height)
+    result <- c(result, viz_pdf_meta(pdf))
+  }
+  result
 }

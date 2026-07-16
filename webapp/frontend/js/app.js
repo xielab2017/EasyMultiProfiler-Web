@@ -3,7 +3,7 @@
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
 // this value in lock-step with the one used in index.html (app.js ?v=).
-import * as API from "./api.js?v=2026-06-21-v5.0.2";
+import * as API from "./api.js?v=2026-07-16-multi-demo-v2";
 import {
   initCodeLab,
   notifyCodeLabNavigate,
@@ -12,17 +12,17 @@ import {
   refreshCodeLabContext,
   openCodeLabPanel,
   applyCopilotAction,
-} from "./code_lab.js?v=2026-06-21-v5.0.2";
+} from "./code_lab.js?v=2026-07-16-multi-demo-v2";
 import {
   initTeaching,
   onTeachingPage,
   setupTeachingTraceHooks,
-} from "./teaching.js?v=2026-06-21-v5.0.2";
-import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=2026-06-21-v5.0.2";
-import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-06-21-v5.0.2";
-import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=2026-06-21-v5.0.2";
-import { initFontScale } from "./font_scale.js?v=2026-06-21-v5.0.2";
-import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-06-21-v5.0.2";
+} from "./teaching.js?v=2026-07-16-multi-demo-v2";
+import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=2026-07-16-multi-demo-v2";
+import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-07-16-multi-demo-v2";
+import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=2026-07-16-multi-demo-v2";
+import { initFontScale } from "./font_scale.js?v=2026-07-16-multi-demo-v2";
+import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -31,7 +31,10 @@ window._emp = {
   standaloneClinical: null, // {columns:[], orientation:"..."} for clinical-only uploads
   clinicalResolvedSource: "experiment",
   coldataCols: [],      // [{name, n_unique, values}]
-  features: [],         // string[]
+  features: [],         // string[] (dropdown subset; may be truncated)
+  featuresN: 0,         // total feature count from server
+  expCache: {},         // per-experiment {coldataCols, features, featuresN, fetchedAt}
+  _groupRefreshInflight: null,
   workflows: [],        // [{id,label,description,n_stages}]
   inspector: {
     assayOffset: 1,
@@ -291,23 +294,33 @@ export function showResultTable(containerId, jsonStr, maxRows = 500, options = {
       }).join("")}</tr>`;
     }).join("");
     const tbody = `<tbody>${bodyRows}</tbody>`;
-    const csvRows = [cols.join(",")].concat(
-      rows.map((r) => cols.map((c) => {
-        const v = r[c] ?? "";
-        const s = String(v).replaceAll('"', '""');
-        return /[",\n]/.test(s) ? `"${s}"` : s;
-      }).join(","))
-    );
-    const csvBlob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const csvUrl = URL.createObjectURL(csvBlob);
+    const downloadName = options.downloadName || `${containerId}.csv`;
     container.innerHTML = `
       <div class="plot-toolbar">
-        <a class="btn btn-outline" download="${options.downloadName || `${containerId}.csv`}" href="${csvUrl}">
+        <button type="button" class="btn btn-outline emp-csv-dl" data-dl-name="${escapeHtml(downloadName)}">
           <i data-lucide="download"></i> Download CSV
-        </a>
+        </button>
       </div>
       <table class="${options.tableClass || ""}">${thead}${tbody}</table>
     `;
+    const dlBtn = container.querySelector(".emp-csv-dl");
+    if (dlBtn) {
+      dlBtn.addEventListener("click", () => {
+        const csvRows = [cols.join(",")].concat(
+          rows.map((r) => cols.map((c) => {
+            const v = r[c] ?? "";
+            const s = String(v).replaceAll('"', '""');
+            return /[",\n]/.test(s) ? `"${s}"` : s;
+          }).join(","))
+        );
+        const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = downloadName;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      });
+    }
     if (rows.length > maxRows) {
       container.insertAdjacentHTML("beforeend",
         `<p style="padding:8px 12px;font-size:12px;color:#64748b">Showing first ${maxRows} of ${rows.length} rows</p>`);
@@ -326,10 +339,27 @@ export function showResultTable(containerId, jsonStr, maxRows = 500, options = {
   }
 }
 
-export function showPlot(containerId, base64png) {
+export function plotPdfDownloadUrl(pdfName) {
+  if (!pdfName) return null;
+  const sid = localStorage.getItem("emp_session_id");
+  const exp = window._emp?.currentExp;
+  if (!sid || !exp) return null;
+  return `${API.apiBase()}/download/plot/${sid}/${encodeURIComponent(exp)}/${encodeURIComponent(pdfName)}`;
+}
+
+function plotDownloadOptions(res = {}) {
+  if (res.pdf_available && res.pdf_name) {
+    return { pdfUrl: plotPdfDownloadUrl(res.pdf_name), pdfName: res.pdf_name };
+  }
+  return {};
+}
+
+export function showPlot(containerId, base64png, options = {}) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const pngSrc = `data:image/png;base64,${base64png}`;
+  const pdfUrl = options.pdfUrl || (options.pdfName ? plotPdfDownloadUrl(options.pdfName) : null);
+  const downloadStem = options.downloadStem || "plot";
   const mkCanvas = () => new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -349,7 +379,6 @@ export function showPlot(containerId, base64png) {
       e.preventDefault();
       const c = await mkCanvas();
       let url = c.toDataURL(mime);
-      // Some browsers don't support TIFF export; keep button and fallback to PNG bytes.
       if (mime === "image/tiff" && url.startsWith("data:image/png")) {
         url = c.toDataURL("image/png");
       }
@@ -359,56 +388,37 @@ export function showPlot(containerId, base64png) {
       a.click();
     });
   };
+  const pdfBtnHtml = pdfUrl
+    ? `<a class="btn btn-outline" id="${containerId}-dl-pdf" href="${pdfUrl}" download="${downloadStem}.pdf" title="Editable vector PDF (ggplot)"><i data-lucide="download"></i> PDF</a>`
+    : "";
   container.innerHTML = `
     <div class="plot-toolbar">
-      <a class="btn btn-outline" id="${containerId}-dl-png" href="${pngSrc}" download="plot.png"><i data-lucide="download"></i> PNG</a>
+      <a class="btn btn-outline" id="${containerId}-dl-png" href="${pngSrc}" download="${downloadStem}.png"><i data-lucide="download"></i> PNG</a>
       <a class="btn btn-outline" id="${containerId}-dl-jpg" href="#"><i data-lucide="download"></i> JPEG</a>
       <a class="btn btn-outline" id="${containerId}-dl-tiff" href="#"><i data-lucide="download"></i> TIFF</a>
-      <a class="btn btn-outline" id="${containerId}-dl-pdf" href="#"><i data-lucide="download"></i> PDF</a>
+      ${pdfBtnHtml}
     </div>
     <img src="${pngSrc}" alt="Plot">
   `;
   container.classList.remove("hidden");
-  addDownloadHandler(`${containerId}-dl-jpg`, "image/jpeg", "plot.jpg");
-  addDownloadHandler(`${containerId}-dl-tiff`, "image/tiff", "plot.tiff");
-  const pdfBtn = document.getElementById(`${containerId}-dl-pdf`);
-  if (pdfBtn) {
-    pdfBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      const c = await mkCanvas();
-      const jpgData = c.toDataURL("image/jpeg", 0.95);
-      if (window.jspdf?.jsPDF) {
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({
-          orientation: c.width >= c.height ? "landscape" : "portrait",
-          unit: "pt",
-          format: [c.width, c.height],
-        });
-        pdf.addImage(jpgData, "JPEG", 0, 0, c.width, c.height);
-        pdf.save("plot.pdf");
-      } else {
-        // Fallback: open print dialog if jsPDF is unavailable.
-        const w = window.open("", "_blank");
-        if (w) {
-          w.document.write(`<img src="${jpgData}" style="max-width:100%;">`);
-          w.document.close();
-          w.print();
-        }
-      }
-    });
-  }
-  // Re-initialise icons inside the new element
+  addDownloadHandler(`${containerId}-dl-jpg`, "image/jpeg", `${downloadStem}.jpg`);
+  addDownloadHandler(`${containerId}-dl-tiff`, "image/tiff", `${downloadStem}.tiff`);
   if (window.lucide) lucide.createIcons({ nodes: [container] });
   attachAiCopilot(container, { ...inferAiContext(containerId), kind: "plot" });
 }
 
-function buildPlotPanelHtml(panelId, base64png, downloadStem) {
+function buildPlotPanelHtml(panelId, base64png, downloadStem, pdfName = null) {
   const pngSrc = `data:image/png;base64,${base64png}`;
+  const pdfUrl = pdfName ? plotPdfDownloadUrl(pdfName) : null;
+  const pdfBtn = pdfUrl
+    ? `<a class="btn btn-outline" href="${pdfUrl}" download="${downloadStem}.pdf" title="Editable vector PDF (ggplot)"><i data-lucide="download"></i> PDF</a>`
+    : "";
   return `
     <div class="ord-plot-panel" id="${panelId}-wrap">
       <div class="plot-toolbar">
         <a class="btn btn-outline" id="${panelId}-dl-png" href="${pngSrc}" download="${downloadStem}.png"><i data-lucide="download"></i> PNG</a>
         <a class="btn btn-outline" id="${panelId}-dl-jpg" href="#"><i data-lucide="download"></i> JPEG</a>
+        ${pdfBtn}
       </div>
       <img src="${pngSrc}" alt="${downloadStem}">
     </div>`;
@@ -461,9 +471,9 @@ export function showOrdinationResult(containerId, res) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const panels = [
-    { id: `${containerId}-main`, b64: res.plot_main || res.plot, label: "Core ordination", stem: "ordination_core" },
-    { id: `${containerId}-proj-x`, b64: res.plot_proj_x, label: res.stats?.axis_x || "Axis X projection", stem: "ordination_proj_axis_x" },
-    { id: `${containerId}-proj-y`, b64: res.plot_proj_y, label: res.stats?.axis_y || "Axis Y projection", stem: "ordination_proj_axis_y" },
+    { id: `${containerId}-main`, b64: res.plot_main || res.plot, label: "Core ordination", stem: "ordination_core", pdfName: res.pdf_main_name },
+    { id: `${containerId}-proj-x`, b64: res.plot_proj_x, label: res.stats?.axis_x || "Axis X projection", stem: "ordination_proj_axis_x", pdfName: res.pdf_proj_x_name },
+    { id: `${containerId}-proj-y`, b64: res.plot_proj_y, label: res.stats?.axis_y || "Axis Y projection", stem: "ordination_proj_axis_y", pdfName: res.pdf_proj_y_name },
   ].filter(p => p.b64);
 
   let html = "";
@@ -472,7 +482,7 @@ export function showOrdinationResult(containerId, res) {
     html += `<div class="ord-stats-card">${statsHtml}</div>`;
   }
   for (const p of panels) {
-    html += `<section class="ord-section"><h4 class="ord-section-title">${escapeHtml(p.label)}</h4>${buildPlotPanelHtml(p.id, p.b64, p.stem)}</section>`;
+    html += `<section class="ord-section"><h4 class="ord-section-title">${escapeHtml(p.label)}</h4>${buildPlotPanelHtml(p.id, p.b64, p.stem, p.pdfName)}</section>`;
   }
   container.innerHTML = html || `<p style="padding:12px">No plot returned.</p>`;
   container.classList.remove("hidden");
@@ -527,12 +537,15 @@ function currentOmicsPreset() {
 // Infer {analysis_type, omics} from a result/plot container id like
 // "alpha-result", "tx-viz-volcano-out", "mgx-diff-result".
 function inferAiContext(domId) {
-  let id = String(domId || "").replace(/-(result|out|table|output)$/i, "");
+  const rawId = String(domId || "");
+  let id = rawId.replace(/-(result|out|table|output)$/i, "");
   const omicsPrefix = { tx: "transcriptomics", mgx: "metagenomics", mbx: "metabolomics", m16s: "microbiome_16s", chip: "chipseq" };
   let omics = currentOmicsPreset();
   const pfx = id.match(/^(tx|mgx|mbx|m16s)-/);
   if (pfx) { omics = omicsPrefix[pfx[1]] || omics; id = id.replace(/^(tx|mgx|mbx|m16s)-/, ""); }
   id = id.replace(/^(viz|analysis|ana)-/, "").replace(/-(plot|viz|out)$/, "");
+  const isDegHeatmap = /deg[-_]?heat/i.test(id);
+  if (isDegHeatmap) id = "heatmap";
   const map = {
     alpha: "alpha", "alpha-plot": "alpha", dim: "dimension", scatter: "scatter",
     cor: "correlation", cluster: "cluster", marker: "marker", enrich: "enrichment",
@@ -541,7 +554,29 @@ function inferAiContext(domId) {
     analysis: "differential",
   };
   const analysis_type = map[id] || id || "analysis";
-  return { analysis_type, omics, experiment: window._emp?.currentExp || null };
+  const params = {};
+  if (isDegHeatmap) {
+    params.heatmap_mode = "differential";
+    const fc = document.getElementById("deg-fc")?.value;
+    const p = document.getElementById("deg-p")?.value;
+    if (fc) params.fc_cutoff = fc;
+    if (p) params.p_cutoff = p;
+  }
+  const groupEl = document.getElementById("heat-group") || document.getElementById("scat-group") || document.getElementById("m16s-group");
+  const group = groupEl?.value || null;
+  const groups = [];
+  if (group && window._emp?.coldataCols) {
+    const col = window._emp.coldataCols.find((c) => c.name === group);
+    if (col?.values?.length) groups.push(...col.values);
+  }
+  return {
+    analysis_type,
+    omics,
+    experiment: window._emp?.currentExp || null,
+    group,
+    groups: groups.length ? groups : undefined,
+    params: Object.keys(params).length ? params : undefined,
+  };
 }
 
 // Derive quick stats from a differential-style table to enrich interpretation.
@@ -833,7 +868,9 @@ function navigateTo(page) {
   // Refresh dynamic content on navigation
   if (page === "summary") loadSummary();
   if (page === "inspector") loadInspector();
-  if (page === "analysis" || page === "visualization" || page === "preparation") refreshGroupSelectors();
+  if (page === "analysis" || page === "visualization" || page === "preparation") {
+    ensureGroupSelectors({ background: true });
+  }
   if (page === "preparation" && window._emp.currentExp) refreshPrepareSnapshots();
   if (page === "clinical") refreshClinicalVars();
   if (page === "course" || page === "prompts") onTeachingPage(page);
@@ -909,6 +946,24 @@ function bindUploadDropZone(zoneId, inputId, filenameId, onFile) {
   });
 }
 
+function demoLabel(d) {
+  if (!d) return "";
+  if (getLocale() === "zh") return d.label_zh || d.label_en || d.label || d.id;
+  return d.label_en || d.label || d.id;
+}
+
+function demoIcon(omics) {
+  switch ((omics || "").toLowerCase()) {
+    case "transcriptomics": return "🧬";
+    case "microbiome_16s":  return "🧫";
+    case "metagenomics":   return "🦠";
+    case "metabolomics":   return "⚗️";
+    case "clinical":       return "🩺";
+    case "chipseq":        return "🧶";
+    default:               return "📊";
+  }
+}
+
 async function loadDemoDatasetButtons() {
   const root = document.getElementById("demo-dataset-buttons");
   if (!root) return;
@@ -919,15 +974,72 @@ async function loadDemoDatasetButtons() {
       root.innerHTML = `<span class="hint">${t("demo.unavailable")}</span>`;
       return;
     }
-    root.innerHTML = available.map(d => `
-      <button type="button" class="btn btn-outline demo-dataset-btn" data-demo-id="${escapeHtml(d.id)}" data-omics="${escapeHtml(d.omics || "")}">
-        ${escapeHtml(d.label)}
+    const singleBtn = available.map(d => `
+      <button type="button" class="btn btn-outline demo-dataset-btn"
+              data-demo-id="${escapeHtml(d.id)}"
+              data-omics="${escapeHtml(d.omics || "")}">
+        <span class="demo-icon">${demoIcon(d.omics)}</span>
+        <span class="demo-label">${escapeHtml(demoLabel(d))}</span>
       </button>`).join("");
+    root.innerHTML = `
+      <div class="demo-row-wrap">
+        <div class="demo-row demo-row-single">${singleBtn}</div>
+        <button type="button" class="btn btn-primary demo-load-all-btn" data-demo-load-all>
+          <span class="demo-icon">✨</span>
+          <span class="demo-label">${escapeHtml(t("demo.loadAll"))}</span>
+        </button>
+        <p class="hint demo-load-all-hint">${escapeHtml(t("demo.loadAllHint"))}</p>
+      </div>`;
     root.querySelectorAll(".demo-dataset-btn").forEach(btn => {
       btn.addEventListener("click", () => importDemoById(btn.dataset.demoId, btn.dataset.omics));
     });
+    root.querySelector("[data-demo-load-all]")?.addEventListener("click", importAllDemos);
   } catch (e) {
     root.innerHTML = `<span class="hint">${t("demo.loadFail")}${escapeHtml(e.message)}</span>`;
+  }
+}
+
+async function importAllDemos() {
+  setLoading(true);
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    const datasets = await API.listDemoDatasets();
+    const available = datasets.filter(d => d.available);
+    const targets = available.filter(d => ["m16s_course", "rnaseq_course", "clinical_course"].includes(d.id));
+    if (!targets.length) {
+      toast(t("demo.unavailable"), "error");
+      return;
+    }
+    const failures = [];
+    for (const d of targets) {
+      try {
+        if (d.id === "clinical_course") {
+          // Clinical is session-level (no MAE experiment); import is independent.
+          await withBusy(`Loading ${demoLabel(d)}`, () => API.importDemoDataset(d.id));
+        } else {
+          await withBusy(`Loading ${demoLabel(d)}`, () => API.importDemoDataset(d.id));
+          await refreshExperimentList();
+        }
+      } catch (e) {
+        failures.push({ id: d.id, message: e.message });
+      }
+    }
+    await refreshExperimentList();
+    if (failures.length) {
+      toast(`Loaded with ${failures.length} issue(s). See console.`, "error");
+      console.warn("[demo] failures:", failures);
+    } else {
+      toast(t("demo.loadAllDone"), "success");
+    }
+    showAlert("import-result",
+      `✓ Loaded ${targets.length - failures.length}/${targets.length} demo datasets.`,
+      failures.length ? "info" : "success");
+    navigateTo("summary");
+  } catch (e) {
+    showAlert("import-result", `Error: ${e.message}`, "error");
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
   }
 }
 
@@ -1053,14 +1165,181 @@ document.querySelectorAll(".tab-bar").forEach(bar => {
 
 // ── Global experiment selector ─────────────────────
 const globalExp = document.getElementById("global-experiment");
+let _groupRefreshDebounce = null;
 globalExp.addEventListener("change", () => {
   window._emp.currentExp = globalExp.value;
-  refreshGroupSelectors();
+  clearTimeout(_groupRefreshDebounce);
+  _groupRefreshDebounce = setTimeout(() => refreshGroupSelectors({ force: true }), 150);
 });
+
+const EXP_CACHE_TTL_MS = 5 * 60 * 1000;
+const FEATURE_DROPDOWN_LIMIT = 500;
+
+function invalidateExperimentCache(exp = null) {
+  if (!exp) {
+    window._emp.expCache = {};
+    return;
+  }
+  delete window._emp.expCache[exp];
+}
+
+function experimentCacheFresh(exp) {
+  const c = window._emp.expCache?.[exp];
+  return !!(c && (Date.now() - (c.fetchedAt || 0) < EXP_CACHE_TTL_MS));
+}
+
+function applyGroupSelectorDom() {
+  const GROUP_NAME_HINTS = new Set([
+    "group", "subgroup", "cohort", "condition", "disease", "diagnosis", "treatment",
+  ]);
+  const groupColumnOptions = (cols) => {
+    const isInternal = (name) => /(_safe|__emp)$/i.test(String(name || ""));
+    const usable = (cols || []).filter((c) => {
+      if (isInternal(c.name)) return false;
+      const n = Number(c.n_unique) || 0;
+      if (n < 2) return false;
+      const key = String(c.name || "").toLowerCase();
+      if (GROUP_NAME_HINTS.has(key)) return true;
+      return n <= 50;
+    });
+    const preferred = usable.filter((c) => GROUP_NAME_HINTS.has(String(c.name || "").toLowerCase()));
+    const rest = usable.filter((c) => !preferred.includes(c));
+    preferred.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    rest.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    return [...preferred, ...rest];
+  };
+
+  const groupSelectors = [
+    "bar-group","box-group","heat-group","scat-group","struct-group","aplot-group",
+    "diff-group","marker-group","mgx-group","mgx-viz-group","mbx-group",
+    "tx-group","tx-viz-group","ra-group"
+  ];
+  const cats = groupColumnOptions(window._emp.coldataCols);
+  groupSelectors.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const hasNone = el.id.startsWith("bar-") || el.id.startsWith("box-") ||
+                    el.id.startsWith("heat-") || el.id.startsWith("scat-") ||
+                    el.id.startsWith("struct-") || el.id.startsWith("aplot-");
+    el.innerHTML = (hasNone ? '<option value="">None</option>' : '') +
+      cats.map(c => {
+        const preview = (c.values || []).slice(0, 4).join(", ");
+        const suffix = preview ? ` — ${preview}${(c.values || []).length > 4 ? "…" : ""}` : ` (${c.n_unique})`;
+        return `<option value="${c.name}">${c.name}${suffix}</option>`;
+      }).join("");
+  });
+
+  const autoGroup =
+    cats.find((c) => String(c.name).toLowerCase() === "group") ||
+    cats.find((c) => GROUP_NAME_HINTS.has(String(c.name).toLowerCase()));
+  if (autoGroup) {
+    groupSelectors.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && !el.value) el.value = autoGroup.name;
+    });
+  }
+
+  const featureSelectors = ["bar-feature","box-feature"];
+  const feats = (window._emp.features || []).slice(0, FEATURE_DROPDOWN_LIMIT);
+  featureSelectors.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = feats.map(f => `<option value="${f}">${f}</option>`).join("");
+    if (window._emp.featuresN > feats.length) {
+      el.title = `Showing ${feats.length} of ${window._emp.featuresN} features`;
+    }
+  });
+
+  const bindGroupChange = (id, handler) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.groupChangeBound === "1") return;
+    el.addEventListener("change", handler);
+    el.dataset.groupChangeBound = "1";
+  };
+  bindGroupChange("diff-group", updateDiffGroups);
+  bindGroupChange("marker-group", updateMarkerGroups);
+  bindGroupChange("mgx-group", updateMgxGroups);
+  bindGroupChange("mbx-group", updateMbxGroups);
+  bindGroupChange("tx-group", updateTxGroups);
+  bindGroupChange("ra-group", updateRaGroups);
+  bindGroupChange("scat-group", updateScatGroupFilter);
+  bindGroupChange("diff-method", updateDiffComparisonUI);
+  bindGroupChange("diff-comparison-mode", updateDiffComparisonUI);
+  updateDiffGroups();
+  updateMarkerGroups();
+  updateMgxGroups();
+  updateMbxGroups();
+  updateTxGroups();
+  updateRaGroups();
+  updateScatGroupFilter();
+}
+
+function ensureGroupSelectors({ force = false, background = false } = {}) {
+  const exp = window._emp.currentExp;
+  if (!exp) return Promise.resolve();
+  if (!force && experimentCacheFresh(exp)) {
+    const c = window._emp.expCache[exp];
+    window._emp.coldataCols = c.coldataCols || [];
+    window._emp.features = c.features || [];
+    window._emp.featuresN = c.featuresN || window._emp.features.length;
+    applyGroupSelectorDom();
+    return Promise.resolve();
+  }
+  return refreshGroupSelectors({ force, background });
+}
+
+async function refreshGroupSelectors({ force = false, background = false } = {}) {
+  const exp = window._emp.currentExp;
+  if (!exp) return;
+
+  if (!force && experimentCacheFresh(exp)) {
+    const c = window._emp.expCache[exp];
+    window._emp.coldataCols = c.coldataCols || [];
+    window._emp.features = c.features || [];
+    window._emp.featuresN = c.featuresN || window._emp.features.length;
+    applyGroupSelectorDom();
+    return;
+  }
+
+  const inflight = window._emp._groupRefreshInflight;
+  if (inflight?.exp === exp && !force) {
+    await inflight.promise;
+    return;
+  }
+
+  const run = (async () => {
+    const cd = await API.getColdata(exp);
+    const ft = await API.getFeatures(exp, { limit: FEATURE_DROPDOWN_LIMIT });
+    window._emp.coldataCols = cd.columns || [];
+    window._emp.features = ft.features || [];
+    window._emp.featuresN = ft.n_total ?? window._emp.features.length;
+    window._emp.expCache[exp] = {
+      coldataCols: window._emp.coldataCols,
+      features: window._emp.features,
+      featuresN: window._emp.featuresN,
+      fetchedAt: Date.now(),
+    };
+    applyGroupSelectorDom();
+  })();
+
+  window._emp._groupRefreshInflight = { exp, promise: run };
+  try {
+    await run;
+  } catch (e) {
+    if (!background) console.warn("refreshGroupSelectors:", e.message);
+  } finally {
+    if (window._emp._groupRefreshInflight?.promise === run) {
+      window._emp._groupRefreshInflight = null;
+    }
+  }
+}
 
 async function refreshExperimentList() {
   try {
+    const prevKey = (window._emp.experiments || []).map((e) => e.name).join("|");
     const exps = await API.listExperiments();
+    const nextKey = (exps || []).map((e) => e.name).join("|");
+    if (prevKey !== nextKey) invalidateExperimentCache();
     window._emp.experiments = exps;
     const cards = document.getElementById("exp-cards");
     if (!exps.length) {
@@ -1171,103 +1450,6 @@ async function refreshExperimentList() {
     document.getElementById("import-experiments").classList.add("hidden");
     toast(`Load data failed: ${e.message}`, "error");
   }
-}
-
-async function refreshGroupSelectors() {
-  const exp = window._emp.currentExp;
-  if (!exp) return;
-  try {
-    const cd = await API.getColdata(exp);
-    window._emp.coldataCols = cd.columns || [];
-    const ft = await API.getFeatures(exp);
-    window._emp.features = ft.features || [];
-  } catch(e) { return; }
-
-  const GROUP_NAME_HINTS = new Set([
-    "group", "subgroup", "cohort", "condition", "disease", "diagnosis", "treatment",
-  ]);
-  const groupColumnOptions = (cols) => {
-    const isInternal = (name) => /(_safe|__emp)$/i.test(String(name || ""));
-    const usable = (cols || []).filter((c) => {
-      if (isInternal(c.name)) return false;
-      const n = Number(c.n_unique) || 0;
-      if (n < 2) return false;
-      const key = String(c.name || "").toLowerCase();
-      if (GROUP_NAME_HINTS.has(key)) return true;
-      return n <= 50;
-    });
-    const preferred = usable.filter((c) => GROUP_NAME_HINTS.has(String(c.name || "").toLowerCase()));
-    const rest = usable.filter((c) => !preferred.includes(c));
-  preferred.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  rest.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    return [...preferred, ...rest];
-  };
-
-  const groupSelectors = [
-    "bar-group","box-group","heat-group","scat-group","struct-group","aplot-group",
-    "diff-group","marker-group","mgx-group","mgx-viz-group","mbx-group",
-    "tx-group","tx-viz-group","ra-group"
-  ];
-  const cats = groupColumnOptions(window._emp.coldataCols);
-  groupSelectors.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const hasNone = el.id.startsWith("bar-") || el.id.startsWith("box-") ||
-                    el.id.startsWith("heat-") || el.id.startsWith("scat-") ||
-                    el.id.startsWith("struct-") || el.id.startsWith("aplot-");
-    el.innerHTML = (hasNone ? '<option value="">None</option>' : '') +
-      cats.map(c => {
-        const preview = (c.values || []).slice(0, 4).join(", ");
-        const suffix = preview ? ` — ${preview}${(c.values || []).length > 4 ? "…" : ""}` : ` (${c.n_unique})`;
-        return `<option value="${c.name}">${c.name}${suffix}</option>`;
-      }).join("");
-  });
-
-  const autoGroup =
-    cats.find((c) => String(c.name).toLowerCase() === "group") ||
-    cats.find((c) => GROUP_NAME_HINTS.has(String(c.name).toLowerCase()));
-  if (autoGroup) {
-    groupSelectors.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el && !el.value) el.value = autoGroup.name;
-    });
-  }
-
-  // Feature selectors
-  const featureSelectors = ["bar-feature","box-feature"];
-  const feats = window._emp.features.slice(0, 500);
-  featureSelectors.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.innerHTML = feats.map(f => `<option value="${f}">${f}</option>`).join("");
-  });
-
-  // Group-dependent: ref / test group.
-  // refreshGroupSelectors() runs on every experiment refresh / navigation, so
-  // guard against attaching duplicate change listeners (which would fire the
-  // ref/test updaters multiple times per change).
-  const bindGroupChange = (id, handler) => {
-    const el = document.getElementById(id);
-    if (!el || el.dataset.groupChangeBound === "1") return;
-    el.addEventListener("change", handler);
-    el.dataset.groupChangeBound = "1";
-  };
-  bindGroupChange("diff-group", updateDiffGroups);
-  bindGroupChange("marker-group", updateMarkerGroups);
-  bindGroupChange("mgx-group", updateMgxGroups);
-  bindGroupChange("mbx-group", updateMbxGroups);
-  bindGroupChange("tx-group", updateTxGroups);
-  bindGroupChange("ra-group", updateRaGroups);
-  bindGroupChange("scat-group", updateScatGroupFilter);
-  bindGroupChange("diff-method", updateDiffComparisonUI);
-  bindGroupChange("diff-comparison-mode", updateDiffComparisonUI);
-  updateDiffGroups();
-  updateMarkerGroups();
-  updateMgxGroups();
-  updateMbxGroups();
-  updateTxGroups();
-  updateRaGroups();
-  updateScatGroupFilter();
 }
 
 function updateMarkerGroups() {
@@ -1419,6 +1601,203 @@ document.getElementById("import-meta-file").addEventListener("change", function(
 
 bindUploadDropZone("drop-data", "import-data-file", "data-filename");
 bindUploadDropZone("drop-meta", "import-meta-file", "meta-filename");
+
+// ── Multi-omics parallel upload cards ──────────────────────────────
+// Each `data-upload-type` card has its own data file, metadata file,
+// experiment name.  Hitting `Upload …` POSTs to /api/import with the
+// matching data_type, appending a new MAE experiment to the same session.
+const UPLOAD_TYPE_MAP = {
+  transcriptomics: "normal",
+  microbiome_16s:  "tax",
+  metabolomics:    "normal",
+  metagenomics:    "normal",
+  chipseq:         "chipseq",
+  clinical:        "clinical",
+};
+
+function bindUploadCard(omicsType) {
+  const card = document.querySelector(`.upload-card[data-upload-type="${omicsType}"]`);
+  if (!card) return;
+  const dataInput = card.querySelector(".upload-data-file");
+  const metaInput = card.querySelector(".upload-meta-file");
+  const dataName  = card.querySelector(".data-filename");
+  const metaName  = card.querySelector(".meta-filename");
+  const expName   = card.querySelector(".upload-exp-name");
+  const btn       = card.querySelector(".upload-btn");
+  if (!dataInput || !btn) return;
+
+  dataInput.addEventListener("change", () => {
+    const f = dataInput.files[0];
+    if (dataName) dataName.textContent = f?.name || "";
+    if (f && expName && !expName.dataset.touched) {
+      const base = f.name.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_]/g, "_");
+      expName.value = base || expName.value;
+    }
+    if (expName) expName.dataset.touched = "1";
+  });
+  expName?.addEventListener("input", () => {
+    if (expName) expName.dataset.touched = "1";
+  });
+  metaInput?.addEventListener("change", () => {
+    if (metaName) metaName.textContent = metaInput.files[0]?.name || "";
+  });
+
+  bindUploadDropZoneForCard(card);
+
+  btn.addEventListener("click", async () => {
+    const dataFile = dataInput.files[0];
+    if (!dataFile) {
+      toast(t("import.noDataFile"), "error");
+      return;
+    }
+    const dataType = UPLOAD_TYPE_MAP[omicsType] || "normal";
+    const fd = new FormData();
+    fd.append("data_file", dataFile);
+    fd.append("experiment_name", expName?.value || omicsType);
+    fd.append("data_type", omicsType === "clinical"
+      ? (card.querySelector(".upload-clinical-kind")?.value || "clinical_raw")
+      : dataType);
+    fd.append("assay_name", card.querySelector(".upload-assay-name")?.value || "counts");
+    fd.append("start_level", card.querySelector(".upload-start-level")?.value || "Species");
+    fd.append("tax_sep", card.querySelector(".upload-tax-sep")?.value || ";");
+    if (metaInput?.files[0]) fd.append("metadata_file", metaInput.files[0]);
+
+    setLoading(true);
+    try {
+      if (!localStorage.getItem("emp_session_id")) await API.createSession();
+      const res = await withBusy(`Importing ${omicsType}`, () => API.importData(fd));
+      if (res.import_mode === "clinical_merge" || res.import_mode === "clinical_standalone") {
+        const modeMsg = res.import_mode === "clinical_standalone"
+          ? "No direct sample-ID overlap found; saved as session-level clinical table."
+          : `Merged into ${res.updated_experiments} experiment(s).`;
+        showAlert("import-result",
+          `✓ Clinical/phenotype upload done. ${modeMsg} Columns: ${(res.columns || []).join(", ")}.`,
+          "success");
+        toast("Clinical metadata uploaded successfully.", "success");
+        if (res.import_mode === "clinical_standalone") {
+          window._emp.standaloneClinical = {
+            columns: res.columns || [],
+            orientation: res.orientation || "samples in rows",
+          };
+        } else {
+          window._emp.standaloneClinical = null;
+        }
+      } else {
+        showAlert("import-result",
+          `✓ Imported "${res.experiment_name}": ${res.samples} samples, ${res.features} features.`,
+          "success");
+        toast(`${res.experiment_name} imported successfully!`, "success");
+        window._emp.standaloneClinical = null;
+      }
+      await refreshExperimentList();
+    } catch (e) {
+      showAlert("import-result", `Error: ${e.message}`, "error");
+      toast(e.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  });
+}
+
+function bindUploadDropZoneForCard(card) {
+  const zones = card.querySelectorAll(".upload-zone");
+  zones.forEach((zone) => {
+    const input = zone.querySelector('input[type="file"]');
+    if (!input) return;
+    zone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      zone.classList.add("upload-zone-hot");
+    });
+    zone.addEventListener("dragleave", () => zone.classList.remove("upload-zone-hot"));
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      zone.classList.remove("upload-zone-hot");
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+}
+
+["transcriptomics", "microbiome_16s", "clinical"].forEach(bindUploadCard);
+
+function bindChipseqUploadCard() {
+  const card = document.querySelector(`.upload-card[data-upload-type="chipseq"]`);
+  if (!card) return;
+  const dataInput = card.querySelector(".upload-data-file");
+  const dataName  = card.querySelector(".data-filename");
+  const expName   = card.querySelector(".upload-exp-name");
+  const genomeSel = card.querySelector(".upload-genome");
+  const presetSel = card.querySelector(".upload-preset");
+  const btn       = card.querySelector(".upload-btn");
+  if (!btn) return;
+
+  dataInput?.addEventListener("change", () => {
+    const f = dataInput.files?.[0];
+    if (dataName) dataName.textContent = f?.name || "";
+    if (f && expName && !expName.dataset.touched) {
+      const base = f.name.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_]/g, "_");
+      expName.value = base || expName.value || "chipseq_peaks";
+    }
+    if (expName) expName.dataset.touched = "1";
+  });
+  bindUploadDropZoneForCard(card);
+
+  btn.addEventListener("click", async () => {
+    const file = dataInput?.files?.[0];
+    if (!file) { toast("Choose a peak file first (.bed / .narrowPeak / .broadPeak / .gff).", "error"); return; }
+    setLoading(true);
+    try {
+      if (!localStorage.getItem("emp_session_id")) await API.createSession();
+      const sid = localStorage.getItem("emp_session_id");
+      const fd = new FormData();
+      fd.append("session_id", sid || "");
+      fd.append("peak_file", file);
+      fd.append("genome", genomeSel?.value || "hs");
+      fd.append("preset", presetSel?.value || "chipseq_tf");
+      const res = await withBusy("Uploading pre-called peaks",
+        () => API.request("POST", "/workflows/chipseq/peaks/upload", fd, true));
+      showAlert("import-result",
+        `✓ Pre-called peaks uploaded (${file.name}). Switched to ChIP-seq tab — click 「Annotate Peaks」 to continue.`,
+        "success");
+      toast("Peak file registered.", "success");
+      window._emp.currentOmics = "chipseq";
+      window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: "chipseq" } }));
+      navigateTo("analysis");
+      setTimeout(() => {
+        document.querySelector('[data-tab="ana-chipseq"]')?.click();
+      }, 200);
+    } catch (e) {
+      showAlert("import-result", `Error: ${e.message}`, "error");
+      toast(e.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  });
+}
+bindChipseqUploadCard();
+
+document.getElementById("btn-go-chipseq")?.addEventListener("click", () => {
+  window._emp.currentOmics = "chipseq";
+  window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: "chipseq" } }));
+  navigateTo("analysis");
+  setTimeout(() => {
+    document.querySelector('[data-tab="ana-chipseq"]')?.click();
+  }, 150);
+});
+
+// Direct upload of pre-called peaks (skip MACS) – handled by the chip card below
+async function uploadChipseqPeaks(sid, file, genome = "hs", preset = "chipseq_tf") {
+  const fd = new FormData();
+  fd.append("session_id", sid || "");
+  fd.append("peak_file", file);
+  fd.append("genome", genome);
+  fd.append("preset", preset);
+  return API.request("POST", "/workflows/chipseq/peaks/upload", fd, true);
+}
 
 document.getElementById("btn-inspector-refresh")?.addEventListener("click", loadInspector);
 document.getElementById("btn-inspector-assay-prev")?.addEventListener("click", async () => {
@@ -1770,7 +2149,9 @@ async function prepAction(btnId, alertId, fn) {
       showAlert(alertId, `✓ Done. ${JSON.stringify(summary)}`, "success");
       showResultTable("prep-preview", res?.preview_data ?? null, 30);
       document.getElementById("prep-preview")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      invalidateExperimentCache(exp);
       refreshPrepareSnapshots();
+      refreshGroupSelectors({ force: true, background: true });
       toast("Preparation step completed.", "success");
     } catch(e) {
       showAlert(alertId, `Error: ${e.message}`, "error");
@@ -2730,7 +3111,7 @@ async function genPlot(btnId, outId, apiFn, { metaId } = {}) {
     try {
       await ensurePageSnapshot("visualization");
       const res = await withBusy(label, () => apiFn(exp));
-      showPlot(outId, res.plot);
+      showPlot(outId, res.plot, { downloadStem: outId.replace(/-out$/, ""), ...plotDownloadOptions(res) });
       // Custom-heatmap diagnostics: backend returns matched/missing arrays
       // alongside the base64 PNG so we can report which genes actually
       // landed on the heatmap.
@@ -2819,11 +3200,57 @@ function currentColorOptions() {
   const picks = [1,2,3,4,5,6]
     .map((i) => document.getElementById(`viz-color-${i}`)?.value || "")
     .filter(Boolean);
+  const sc = +document.getElementById("viz-figure-scale")?.value;
+  const atx = +document.getElementById("viz-axis-text-x")?.value;
+  const aty = +document.getElementById("viz-axis-text-y")?.value;
+  const alx = +document.getElementById("viz-axis-title-x")?.value;
+  const aly = +document.getElementById("viz-axis-title-y")?.value;
   return {
     color_panel: document.getElementById("viz-color-panel")?.value || "npg",
     custom_colors: useCustom ? (picks.join(",") || null) : null,
+    figure_scale: Number.isFinite(sc) && sc > 0 ? sc : 1,
+    axis_text_x: Number.isFinite(atx) && atx > 0 ? atx : 11,
+    axis_text_y: Number.isFinite(aty) && aty > 0 ? aty : 11,
+    axis_title_x: Number.isFinite(alx) && alx > 0 ? alx : 12,
+    axis_title_y: Number.isFinite(aly) && aly > 0 ? aly : 12,
   };
 }
+
+function wireVizAspectLock(widthId, heightId, ratio) {
+  const wEl = document.getElementById(widthId);
+  const hEl = document.getElementById(heightId);
+  const lockEl = document.getElementById("viz-lock-aspect");
+  if (!wEl || !hEl || !ratio) return;
+  let syncing = false;
+  const fromWidth = () => {
+    if (!lockEl?.checked) return;
+    const w = +wEl.value;
+    if (!Number.isFinite(w) || w <= 0) return;
+    hEl.value = String(Math.round((w / ratio) * 2) / 2);
+  };
+  const fromHeight = () => {
+    if (!lockEl?.checked) return;
+    const h = +hEl.value;
+    if (!Number.isFinite(h) || h <= 0) return;
+    wEl.value = String(Math.round((h * ratio) * 2) / 2);
+  };
+  wEl.addEventListener("input", () => {
+    if (syncing) return;
+    syncing = true;
+    fromWidth();
+    syncing = false;
+  });
+  hEl.addEventListener("input", () => {
+    if (syncing) return;
+    syncing = true;
+    fromHeight();
+    syncing = false;
+  });
+}
+
+wireVizAspectLock("scat-width", "scat-height", 9 / 7);
+wireVizAspectLock("scat-proj-width", "scat-proj-height", 7 / 4.5);
+wireVizAspectLock("heat-width", "heat-height", 11 / 8);
 
 genPlot("btn-barplot", "barplot-out", exp => API.vizBarplot(exp, {
   mode:    document.getElementById("bar-mode").value,
@@ -2942,8 +3369,6 @@ document.getElementById("btn-volcano")?.addEventListener("click", async () => {
   const exp = window._emp.currentExp;
   if (!exp) { toast("Import data first.", "error"); return; }
   const out = document.getElementById("volcano-out");
-  const pdfLink = document.getElementById("vol-pdf-link");
-  pdfLink?.classList.add("hidden");
   out.innerHTML = '<p style="padding:12px">Generating volcano plot…</p>';
   out.classList.remove("hidden");
   setLoading(true);
@@ -2956,12 +3381,8 @@ document.getElementById("btn-volcano")?.addEventListener("click", async () => {
       label_top: +document.getElementById("vol-label-top")?.value || 15,
       ...currentColorOptions(),
     }));
-    showPlot("volcano-out", res.plot);
-    if (res.pdf_available && pdfLink) {
-      const sid = localStorage.getItem("emp_session_id");
-      pdfLink.href = `${API.apiBase()}/download/plot/${sid}/${encodeURIComponent(exp)}/volcano.pdf`;
-      pdfLink.classList.remove("hidden");
-    }
+    showPlot("volcano-out", res.plot, { downloadStem: "volcano", ...plotDownloadOptions(res) });
+    document.getElementById("vol-pdf-link")?.classList.add("hidden");
     toast("Volcano plot ready.", "success");
   } catch(e) {
     out.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${e.message}</p>`;
@@ -2974,8 +3395,6 @@ document.getElementById("btn-deg-heatmap")?.addEventListener("click", async () =
   if (!exp) { toast("Import data first.", "error"); return; }
   const out = document.getElementById("deg-heatmap-out");
   const meta = document.getElementById("deg-meta");
-  const pdfLink = document.getElementById("deg-pdf-link");
-  pdfLink?.classList.add("hidden");
   out.innerHTML = '<p style="padding:12px">Generating DEG heatmap…</p>';
   out.classList.remove("hidden");
   setLoading(true);
@@ -2995,13 +3414,13 @@ document.getElementById("btn-deg-heatmap")?.addEventListener("click", async () =
       ...currentHeatmapSize(),
       ...currentColorOptions(),
     }));
-    showPlot("deg-heatmap-out", res.plot);
-    if (meta) meta.textContent = res.n_genes ? `${res.n_genes} DEGs plotted` : "";
-    if (res.pdf_available && pdfLink) {
-      const sid  = localStorage.getItem("emp_session_id");
-      pdfLink.href = `${API.apiBase()}/download/plot/${sid}/${encodeURIComponent(exp)}/deg_heatmap.pdf`;
-      pdfLink.classList.remove("hidden");
+    showPlot("deg-heatmap-out", res.plot, { downloadStem: "deg_heatmap", ...plotDownloadOptions(res) });
+    if (meta) {
+      const omics = currentOmicsPreset();
+      const unit = omics === "microbiome_16s" ? "taxa" : "genes";
+      meta.textContent = res.n_genes ? `${res.n_genes} differential ${unit} plotted` : "";
     }
+    document.getElementById("deg-pdf-link")?.classList.add("hidden");
     toast("DEG heatmap ready.", "success");
   } catch(e) {
     out.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${e.message}</p>`;
@@ -3067,6 +3486,7 @@ genPlot("m16s-btn-network", "m16s-network-out", exp =>
     method: document.getElementById("m16s-network-method").value,
     cutoff: +document.getElementById("m16s-network-cutoff").value,
     top_n: +document.getElementById("m16s-network-topn").value,
+    ...currentColorOptions(),
   }))
 );
 
@@ -3297,6 +3717,8 @@ async function clearAllData() {
   window._emp.currentExp = null;
   window._emp.coldataCols = [];
   window._emp.features = [];
+  window._emp.featuresN = 0;
+  invalidateExperimentCache();
   document.querySelectorAll(".result-area, .alert").forEach((el) => {
     el.innerHTML = ""; el.classList.add("hidden");
   });
@@ -3983,9 +4405,10 @@ document.getElementById("clin-btn-cor")?.addEventListener("click", async () => {
       p_adjust:       document.getElementById("clin-cor-padj").value,
       clinical_source: src,
     }));
-    if (res.plot) showPlot("clin-cor-plot", res.plot);
+    if (res.plot) showPlot("clin-cor-plot", res.plot, { downloadStem: "clinical_cor", ...plotDownloadOptions(res) });
     else plot.innerHTML = `<p style="padding:12px">Correlation done, but the
       matrix is too small to render a heatmap (need ≥ 2 features).</p>`;
+    document.getElementById("clin-cor-pdf")?.classList.add("hidden");
 
     status.className = "alert alert-info";
     status.textContent =
@@ -4007,11 +4430,6 @@ document.getElementById("clin-btn-cor")?.addEventListener("click", async () => {
       tableWrap?.classList.remove("hidden");
     }
 
-    if (res.pdf_available && pdfLink) {
-      const sid = localStorage.getItem("emp_session_id");
-      pdfLink.href = `${API.apiBase()}/download/plot/${sid}/${encodeURIComponent(exp)}/${res.pdf_name}`;
-      pdfLink.classList.remove("hidden");
-    }
     toast("Clinical correlation ready.", "success");
   } catch (e) {
     plot.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${e.message}</p>`;
@@ -4051,16 +4469,12 @@ document.getElementById("clin-btn-fit")?.addEventListener("click", async () => {
       log_y:  document.getElementById("clin-fit-logy").value === "true",
       clinical_source: src,
     }));
-    showPlot("clin-fit-plot", res.plot);
+    showPlot("clin-fit-plot", res.plot, { downloadStem: "clinical_fitline", ...plotDownloadOptions(res) });
     status.className = "alert alert-info";
     status.textContent = `Spearman r = ${(+res.r).toFixed(3)}, p = ${(+res.p).toExponential(2)}, n = ${res.n}`
       + (res.group_used ? "  (grouped fit)" : "");
     status.classList.remove("hidden");
-    if (res.pdf_available && pdfLink) {
-      const sid = localStorage.getItem("emp_session_id");
-      pdfLink.href = `${API.apiBase()}/download/plot/${sid}/${encodeURIComponent(exp)}/${res.pdf_name}`;
-      pdfLink.classList.remove("hidden");
-    }
+    document.getElementById("clin-fit-pdf")?.classList.add("hidden");
     toast("Scatter ready.", "success");
   } catch (e) {
     plot.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${e.message}</p>`;
@@ -4098,7 +4512,12 @@ document.getElementById("clin-btn-wgcna")?.addEventListener("click", async () =>
     });
     const res = await withGlobalProgress("WGCNA module–trait", submit,
                                           { timeoutMs: 20 * 60 * 1000 });
-    showPlot("clin-wgcna-plot", res.png);
+    const wgcnaPdfName = res.pdf_name || (res.pdf ? String(res.pdf).split("/").pop() : null);
+    showPlot("clin-wgcna-plot", res.png, {
+      downloadStem: "wgcna_modtrait",
+      pdfName: wgcnaPdfName,
+      pdfUrl: wgcnaPdfName ? plotPdfDownloadUrl(wgcnaPdfName) : null,
+    });
     status.className = "alert alert-info";
     status.textContent = `${res.n_modules} modules × ${res.n_traits} trait(s), ` +
       `top ${res.n_feat_used} variance features used for clustering.`;
@@ -4129,10 +4548,7 @@ document.getElementById("clin-btn-wgcna")?.addEventListener("click", async () =>
     }
 
     if (res.pdf && pdfLink) {
-      const sid = localStorage.getItem("emp_session_id");
-      const name = (res.pdf + "").split("/").pop() || `wgcna_modtrait.pdf`;
-      pdfLink.href = `${API.apiBase()}/download/plot/${sid}/${encodeURIComponent(exp)}/${name}`;
-      pdfLink.classList.remove("hidden");
+      pdfLink.classList.add("hidden");
     }
     toast("WGCNA done.", "success");
   } catch (e) {

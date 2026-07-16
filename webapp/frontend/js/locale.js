@@ -2,8 +2,8 @@
  * UI locale: Auto (browser + region hint) or manual 中文 / English.
  * Dispatches emp:locale-change when the active locale changes.
  */
-import { I18N_CATALOG } from "./i18n_catalog.js?v=2026-06-21-v5.0.2";
-import { applyDomI18n } from "./ui_dom_i18n.js?v=2026-06-21-v5.0.2";
+import { I18N_CATALOG } from "./i18n_catalog.js?v=2026-07-16-multi-demo";
+import { applyDomI18n } from "./ui_dom_i18n.js?v=2026-07-16-multi-demo";
 
 const LS_MODE = "emp_ui_locale_mode"; // auto | zh | en
 const LS_RESOLVED = "emp_ui_locale_resolved";

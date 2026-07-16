@@ -76,7 +76,12 @@ while ((Get-Date) -lt $deadline) {
   Start-Sleep -Seconds 2
 }
 if (-not $apiReady) {
-  Write-Warning "API not ready after 120s. Open $ApiLog or try: $healthUrl"
+  $recentLog = if (Test-Path $ApiLog) {
+    (Get-Content -Path $ApiLog -Tail 80 -ErrorAction SilentlyContinue) -join [Environment]::NewLine
+  } else {
+    "(API log was not created.)"
+  }
+  throw "API not ready after 120s.`nLog: $ApiLog`n$recentLog"
 } else {
   Write-Host "API health OK: $healthUrl"
 }

@@ -6,3 +6,4 @@
 .local_run/
 webapp/config/runtime.env
 webapp/config/campus_llm.json
+webapp/config/openrouter_llm.json

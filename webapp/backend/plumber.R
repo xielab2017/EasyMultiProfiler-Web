@@ -98,15 +98,7 @@ function(session_id, res) {
     if (!file.exists(mae_path(session_id))) {
       return(list(success = TRUE, experiments = list()))
     }
-    mae  <- load_mae(session_id)
-    exps <- names(mae)
-    info <- lapply(exps, function(e) {
-      ex <- mae[[e]]
-      list(name     = e,
-           samples  = ncol(ex),
-           features = nrow(ex),
-           assay    = names(SummarizedExperiment::assays(ex))[1])
-    })
+    info <- list_experiments_info(session_id)
     list(success = TRUE, experiments = info)
   }, res)
 }
@@ -115,33 +107,81 @@ function(session_id, res) {
 # IMPORT
 # ══════════════════════════════════════════════════════════
 
-# Helper: save a Plumber multipart file entry to a temp file, return path
+# Helper: save a Plumber multipart file entry to a temp file, return path.
+# Plumber 1.3+ multipart parts look like list(value=<raw>, filename=..., parsed=...).
+# After combine_keys (or when only nested parsers succeed), the handler may also
+# receive: raw vectors, data.frames, or named list(filename = <raw|df>).
 .save_upload <- function(file_entry, suffix = ".tmp") {
   if (is.null(file_entry)) return(NULL)
   if (is.character(file_entry) && length(file_entry) == 1L && file.exists(file_entry)) {
     return(file_entry)
   }
-  raw_bytes <- NULL
-  orig <- ""
+
+  write_raw <- function(raw_bytes, orig = "") {
+    if (is.null(raw_bytes) || !length(raw_bytes)) return(NULL)
+    if (is.character(raw_bytes)) raw_bytes <- charToRaw(paste(raw_bytes, collapse = "\n"))
+    if (!is.raw(raw_bytes)) return(NULL)
+    ext <- if (nzchar(orig)) paste0(".", tools::file_ext(orig)) else suffix
+    if (!nzchar(ext) || ext == ".") ext <- suffix
+    tmp <- tempfile(fileext = ext)
+    writeBin(raw_bytes, tmp)
+    tmp
+  }
+
+  write_df <- function(df, orig = "") {
+    ext <- if (nzchar(orig) && grepl("\\.[A-Za-z0-9]+$", orig)) {
+      paste0(".", tools::file_ext(orig))
+    } else {
+      ".csv"
+    }
+    tmp <- tempfile(fileext = ext)
+    utils::write.csv(df, tmp, row.names = FALSE)
+    tmp
+  }
+
+  if (is.raw(file_entry)) return(write_raw(file_entry))
+  if (is.data.frame(file_entry)) return(write_df(file_entry))
+
   if (is.list(file_entry)) {
     if (!is.null(file_entry$datapath) && nzchar(file_entry$datapath) && file.exists(file_entry$datapath)) {
       return(file_entry$datapath)
     }
-    raw_bytes <- file_entry$value
-    orig <- file_entry$filename %||% file_entry$name %||% ""
-  } else if (is.raw(file_entry)) {
-    raw_bytes <- file_entry
+
+    # Classic plumber multipart part
+    if (!is.null(file_entry$value) || !is.null(file_entry$filename) || !is.null(file_entry$parsed)) {
+      orig <- as.character(file_entry$filename %||% file_entry$name %||% "")
+      if (is.raw(file_entry$value) && length(file_entry$value) > 0) {
+        return(write_raw(file_entry$value, orig))
+      }
+      parsed <- file_entry$parsed
+      if (is.raw(parsed) && length(parsed) > 0) return(write_raw(parsed, orig))
+      if (is.data.frame(parsed)) return(write_df(parsed, orig))
+      if (is.character(parsed) && length(parsed) == 1L && file.exists(parsed)) return(parsed)
+    }
+
+    # Named list from combine_keys: list("file.csv" = <raw|df>)
+    if (length(file_entry) >= 1L) {
+      orig <- names(file_entry)[1] %||% ""
+      item <- file_entry[[1]]
+      if (is.raw(item) && length(item) > 0) return(write_raw(item, orig))
+      if (is.data.frame(item)) return(write_df(item, orig))
+      if (is.list(item)) {
+        nested <- .save_upload(item, suffix = suffix)
+        if (!is.null(nested)) return(nested)
+      }
+    }
   }
-  if (is.null(raw_bytes) || length(raw_bytes) == 0) return(NULL)
-  ext  <- if (nzchar(orig)) paste0(".", tools::file_ext(orig)) else suffix
-  tmp  <- tempfile(fileext = ext)
-  writeBin(raw_bytes, tmp)
-  tmp
+
+  NULL
 }
 
 #* Import data file (multipart: data_file, [metadata_file])
 #* @post /api/import
 #* @parser multi
+#* @parser octet
+#* @parser form
+#* @parser csv
+#* @parser text
 #* @serializer unboxedJSON
 function(req, res,
          experiment_name = "experiment",
@@ -261,30 +301,47 @@ function(req, res,
       return(out)
     }
 
+    if (identical(data_type, "chipseq")) {
+      stop("ChIP-seq uses BAM/SAM upload on the Analysis page (ChIP-seq tab), not count matrix import.")
+    }
+
     if (mae_exists) {
       mae <- load_mae(session_id)
+      if (experiment_name %in% names(mae)) {
+        stop(sprintf(
+          "Experiment name '%s' already exists. Choose a unique name to add another omics dataset.",
+          experiment_name
+        ))
+      }
       mae <- add_experiment_to_mae(mae, data_file, meta_file,
                                     experiment_name, data_type,
                                     assay_name, start_level, tax_sep)
+      import_mode <- "omics_add"
     } else {
       mae <- build_mae(data_file, meta_file,
                        experiment_name, data_type,
                        assay_name, start_level, tax_sep)
+      import_mode <- "omics_new"
     }
 
     save_mae(session_id, mae)
     tryCatch({
       save_raw_empt(session_id, experiment_name, .promote_to_empt(mae, experiment_name))
     }, error = function(e) NULL)
+    register_experiment_meta(session_id, experiment_name, data_type)
+    write_experiments_meta(session_id, mae)
 
     # Summarise
     ex <- mae[[experiment_name]]
     list(success         = TRUE,
          session_id      = session_id,
+         import_mode     = import_mode,
          experiment_name = experiment_name,
          samples         = ncol(ex),
          features        = nrow(ex),
-         assay           = assay_name)
+         assay           = assay_name,
+         omics           = data_type_to_omics(data_type),
+         experiment_count = length(mae))
   }, res)
 }
 
@@ -297,8 +354,9 @@ function(res) {
     list(success = TRUE, datasets = lapply(ds, function(d) {
       list(
         id = d$id,
-        label = d$label,
-        label_en = d$label_en,
+        label = d$label_en %||% d$label,
+        label_en = d$label_en %||% d$label,
+        label_zh = d$label_zh %||% d$label,
         omics = d$omics,
         description = d$description,
         available = isTRUE(d$available)
@@ -346,6 +404,10 @@ function(req, res) {
 #* Preview file columns (multipart: data_file)
 #* @post /api/preview
 #* @parser multi
+#* @parser octet
+#* @parser form
+#* @parser csv
+#* @parser text
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
@@ -405,14 +467,44 @@ function(session_id, experiment, res) {
   }, res)
 }
 
-#* Get feature list
+#* Get feature list (optional limit/offset/q for large matrices)
 #* @get /api/features/<session_id>/<experiment>
+#* @param limit Max features to return (0 = all; default 0 for backward compat)
+#* @param offset Skip first N features after optional search filter
+#* @param q Case-insensitive substring filter on feature names
 #* @serializer unboxedJSON
-function(session_id, experiment, res) {
+function(session_id, experiment, limit = 0, offset = 0, q = "", res) {
   safe_api({
     empt     <- load_empt(session_id, experiment)
     features <- rownames(SummarizedExperiment::assays(empt)[[1]])
-    list(success = TRUE, features = features)
+    n_total  <- length(features)
+  if (nzchar(trimws(as.character(q %||% "")))) {
+      qq <- tolower(trimws(as.character(q)))
+      features <- features[grepl(qq, tolower(features), fixed = TRUE)]
+    }
+    n_filtered <- length(features)
+    off <- suppressWarnings(as.integer(offset %||% 0L))
+    if (!is.finite(off) || off < 0L) off <- 0L
+    lim <- suppressWarnings(as.integer(limit %||% 0L))
+    truncated <- FALSE
+    if (is.finite(lim) && lim > 0L) {
+      from <- off + 1L
+      to <- min(off + lim, n_filtered)
+      if (from <= n_filtered) {
+        features <- features[seq.int(from, to)]
+      } else {
+        features <- character(0)
+      }
+      truncated <- (off + lim) < n_filtered
+    }
+    list(
+      success = TRUE,
+      features = features,
+      n_total = n_total,
+      n_filtered = n_filtered,
+      offset = off,
+      truncated = truncated
+    )
   }, res)
 }
 
@@ -886,6 +978,10 @@ function(session_id = NULL, res) {
 #* Upload one BAM/SAM file and assign treatment (t) or control (c) group
 #* @post /api/workflows/chipseq/bams/upload
 #* @parser multi
+#* @parser octet
+#* @parser form
+#* @parser csv
+#* @parser text
 #* @serializer unboxedJSON
 function(req, res, session_id = NULL, group = "t") {
   safe_api({
@@ -932,6 +1028,47 @@ function(req, res) {
     chip_set_bam_group(b$session_id %||% NULL, b$file_id %||% b$name, b$group %||% "t")
   }, res)
 }
+
+#* Upload pre-called peaks (BED/narrowPeak/broadPeak/GFF) for downstream annotation
+#* @post /api/workflows/chipseq/peaks/upload
+#* @parser multi
+#* @parser octet
+#* @parser form
+#* @parser csv
+#* @parser text
+#* @serializer unboxedJSON
+function(req, res,
+         session_id  = NULL,
+         genome      = "hs",
+         preset      = "chipseq_tf") {
+  safe_api({
+    session_id <- as.character(session_id %||% "")[1]
+    if (!nzchar(session_id)) session_id <- create_session()
+    else ensure_session_dir(session_id)
+    genome <- as.character(genome %||% "hs")[1]
+    preset <- as.character(preset %||% "chipseq_tf")[1]
+    body <- req$body
+    peak_entry <- body$peak_file %||% body$data_file %||% body$file
+    peak_path <- .save_upload(peak_entry, ".bed")
+    if (is.null(peak_path) || !file.exists(peak_path)) {
+      stop("peak_file is required (multipart field: peak_file, .bed/.narrowPeak/.broadPeak/.gff)")
+    }
+    orig <- if (is.list(peak_entry)) {
+      peak_entry$filename %||% peak_entry$name %||% basename(peak_path)
+    } else basename(peak_path)
+    orig <- as.character(orig %||% basename(peak_path))[1]
+    out <- chip_upload_peaks(
+      session_id    = session_id,
+      src_path      = peak_path,
+      original_name = orig,
+      genome        = genome,
+      preset        = preset
+    )
+    out$session_id <- session_id
+    out
+  }, res)
+}
+
 
 #* ChIP-seq workflow pre-check validation
 #* @post /api/workflows/chipseq/validate
@@ -1695,12 +1832,19 @@ function(req, res) {
 # VISUALIZATION
 # ══════════════════════════════════════════════════════════
 
+.viz_api_style <- function(b) {
+  old <- emp_viz_style_begin(b)
+  on.exit(emp_viz_style_end(old), add = TRUE)
+  invisible(NULL)
+}
+
 #* Transcriptomics heatmap
 #* @post /api/workflows/transcriptomics/visualize/heatmap
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
     b <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- if (!is.null(b$session_id) && length(b$session_id) > 0) as.character(b$session_id[[1]]) else NULL
     experiment <- if (!is.null(b$experiment) && length(b$experiment) > 0) as.character(b$experiment[[1]]) else NULL
     group <- if (!is.null(b$group) && length(b$group) > 0) as.character(b$group[[1]]) else NULL
@@ -1709,7 +1853,7 @@ function(req, res) {
     cluster_rows <- if (is.null(b$cluster_rows)) TRUE else isTRUE(b$cluster_rows)
     cluster_cols <- if (is.null(b$cluster_cols)) TRUE else isTRUE(b$cluster_cols)
     show_gene_names <- if (is.null(b$show_gene_names)) NULL else isTRUE(b$show_gene_names)
-    font_size <- as.numeric(b$font_size %||% 11)
+    font_size <- emp_viz_scale_num(b$font_size %||% 11, 11)
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
 
@@ -1729,6 +1873,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- if (!is.null(b$session_id) && length(b$session_id) > 0) as.character(b$session_id[[1]]) else NULL
     experiment <- if (!is.null(b$experiment) && length(b$experiment) > 0) as.character(b$experiment[[1]]) else NULL
     fc_cutoff <- if (!is.null(b$fc_cutoff) && length(b$fc_cutoff) > 0) as.numeric(b$fc_cutoff[[1]]) else 1.0
@@ -1738,7 +1883,7 @@ function(req, res) {
 
     img <- tx_make_volcano(session_id, experiment, fc_cutoff = fc_cutoff, p_cutoff = p_cutoff,
                            color_panel = color_panel, custom_colors = custom_colors)
-    list(success = TRUE, plot = img)
+    .viz_api_plot_response(img)
   }, res)
 }
 
@@ -1748,6 +1893,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- if (!is.null(b$session_id) && length(b$session_id) > 0) as.character(b$session_id[[1]]) else NULL
     experiment <- if (!is.null(b$experiment) && length(b$experiment) > 0) as.character(b$experiment[[1]]) else NULL
     group <- if (!is.null(b$group) && length(b$group) > 0) as.character(b$group[[1]]) else NULL
@@ -1756,7 +1902,7 @@ function(req, res) {
     cluster_rows <- if (is.null(b$cluster_rows)) TRUE else isTRUE(b$cluster_rows)
     cluster_cols <- if (is.null(b$cluster_cols)) TRUE else isTRUE(b$cluster_cols)
     show_gene_names <- if (is.null(b$show_gene_names)) NULL else isTRUE(b$show_gene_names)
-    font_size <- as.numeric(b$font_size %||% 11)
+    font_size <- emp_viz_scale_num(b$font_size %||% 11, 11)
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
 
@@ -1776,6 +1922,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- if (!is.null(b$session_id) && length(b$session_id) > 0) as.character(b$session_id[[1]]) else NULL
     experiment <- if (!is.null(b$experiment) && length(b$experiment) > 0) as.character(b$experiment[[1]]) else NULL
     fc_cutoff <- if (!is.null(b$fc_cutoff) && length(b$fc_cutoff) > 0) as.numeric(b$fc_cutoff[[1]]) else 1.0
@@ -1785,7 +1932,7 @@ function(req, res) {
 
     img <- mgx_make_volcano(session_id, experiment, fc_cutoff = fc_cutoff, p_cutoff = p_cutoff,
                             color_panel = color_panel, custom_colors = custom_colors)
-    list(success = TRUE, plot = img)
+    .viz_api_plot_response(img)
   }, res)
 }
 
@@ -1867,6 +2014,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id %||% NULL
     experiment <- b$experiment %||% NULL
     fc_cutoff <- b$fc_cutoff %||% 1
@@ -1891,14 +2039,15 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id %||% NULL
     experiment <- b$experiment %||% NULL
     tax_sep <- b$tax_sep %||% ";"
     from_level <- b$from_level %||% "Phylum"
     to_level <- b$to_level %||% "Genus"
     top_n <- as.integer(b$top_n %||% 25L)
-    width <- as.numeric(b$width %||% 10)
-    height <- as.numeric(b$height %||% 6)
+    width <- emp_viz_scale_num(b$width %||% 10, 10)
+    height <- emp_viz_scale_num(b$height %||% 6, 6)
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
 
@@ -1914,7 +2063,12 @@ function(req, res) {
       color_panel = color_panel,
       custom_colors = custom_colors
     )
-    list(success = TRUE, plot = out$plot, edges = out$edges, from_nodes = out$from_nodes, to_nodes = out$to_nodes)
+    c(list(success = TRUE,
+           plot = out$plot,
+           edges = out$edges,
+           from_nodes = out$from_nodes,
+           to_nodes = out$to_nodes),
+      viz_pdf_meta(out$pdf %||% NULL))
   }, res)
 }
 
@@ -1924,13 +2078,14 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id %||% NULL
     experiment <- b$experiment %||% NULL
     method <- b$method %||% "spearman"
     cutoff <- as.numeric(b$cutoff %||% 0.6)
     top_n <- as.integer(b$top_n %||% 40L)
-    width <- as.numeric(b$width %||% 8)
-    height <- as.numeric(b$height %||% 8)
+    width <- emp_viz_scale_num(b$width %||% 8, 8)
+    height <- emp_viz_scale_num(b$height %||% 8, 8)
 
     out <- m16s_visualize_network(
       session_id = session_id,
@@ -1941,7 +2096,13 @@ function(req, res) {
       width = width,
       height = height
     )
-    list(success = TRUE, plot = out$plot, nodes = out$nodes, edges = out$edges, method = out$method, cutoff = out$cutoff)
+    c(list(success = TRUE,
+           plot = out$plot,
+           nodes = out$nodes,
+           edges = out$edges,
+           method = out$method,
+           cutoff = out$cutoff),
+      viz_pdf_meta(out$pdf %||% NULL))
   }, res)
 }
 
@@ -1951,6 +2112,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b          <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id
     experiment <- b$experiment
     group      <- b$group   %||% NULL
@@ -1959,11 +2121,14 @@ function(req, res) {
     top_n      <- as.integer(b$top_n %||% 20L)
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
+    width  <- emp_viz_scale_num(b$width %||% 9, 9)
+    height <- emp_viz_scale_num(b$height %||% 6, 6)
 
-    img <- make_barplot(session_id, experiment, group, feature, mode, top_n,
+    out <- make_barplot(session_id, experiment, group, feature, mode, top_n,
+                        width = width, height = height,
                         color_panel = color_panel,
                         custom_colors = custom_colors)
-    list(success = TRUE, plot = img)
+    .viz_api_plot_response(out)
   }, res)
 }
 
@@ -1973,17 +2138,21 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b          <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id
     experiment <- b$experiment
     group      <- b$group   %||% NULL
     feature    <- b$feature %||% NULL
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
+    width  <- emp_viz_scale_num(b$width %||% 9, 9)
+    height <- emp_viz_scale_num(b$height %||% 6, 6)
 
-    img <- make_boxplot(session_id, experiment, group, feature,
+    out <- make_boxplot(session_id, experiment, group, feature,
+                        width = width, height = height,
                         color_panel = color_panel,
                         custom_colors = custom_colors)
-    list(success = TRUE, plot = img)
+    .viz_api_plot_response(out)
   }, res)
 }
 
@@ -1993,6 +2162,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b          <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id
     experiment <- b$experiment
     group      <- b$group %||% NULL
@@ -2001,9 +2171,9 @@ function(req, res) {
     cluster_rows <- if (is.null(b$cluster_rows)) TRUE else isTRUE(b$cluster_rows)
     cluster_cols <- if (is.null(b$cluster_cols)) TRUE else isTRUE(b$cluster_cols)
     show_gene_names <- if (is.null(b$show_gene_names)) NULL else isTRUE(b$show_gene_names)
-    font_size <- as.numeric(b$font_size %||% 11)
-    width <- as.numeric(b$width %||% 11)
-    height <- as.numeric(b$height %||% 8)
+    font_size <- emp_viz_scale_num(b$font_size %||% 11, 11)
+    width <- emp_viz_scale_num(b$width %||% 11, 11)
+    height <- emp_viz_scale_num(b$height %||% 8, 8)
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
 
@@ -2027,6 +2197,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b          <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id
     experiment <- b$experiment
     fc_cutoff  <- as.numeric(b$fc_cutoff %||% 1.0)
@@ -2035,28 +2206,16 @@ function(req, res) {
     label_top  <- as.integer(b$label_top %||% 15L)
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
+    width  <- emp_viz_scale_num(b$width %||% 8, 8)
+    height <- emp_viz_scale_num(b$height %||% 7, 7)
 
     img <- make_volcano(session_id, experiment,
                         fc_cutoff = fc_cutoff, p_cutoff = p_cutoff,
                         use_padj = use_padj, label_top = label_top,
+                        width = width, height = height,
                         color_panel = color_panel,
                         custom_colors = custom_colors)
-    # Best-effort: also save a PDF for one-click download.
-    pdf_ok <- FALSE
-    tryCatch({
-      p <- .make_volcano_plot(session_id, experiment,
-                               fc_cutoff = fc_cutoff, p_cutoff = p_cutoff,
-                               use_padj = use_padj, label_top = label_top)
-      if (!is.null(p)) {
-        pdf_dir <- file.path(session_path(session_id), "plots")
-        dir.create(pdf_dir, recursive = TRUE, showWarnings = FALSE)
-        save_plot_pdf(p, file.path(pdf_dir, paste0("volcano_",
-                                                   make.names(experiment), ".pdf")),
-                       width = 9, height = 7)
-        pdf_ok <<- TRUE
-      }
-    }, error = function(e) NULL)
-    list(success = TRUE, plot = img, pdf_available = pdf_ok)
+    .viz_api_plot_response(img)
   }, res)
 }
 
@@ -2066,6 +2225,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b            <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id   <- b$session_id
     experiment   <- b$experiment
     group        <- b$group %||% NULL
@@ -2077,9 +2237,9 @@ function(req, res) {
     cluster_rows <- if (is.null(b$cluster_rows)) TRUE else isTRUE(b$cluster_rows)
     cluster_cols <- if (is.null(b$cluster_cols)) TRUE else isTRUE(b$cluster_cols)
     show_rn      <- if (is.null(b$show_rownames)) TRUE else isTRUE(b$show_rownames)
-    font_size    <- as.numeric(b$font_size %||% 10)
-    width        <- as.numeric(b$width %||% NA_real_)
-    height       <- as.numeric(b$height %||% NA_real_)
+    font_size    <- emp_viz_scale_num(b$font_size %||% 10, 10)
+    width        <- emp_viz_scale_num(b$width %||% NA_real_, NA_real_)
+    height       <- emp_viz_scale_num(b$height %||% NA_real_, NA_real_)
     color_panel  <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
 
@@ -2136,15 +2296,16 @@ function(session_id, experiment, res) {
 function(req, res) {
   safe_api({
     b          <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id
     experiment <- b$experiment
     group      <- b$group %||% NULL
     dim1       <- as.integer(b$dim1 %||% 1L)
     dim2       <- as.integer(b$dim2 %||% 2L)
-    width      <- as.numeric(b$width %||% 9)
-    height     <- as.numeric(b$height %||% 7)
-    proj_width <- as.numeric(b$proj_width %||% 7)
-    proj_height <- as.numeric(b$proj_height %||% 4.5)
+    width      <- emp_viz_scale_num(b$width %||% 9, 9)
+    height     <- emp_viz_scale_num(b$height %||% 7, 7)
+    proj_width <- emp_viz_scale_num(b$proj_width %||% 7, 7)
+    proj_height <- emp_viz_scale_num(b$proj_height %||% 4.5, 4.5)
     groups_include <- b$groups_include %||% NULL
     color_panel <- b$color_panel %||% NULL
     ordination <- b$ordination %||% "auto"
@@ -2166,17 +2327,21 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b          <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id
     experiment <- b$experiment
     group      <- b$group %||% NULL
     top_n      <- as.integer(b$top_n %||% 10L)
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
+    width  <- emp_viz_scale_num(b$width %||% 11, 11)
+    height <- emp_viz_scale_num(b$height %||% 6, 6)
 
-    img <- make_structure(session_id, experiment, group, top_n,
+    out <- make_structure(session_id, experiment, group, top_n,
+                          width = width, height = height,
                           color_panel = color_panel,
                           custom_colors = custom_colors)
-    list(success = TRUE, plot = img)
+    .viz_api_plot_response(out)
   }, res)
 }
 
@@ -2186,6 +2351,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     b          <- jsonlite::fromJSON(req$postBody)
+    .viz_api_style(b)
     session_id <- b$session_id
     experiment <- b$experiment
     group      <- b$group  %||% NULL
@@ -2193,11 +2359,14 @@ function(req, res) {
     source     <- b$source %||% "current"
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
+    width  <- emp_viz_scale_num(b$width %||% 8, 8)
+    height <- emp_viz_scale_num(b$height %||% 6, 6)
 
-    img <- make_alpha_plot(session_id, experiment, group, metric, source,
+    out <- make_alpha_plot(session_id, experiment, group, metric, source,
+                           width = width, height = height,
                            color_panel = color_panel,
                            custom_colors = custom_colors)
-    list(success = TRUE, plot = img)
+    .viz_api_plot_response(out)
   }, res)
 }
 
@@ -2724,6 +2893,21 @@ function(session_id, artifact_name, res) {
 #* @serializer unboxedJSON
 function(req, res) {
   plumber_llm_optimize_r_post(req, res)
+}
+
+#* Return last OpenRouter model probe manifest (working / failed lists).
+#* @get /api/llm/openrouter_verified
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_llm_openrouter_verified_get(req, res)
+}
+
+#* Probe OpenRouter models with a minimal chat request; writes verified manifest.
+#* Body: { config: { api_key, base_url?, timeout? }, models?: string[] }
+#* @post /api/llm/probe_openrouter
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_llm_probe_openrouter_post(req, res)
 }
 
 #* AI copilot: interpret an analysis result and suggest next steps

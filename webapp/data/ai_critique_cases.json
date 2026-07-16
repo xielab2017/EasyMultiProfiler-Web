@@ -1,6 +1,14 @@
 {
   "cases": [
     {
+      "id": "m16s_heatmap_gene_label",
+      "title": "16S 热图误称基因",
+      "error_types": ["术语误用", "过度解读"],
+      "ai_text": "DEG heatmap 显示 10 个基因在 IBS_before 组显著上调，包括 Bifidobacterium 和 Bacteroides，证明这些基因导致了 IBS，应通过敲除验证。",
+      "hints": ["菌名不是基因", "组成性数据", "因果夸大"],
+      "correction_guide": "应称 differential taxa / ASV；Bifidobacterium 等为菌属；表述为组间关联富集；验证用 qPCR/宏基因组而非基因敲除。"
+    },
+    {
       "id": "corr_causation",
       "title": "相关 ≠ 因果",
       "error_types": ["因果关系错误", "过度解读"],

@@ -99,6 +99,7 @@ save_mae <- function(session_id, mae) {
   p <- mae_path(session_id)
   saveRDS(mae, p)
   assign(session_id, list(mae = mae, mtime = file.mtime(p)), envir = .MAE_CACHE)
+  tryCatch(write_experiments_meta(session_id, mae), error = function(e) NULL)
 }
 
 load_mae <- function(session_id) {
@@ -230,4 +231,99 @@ delete_session <- function(session_id) {
 list_experiments <- function(session_id) {
   mae <- load_mae(session_id)
   names(mae)
+}
+
+experiments_meta_path <- function(session_id) {
+  file.path(session_path(session_id), "experiments_meta.json")
+}
+
+experiment_registry_path <- function(session_id) {
+  file.path(session_path(session_id), "experiment_registry.json")
+}
+
+data_type_to_omics <- function(data_type) {
+  switch(data_type,
+    tax = "microbiome_16s",
+    normal = "transcriptomics",
+    chipseq = "chipseq",
+    "transcriptomics"
+  )
+}
+
+read_experiment_registry <- function(session_id) {
+  p <- experiment_registry_path(session_id)
+  if (!file.exists(p)) return(list())
+  tryCatch(jsonlite::fromJSON(p, simplifyVector = FALSE), error = function(e) list())
+}
+
+register_experiment_meta <- function(session_id, experiment_name, data_type, omics = NULL) {
+  ensure_session_dir(session_id)
+  reg <- read_experiment_registry(session_id)
+  reg[[experiment_name]] <- list(
+    data_type = data_type,
+    omics = omics %||% data_type_to_omics(data_type)
+  )
+  jsonlite::write_json(reg, experiment_registry_path(session_id), auto_unbox = TRUE, null = "null")
+  invisible(reg)
+}
+
+enrich_experiments_with_registry <- function(session_id, info) {
+  reg <- read_experiment_registry(session_id)
+  lapply(info, function(e) {
+    extra <- reg[[e$name]]
+    if (!is.null(extra)) {
+      e$data_type <- extra$data_type %||% NULL
+      e$omics <- extra$omics %||% NULL
+    } else if (grepl("16s|m16s|tax", e$name, ignore.case = TRUE)) {
+      e$omics <- "microbiome_16s"
+      e$data_type <- "tax"
+    } else {
+      e$omics <- "transcriptomics"
+      e$data_type <- "normal"
+    }
+    e
+  })
+}
+
+write_experiments_meta <- function(session_id, mae) {
+  exps <- names(mae)
+  info <- lapply(exps, function(e) {
+    ex <- mae[[e]]
+    list(
+      name = e,
+      samples = ncol(ex),
+      features = nrow(ex),
+      assay = names(SummarizedExperiment::assays(ex))[1]
+    )
+  })
+  meta <- list(
+    mae_mtime = as.numeric(file.mtime(mae_path(session_id))),
+    experiments = info
+  )
+  jsonlite::write_json(meta, experiments_meta_path(session_id), auto_unbox = TRUE, null = "null")
+  invisible(info)
+}
+
+read_experiments_meta <- function(session_id) {
+  mp <- experiments_meta_path(session_id)
+  mae_p <- mae_path(session_id)
+  if (!file.exists(mp) || !file.exists(mae_p)) return(NULL)
+  meta <- tryCatch(jsonlite::fromJSON(mp, simplifyVector = FALSE), error = function(e) NULL)
+  if (is.null(meta) || is.null(meta$experiments)) return(NULL)
+  stored <- suppressWarnings(as.numeric(meta$mae_mtime))
+  cur <- as.numeric(file.mtime(mae_p))
+  if (!is.finite(stored) || abs(stored - cur) > 1e-3) return(NULL)
+  meta$experiments
+}
+
+list_experiments_info <- function(session_id) {
+  cached <- read_experiments_meta(session_id)
+  if (is.null(cached)) {
+    if (!file.exists(mae_path(session_id))) return(list())
+    mae <- load_mae(session_id)
+    write_experiments_meta(session_id, mae)
+    cached <- read_experiments_meta(session_id)
+  }
+  if (is.null(cached)) return(list())
+  enrich_experiments_with_registry(session_id, cached)
 }

@@ -25,34 +25,70 @@ demo_dataset_catalog <- function() {
   root <- .webapp_root()
   tests <- .tests_dir()
   src <- file.path(root, "test_outputs", "latest", "source_files")
-  clinical_raw <- file.path(tests, "Clinical-test.csv")
-  clinical_meta <- file.path(tests, "meta-test.csv")
-  if (!file.exists(clinical_raw)) clinical_raw <- file.path(tests, "Clinical.csv")
-  if (!file.exists(clinical_meta)) clinical_meta <- file.path(tests, "meta.csv")
-  rnaseq_data <- file.path(tests, "RNAseq_output.csv")
-  rnaseq_meta <- file.path(tests, "RNAseq_mapping.txt")
-  if (!file.exists(rnaseq_data)) rnaseq_data <- file.path(src, "RNAseq_output.csv")
-  if (!file.exists(rnaseq_meta)) rnaseq_meta <- file.path(src, "RNAseq_mapping.txt")
+  m16s_latest <- file.path(root, "test_outputs", "latest", "microbiome_16s")
+  tx_latest <- file.path(root, "test_outputs", "latest", "transcriptomics")
+
+  first_existing <- function(...) {
+    cands <- c(...)
+    hit <- cands[file.exists(cands)]
+    if (length(hit)) hit[[1]] else cands[[1]]
+  }
+
+  clinical_raw <- first_existing(
+    file.path(tests, "Clinical-test.csv"),
+    file.path(tests, "Clinical.csv")
+  )
+  clinical_meta <- first_existing(
+    file.path(tests, "meta-test.csv"),
+    file.path(tests, "meta.csv"),
+    file.path(tests, "meta-formal.csv")
+  )
+  rnaseq_data <- first_existing(
+    file.path(tests, "RNAseq_output.csv"),
+    file.path(src, "RNAseq_output.csv"),
+    file.path(tx_latest, "RNAseq_test_assay.csv")
+  )
+  rnaseq_meta <- first_existing(
+    file.path(tests, "RNAseq_mapping.txt"),
+    file.path(tests, "RNAseq_mapping.csv"),
+    file.path(src, "RNAseq_mapping.txt"),
+    file.path(tx_latest, "RNAseq_test_metadata.csv")
+  )
+  m16s_data <- first_existing(
+    file.path(tests, "level-7.csv"),
+    file.path(tests, "16S_level-7.csv"),
+    file.path(src, "16S_level-7.csv"),
+    file.path(m16s_latest, "16S_test_assay.csv")
+  )
+  m16s_meta <- first_existing(
+    file.path(tests, "meta.csv"),
+    file.path(tests, "16S_mapping.csv"),
+    file.path(tests, "meta-test.csv"),
+    file.path(src, "16S_mapping.txt"),
+    file.path(m16s_latest, "16S_test_metadata.csv")
+  )
 
   datasets <- list(
     list(
       id = "m16s_course",
-      label = "16S 微生物组（课程示例）",
+      label = "16S Microbiome (Course Demo)",
       label_en = "16S Microbiome (Course Demo)",
+      label_zh = "16S Microbiome (Course Demo)",
       omics = "microbiome_16s",
       data_type = "tax",
       experiment_name = "m16s_course",
       assay_name = "counts",
       start_level = "Species",
       tax_sep = ";",
-      data_file = file.path(tests, "level-7.csv"),
-      metadata_file = file.path(tests, "meta.csv"),
+      data_file = m16s_data,
+      metadata_file = m16s_meta,
       description = "Taxonomy abundance + sample metadata (UC/IBS-style cohort)."
     ),
     list(
       id = "rnaseq_course",
-      label = "RNA-seq 转录组（课程示例）",
+      label = "RNA-seq Transcriptomics (Course Demo)",
       label_en = "RNA-seq Transcriptomics (Course Demo)",
+      label_zh = "RNA-seq Transcriptomics (Course Demo)",
       omics = "transcriptomics",
       data_type = "normal",
       experiment_name = "rnaseq_course",
@@ -65,8 +101,9 @@ demo_dataset_catalog <- function() {
     ),
     list(
       id = "clinical_course",
-      label = "Clinical 临床表型（课程示例）",
+      label = "Clinical Phenotypes (Course Demo)",
       label_en = "Clinical Phenotypes (Course Demo)",
+      label_zh = "Clinical Phenotypes (Course Demo)",
       omics = "clinical",
       data_type = "clinical_raw",
       experiment_name = "clinical_course",
@@ -191,17 +228,20 @@ import_demo_dataset <- function(session_id, dataset_id,
   tryCatch({
     save_raw_empt(session_id, exp_name, .promote_to_empt(mae, exp_name))
   }, error = function(e) NULL)
+  register_experiment_meta(session_id, exp_name, data_type, d$omics)
+  write_experiments_meta(session_id, mae)
 
   ex <- mae[[exp_name]]
   list(
     success = TRUE,
     session_id = session_id,
-    import_mode = "demo",
+    import_mode = if (mae_exists) "demo_add" else "demo_new",
     demo_id = d$id,
     omics = d$omics,
     experiment_name = exp_name,
     samples = ncol(ex),
     features = nrow(ex),
-    assay = assay
+    assay = assay,
+    experiment_count = length(mae)
   )
 }

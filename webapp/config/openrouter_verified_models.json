@@ -1,0 +1,128 @@
+{
+  "probed_at": "2026-07-12T15:43:54Z",
+  "fusion_defaults": [
+    "deepseek/deepseek-v4-pro",
+    "deepseek/deepseek-v4-flash",
+    "moonshotai/kimi-k2.7-code",
+    "qwen/qwen3.7-max",
+    "z-ai/glm-5.2"
+  ],
+  "fusion_model": "deepseek/deepseek-v4-pro",
+  "working": [
+    {
+      "ok": true,
+      "model": "deepseek/deepseek-v4-pro",
+      "latency_s": 9.81,
+      "sample": ""
+    },
+    {
+      "ok": true,
+      "model": "deepseek/deepseek-v4-flash",
+      "latency_s": 3.69,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "moonshotai/kimi-k2.7-code",
+      "latency_s": 6.68,
+      "sample": " OK"
+    },
+    {
+      "ok": true,
+      "model": "qwen/qwen3.7-max",
+      "latency_s": 9.46,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "z-ai/glm-5.2",
+      "latency_s": 2.9,
+      "sample": ""
+    },
+    {
+      "ok": true,
+      "model": "z-ai/glm-5",
+      "latency_s": 8.3,
+      "sample": ""
+    },
+    {
+      "ok": true,
+      "model": "openai/gpt-5.6-sol",
+      "latency_s": 7.16,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "openai/gpt-5.6-terra",
+      "latency_s": 4.9,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "openai/gpt-5.6-luna",
+      "latency_s": 5.71,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "openai/gpt-5.5",
+      "latency_s": 5.82,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "openai/gpt-5.5-pro",
+      "latency_s": 8.7,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "anthropic/claude-fable-5",
+      "latency_s": 7.32,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "anthropic/claude-sonnet-5",
+      "latency_s": 7.34,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "anthropic/claude-opus-4.8",
+      "latency_s": 7.24,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "google/gemini-3.1-pro-preview",
+      "latency_s": 8.55,
+      "sample": ""
+    },
+    {
+      "ok": true,
+      "model": "google/gemini-3.5-flash",
+      "latency_s": 6.68,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "openai/gpt-4o-mini",
+      "latency_s": 7.41,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "deepseek/deepseek-chat",
+      "latency_s": 7.59,
+      "sample": "OK"
+    },
+    {
+      "ok": true,
+      "model": "meta-llama/llama-3.3-70b-instruct",
+      "latency_s": 7.26,
+      "sample": "OK"
+    }
+  ],
+  "failed": []
+}

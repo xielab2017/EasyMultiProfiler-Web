@@ -305,6 +305,13 @@ add_experiment_to_mae <- function(mae, data_file, metadata_file = NULL,
                                    assay_name = "counts",
                                    start_level = "Species",
                                    tax_sep = ";") {
+  existing_exps <- names(as.list(MultiAssayExperiment::experiments(mae)))
+  if (experiment_name %in% existing_exps) {
+    stop(sprintf(
+      "Experiment name '%s' already exists in this session. Choose a unique name to add another omics dataset.",
+      experiment_name
+    ))
+  }
   # Build new single-experiment MAE then merge
   new_mae <- build_mae(data_file, metadata_file, experiment_name,
                         data_type, assay_name, start_level, tax_sep)

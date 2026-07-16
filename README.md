@@ -1,12 +1,14 @@
-# EasyMultiProfiler Web v5.0.2
+# EasyMultiProfiler Web v6.0
 
 **多组学下游分析与可视化 — 浏览器版（R 后端 + 静态前端）**
 
-![](https://img.shields.io/badge/version-5.0.2-blue)
+![](https://img.shields.io/badge/version-6.0-blue)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/macOS%20%7C%20Windows-Web%20install-brightgreen)
 
 面向学生与零基础用户：**无需事先安装 EMP R 包**，按平台运行一键脚本即可（会自动安装 R 依赖并启动网页）。
+
+![EasyMultiProfiler Web V6.0 technical mode diagram](docs/TECHNICAL_MODE_V6.svg)
 
 ---
 
@@ -19,7 +21,7 @@
 | **仅 R 包** | 已有 RStudio 的研究者 | R 控制台 `pak::pak(...)` | 下方「R 包 only」 |
 
 > **Mac 与 Windows 使用不同的脚本与命令，请勿混用。**  
-> 打开网页后，左侧 **Guide** 页有完整分平台说明（v5.0.2 内置指南）。
+> 打开网页后，左侧 **Guide** 页有完整分平台说明（v6.0 内置指南）。
 
 ---
 
@@ -28,7 +30,7 @@
 ### macOS（推荐）
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v5.0.2/webapp/scripts/install_from_github.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.sh)"
 ```
 
 或克隆/解压仓库后双击 **`Run-EMP-Web-Mac.command`**。
@@ -37,7 +39,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProf
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
-irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v5.0.2/webapp/scripts/install_from_github.ps1 | iex
+irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.ps1 | iex
 ```
 
 或解压后：**首次**双击 `Repair-and-Start-EMP-Web.bat`，**日常**双击 `Start-EMP-Web.bat`。
@@ -49,7 +51,7 @@ irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v5.0.2/we
 
 ---
 
-## v5.0.2 亮点
+## v6.0 亮点
 
 - **ChIP-seq**：BAM → MACS2/3 peaks → ChIPseeker 注释 → 与 RNA-seq / 蛋白组交叉分析  
 - **RNA-seq GSEA + GO 细分**：GO BP/CC/MF、KEGG、Reactome rank-based GSEA  

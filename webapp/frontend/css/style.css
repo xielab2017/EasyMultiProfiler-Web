@@ -879,6 +879,58 @@ body.code-lab-docked .workflow-stepper {
 .welcome-card { border-left: 4px solid var(--clr-primary); background: linear-gradient(135deg, #f8fafc, #eef2ff); }
 .demo-dataset-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .upload-zone.is-dragover { border-color: var(--clr-primary); background: #eef2ff; }
+
+/* Multi-upload grid + per-type upload cards */
+.multi-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+.upload-card {
+  border: 1px solid var(--clr-border, #e2e8f0);
+  border-radius: 10px;
+  padding: 14px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.upload-card > header {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 600; color: var(--clr-primary, #2563eb);
+}
+.upload-card > header h3 { margin: 0; font-size: 14px; }
+.upload-icon { font-size: 22px; line-height: 1; }
+.upload-card .upload-row { gap: 8px; }
+.upload-card .upload-zone { padding: 14px; font-size: 12px; }
+.upload-card .upload-zone p { font-size: 12px; }
+.upload-card .upload-zone input[type="file"] { display: none; }
+.upload-card .upload-btn { margin-top: auto; }
+.upload-zone-hot { border-color: var(--clr-primary) !important; background: #eef2ff !important; }
+
+/* Legacy form collapsed by default */
+.legacy-import-details {
+  margin-top: 14px;
+  padding: 8px 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.legacy-import-details summary {
+  cursor: pointer; font-weight: 600; color: var(--clr-muted, #475569);
+  font-size: 13px;
+}
+
+/* Demo-dataset buttons row + "load all" button */
+.demo-row-wrap { display: flex; flex-direction: column; gap: 10px; }
+.demo-row-single { display: flex; flex-wrap: wrap; gap: 8px; }
+.demo-dataset-btn, .demo-load-all-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.demo-load-all-btn { font-weight: 600; }
+.demo-load-all-hint { margin: 0; font-size: 12px; }
+
 .btn-link {
   background: none; border: none; color: #93c5fd; cursor: pointer;
   font-size: inherit; padding: 0; text-decoration: underline;

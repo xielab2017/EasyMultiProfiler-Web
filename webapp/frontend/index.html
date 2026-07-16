@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EasyMultiProfiler Web v5.0.2</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-06-21-v5.0.2">
-  <link rel="stylesheet" href="css/code_lab.css?v=2026-06-21-v5.0.2">
-  <link rel="stylesheet" href="css/teaching.css?v=2026-06-21-v5.0.2">
+  <title>EasyMultiProfiler Web v6.0</title>
+    <link rel="stylesheet" href="css/style.css?v=2026-07-16-multi-demo-v2">
+    <link rel="stylesheet" href="css/code_lab.css?v=2026-07-16-multi-demo-v2">
+    <link rel="stylesheet" href="css/teaching.css?v=2026-07-16-multi-demo-v2">
   <script>
     (function () {
       var s = parseFloat(localStorage.getItem("emp_font_scale"));
@@ -123,10 +123,10 @@
       <div id="perf-last" class="perf-last">—</div>
     </div>
     <div id="locale-note" class="locale-note">
-      <span class="version-badge">v5.0.2</span>
+      <span class="version-badge">v6.0</span>
       <button type="button" class="btn-link" id="btn-help-guide" data-i18n="footer.guide">安装与使用指南</button>
       · <button type="button" class="btn-link" id="btn-help-course" data-i18n="footer.course">Course 入门</button>
-      · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/master/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
+      · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/main/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
     </div>
   </div>
 </nav>
@@ -184,7 +184,7 @@
   <section id="page-course" class="page active">
     <div class="card guide-course-banner">
       <p class="hint" style="margin:0">
-        <strong>v5.0.2</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
+        <strong>v6.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
         （Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」
       </p>
     </div>
@@ -209,14 +209,14 @@
     <div id="teaching-prompt-root"></div>
   </section>
 
-  <!-- ── PAGE: USER GUIDE (v5.0.2) ─────────────────────── -->
+  <!-- ── PAGE: USER GUIDE (v6.0) ─────────────────────── -->
   <section id="page-guide" class="page">
     <div id="guide-root"></div>
   </section>
 
   <section id="page-import" class="page">
     <div class="card welcome-card" id="welcome-card">
-      <h2>👋 欢迎使用 EasyMultiProfiler v5.0.2</h2>
+      <h2>👋 欢迎使用 EasyMultiProfiler v6.0</h2>
       <p class="hint">
         <strong>还没安装？</strong> 左侧点 <strong>Guide</strong> 查看 Mac / Windows 分平台安装步骤（两条路径不同，请勿混用）。
         <strong>已装好？</strong> 从 <strong>Course</strong> 学，或下方一键加载 16S / RNA-seq / Clinical 示例数据。
@@ -238,18 +238,175 @@
 
     <div class="card" data-clinical-script="three_line">
       <h2>Upload Multi-Omics Data</h2>
-      <p class="hint">Upload your count matrix (CSV/TSV) and optional sample metadata. Multiple experiments can be added to the same session.</p>
+      <p class="hint">Upload your count matrices (CSV/TSV) and optional sample metadata. You can drop <strong>one file per omics type</strong> in parallel — each card uploads to the same session as its own experiment. Re-upload or re-load the same demo to refresh.</p>
 
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Data Type</label>
-          <select id="import-data-type">
-            <option value="normal">Normal (RNAseq / Metabolomics / Proteomics)</option>
-            <option value="chipseq">ChIP-seq (BAM/SAM → MACS → ChIPseeker)</option>
-            <option value="tax">Microbiome / Taxonomy (16S)</option>
-            <option value="clinical">Clinical Data</option>
-          </select>
-        </div>
+      <div class="multi-upload-grid">
+        <section class="upload-card" data-upload-type="transcriptomics">
+          <header><span class="upload-icon">🧬</span><h3>RNA-seq / Metabolomics / Proteomics</h3></header>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Experiment Name</label>
+              <input type="text" class="upload-exp-name" data-upload-type="transcriptomics" value="rnaseq_upload" placeholder="e.g. RNAseq_1">
+            </div>
+            <div class="form-group">
+              <label>Assay Name</label>
+              <input type="text" class="upload-assay-name" value="counts" placeholder="counts">
+            </div>
+          </div>
+          <div class="upload-row">
+            <div class="upload-zone drop-data" data-upload-type="transcriptomics">
+              <i data-lucide="file-spreadsheet"></i>
+              <p><strong class="upload-data-label">Count Matrix</strong> (CSV / TSV)</p>
+              <p class="hint">Rows = features, Columns = samples</p>
+              <input type="file" class="upload-data-file" data-upload-type="transcriptomics" accept=".csv,.tsv,.txt,.biom">
+              <label class="btn btn-outline" for="upload-data-file-transcriptomics">Choose File</label>
+              <span class="data-filename filename-label"></span>
+            </div>
+            <div class="upload-zone drop-meta" data-upload-type="transcriptomics">
+              <i data-lucide="table-2"></i>
+              <p><strong>Metadata</strong> (optional)</p>
+              <input type="file" class="upload-meta-file" data-upload-type="transcriptomics" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-meta-file-transcriptomics">Choose File</label>
+              <span class="meta-filename filename-label"></span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary upload-btn" data-upload-type="transcriptomics">
+            <i data-lucide="upload"></i> Upload RNA-seq / Metabolomics
+          </button>
+        </section>
+
+        <section class="upload-card" data-upload-type="microbiome_16s">
+          <header><span class="upload-icon">🧫</span><h3>Microbiome / Taxonomy (16S)</h3></header>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Experiment Name</label>
+              <input type="text" class="upload-exp-name" data-upload-type="microbiome_16s" value="m16s_upload">
+            </div>
+            <div class="form-group">
+              <label>Taxonomy Level</label>
+              <select class="upload-start-level" data-upload-type="microbiome_16s">
+                <option value="Species">Species</option>
+                <option value="Genus">Genus</option>
+                <option value="Family">Family</option>
+                <option value="Order">Order</option>
+                <option value="Class">Class</option>
+                <option value="Phylum">Phylum</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Taxonomy Separator</label>
+              <input type="text" class="upload-tax-sep" data-upload-type="microbiome_16s" value=";" style="max-width:80px">
+            </div>
+          </div>
+          <div class="upload-row">
+            <div class="upload-zone drop-data" data-upload-type="microbiome_16s">
+              <i data-lucide="file-spreadsheet"></i>
+              <p><strong>Abundance Table</strong> (CSV / TSV)</p>
+              <input type="file" class="upload-data-file" data-upload-type="microbiome_16s" accept=".csv,.tsv,.txt,.biom">
+              <label class="btn btn-outline" for="upload-data-file-microbiome_16s">Choose File</label>
+              <span class="data-filename filename-label"></span>
+            </div>
+            <div class="upload-zone drop-meta" data-upload-type="microbiome_16s">
+              <i data-lucide="table-2"></i>
+              <p><strong>Sample Metadata</strong> (optional)</p>
+              <input type="file" class="upload-meta-file" data-upload-type="microbiome_16s" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-meta-file-microbiome_16s">Choose File</label>
+              <span class="meta-filename filename-label"></span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary upload-btn" data-upload-type="microbiome_16s">
+            <i data-lucide="upload"></i> Upload 16S Microbiome
+          </button>
+        </section>
+
+        <section class="upload-card" data-upload-type="chipseq">
+          <header><span class="upload-icon">🧶</span><h3>ChIP-seq</h3></header>
+          <p class="hint">Drop a pre-called peak file (<code>.bed / .narrowPeak / .broadPeak / .gff</code>). We register it and jump to the ChIP-seq tab so you can run annotation + cross-omics right away. Raw BAM/SAM stays on the Analysis page (MACS pipeline).</p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Genome</label>
+              <select class="upload-genome" data-upload-type="chipseq">
+                <option value="hs" selected>Human (hg19 / hg38)</option>
+                <option value="mm">Mouse (mm10)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Preset (for downstream annotation)</label>
+              <select class="upload-preset" data-upload-type="chipseq">
+                <option value="chipseq_tf">ChIP-seq TF</option>
+                <option value="chipseq_histone_broad">Histone / broad</option>
+                <option value="atac_paired">ATAC-seq paired</option>
+              </select>
+            </div>
+          </div>
+          <div class="upload-row">
+            <div class="upload-zone drop-data" data-upload-type="chipseq">
+              <i data-lucide="mountain"></i>
+              <p><strong>Peak File</strong> (BED / narrowPeak / broadPeak / GFF)</p>
+              <input type="file" class="upload-data-file" data-upload-type="chipseq" accept=".bed,.narrowPeak,.broadPeak,.gff,.gff3,.txt,.csv,.tsv">
+              <label class="btn btn-outline" for="upload-data-file-chipseq">Choose Peak File</label>
+              <span class="data-filename filename-label"></span>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button type="button" class="btn btn-primary upload-btn" data-upload-type="chipseq">
+              <i data-lucide="upload"></i> Upload Peaks & Open ChIP-seq tab
+            </button>
+            <button type="button" class="btn btn-outline" id="btn-go-chipseq">
+              <i data-lucide="arrow-right"></i> Open ChIP-seq tab
+            </button>
+          </div>
+        </section>
+
+        <section class="upload-card" data-upload-type="clinical">
+          <header><span class="upload-icon">🩺</span><h3>Clinical Data</h3></header>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Upload Type</label>
+              <select class="upload-clinical-kind" data-upload-type="clinical">
+                <option value="clinical_raw">Clinical (raw table)</option>
+                <option value="clinical_meta">Meta (metadata table)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Experiment / Table Name</label>
+              <input type="text" class="upload-exp-name" data-upload-type="clinical" value="clinical_upload">
+            </div>
+          </div>
+          <div class="upload-row">
+            <div class="upload-zone drop-data" data-upload-type="clinical">
+              <i data-lucide="heart-pulse"></i>
+              <p><strong>Clinical Raw / Meta Table</strong> (CSV / TSV)</p>
+              <input type="file" class="upload-data-file" data-upload-type="clinical" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-data-file-clinical">Choose File</label>
+              <span class="data-filename filename-label"></span>
+            </div>
+            <div class="upload-zone drop-meta" data-upload-type="clinical">
+              <i data-lucide="table-2"></i>
+              <p><strong>Optional Companion Meta</strong></p>
+              <input type="file" class="upload-meta-file" data-upload-type="clinical" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-meta-file-clinical">Choose File</label>
+              <span class="meta-filename filename-label"></span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary upload-btn" data-upload-type="clinical">
+            <i data-lucide="upload"></i> Upload Clinical
+          </button>
+        </section>
+      </div>
+
+      <details class="legacy-import-details">
+        <summary>Legacy single-form uploader (advanced)</summary>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Data Type</label>
+            <select id="import-data-type">
+              <option value="normal">Normal (RNAseq / Metabolomics / Proteomics)</option>
+              <option value="chipseq">ChIP-seq (BAM/SAM → MACS → ChIPseeker)</option>
+              <option value="tax">Microbiome / Taxonomy (16S)</option>
+              <option value="clinical">Clinical Data</option>
+            </select>
+          </div>
         <div class="form-group hidden" id="import-clinical-kind-wrap">
           <label>Clinical Upload Type</label>
           <select id="import-clinical-kind">
@@ -310,6 +467,7 @@
           <i data-lucide="upload"></i> Import Data
         </button>
       </div>
+      </details>
 
       <div id="import-result" class="alert hidden"></div>
 
@@ -1783,6 +1941,30 @@
           </div>
           <small class="hint">Color picker values override panel for group colors.</small>
         </div>
+        <div class="form-group">
+          <label>Figure scale (all plots, proportional)</label>
+          <input type="number" id="viz-figure-scale" value="1" min="0.25" max="2" step="0.05">
+          <small class="hint">1 = default; 0.75 shrinks width, height &amp; heatmap font together.</small>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label"><input type="checkbox" id="viz-lock-aspect" checked> Lock width/height ratio</label>
+        </div>
+        <div class="form-group">
+          <label>X-axis tick font (pt)</label>
+          <input type="number" id="viz-axis-text-x" value="11" min="5" max="28" step="1">
+        </div>
+        <div class="form-group">
+          <label>Y-axis tick font (pt)</label>
+          <input type="number" id="viz-axis-text-y" value="11" min="5" max="28" step="1">
+        </div>
+        <div class="form-group">
+          <label>X-axis label font (pt)</label>
+          <input type="number" id="viz-axis-title-x" value="12" min="6" max="32" step="1">
+        </div>
+        <div class="form-group">
+          <label>Y-axis label font (pt)</label>
+          <input type="number" id="viz-axis-title-y" value="12" min="6" max="32" step="1">
+        </div>
       </div>
     </div>
 
@@ -2462,8 +2644,7 @@
     else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
   }
 </script>
-<script type="module" src="js/app.js?v=2026-06-21-v5.0.2"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script type="module" src="js/app.js?v=2026-07-16-multi-demo-v2"></script>
 <script>
   // Initialise Lucide icons after all content is ready
   document.addEventListener("DOMContentLoaded", () => lucide.createIcons());

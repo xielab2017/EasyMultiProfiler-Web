@@ -209,11 +209,12 @@ mbx_volcano_plot <- function(session_id, experiment, fc_cutoff = 1, p_cutoff = 0
   fc_cutoff <- mbx_require_numeric(fc_cutoff, "fc_cutoff", 0, Inf)
   p_cutoff <- mbx_require_numeric(p_cutoff, "p_cutoff", 0, 1)
 
-  img <- make_volcano(session_id, experiment,
+  out <- make_volcano(session_id, experiment,
                       fc_cutoff = fc_cutoff, p_cutoff = p_cutoff,
                       color_panel = color_panel,
                       custom_colors = custom_colors)
-  list(success = TRUE, fc_cutoff = fc_cutoff, p_cutoff = p_cutoff, plot = img)
+  c(list(success = TRUE, fc_cutoff = fc_cutoff, p_cutoff = p_cutoff),
+    if (is.list(out)) out else list(plot = out))
 }
 
 mbx_export_diff_csv <- function(session_id, experiment) {

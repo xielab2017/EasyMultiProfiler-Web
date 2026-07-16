@@ -30,14 +30,60 @@ if (!exists("%||%", mode = "function")) {
 ## `plot` key, and optionally `matched` / `missing` when present.
 .heatmap_response <- function(img) {
   if (is.list(img) && !is.null(img$plot)) {
-    return(list(success   = TRUE,
-                 plot      = img$plot,
-                 matched   = img$matched %||% character(0),
-                 missing   = img$missing %||% character(0),
-                 n_used    = img$n_used %||% length(img$matched %||% character(0)),
-                 n_missing = img$n_missing %||% length(img$missing %||% character(0))))
+    return(c(list(success   = TRUE,
+                  plot      = img$plot,
+                  matched   = img$matched %||% character(0),
+                  missing   = img$missing %||% character(0),
+                  n_used    = img$n_used %||% length(img$matched %||% character(0)),
+                  n_missing = img$n_missing %||% length(img$missing %||% character(0))),
+             viz_pdf_meta(img$pdf %||% NULL)))
+  }
+  if (is.list(img) && !is.null(img$pdf_available)) {
+    return(c(list(success = TRUE), img))
   }
   list(success = TRUE, plot = img)
+}
+
+# Session-scoped path for a ggplot / pheatmap vector PDF artefact.
+viz_session_pdf_path <- function(session_id, experiment, kind) {
+  pdf_dir <- file.path(session_path(session_id), "plots")
+  dir.create(pdf_dir, recursive = TRUE, showWarnings = FALSE)
+  file.path(pdf_dir, paste0(kind, "_", make.names(experiment), ".pdf"))
+}
+
+# Best-effort vector PDF write; returns the file path or NULL.
+viz_save_session_pdf <- function(p, session_id, experiment, kind,
+                                 width = 9, height = 6) {
+  if (is.null(p) || is.null(session_id) || !nzchar(session_id) ||
+      is.null(experiment) || !nzchar(experiment) || is.null(kind) || !nzchar(kind)) {
+    return(NULL)
+  }
+  path <- viz_session_pdf_path(session_id, experiment, kind)
+  tryCatch(save_plot_pdf(p, path, width = width, height = height),
+           error = function(e) NULL)
+}
+
+# PNG preview + editable vector PDF for web download buttons.
+viz_emit_ggplot <- function(p, session_id, experiment, kind, width, height) {
+  b64 <- plot_to_base64(p, width = width, height = height)
+  pdf <- viz_save_session_pdf(p, session_id, experiment, kind, width, height)
+  c(list(plot = b64, pdf = pdf), viz_pdf_meta(pdf))
+}
+
+viz_plot_b64 <- function(x) {
+  if (is.list(x) && !is.null(x$plot)) x$plot else x
+}
+
+viz_pdf_meta <- function(pdf) {
+  list(
+    pdf_available = !is.null(pdf),
+    pdf_name = if (!is.null(pdf)) basename(pdf) else ""
+  )
+}
+
+.viz_api_plot_response <- function(out) {
+  if (is.list(out) && !is.null(out$plot)) c(list(success = TRUE), out)
+  else list(success = TRUE, plot = out)
 }
 
 # Detect CSV/TSV separator from first few lines
@@ -373,7 +419,7 @@ safe_api <- function(expr, res) {
   result <- tryCatch(
     expr,
     error = function(e) {
-      res$status <- 500
+      if (!is.null(res)) res$status <- 500
       list(success = FALSE, error = conditionMessage(e))
     }
   )

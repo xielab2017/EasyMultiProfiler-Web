@@ -1,9 +1,9 @@
 /**
  * Teaching mode: video-gated cases, prompts, learning trace.
  */
-import * as API from "./api.js?v=2026-06-21-v5.0.2";
-import { omicsDefaultsHint } from "./omics_defaults.js?v=2026-06-21-v5.0.2";
-import { getLocale, t } from "./locale.js?v=2026-06-21-v5.0.2";
+import * as API from "./api.js?v=2026-07-16-multi-demo";
+import { omicsDefaultsHint } from "./omics_defaults.js?v=2026-07-16-multi-demo";
+import { getLocale, t } from "./locale.js?v=2026-07-16-multi-demo";
 
 const LS_CASE = "emp_teaching_active_case";
 

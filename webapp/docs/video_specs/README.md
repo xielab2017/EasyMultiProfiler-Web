@@ -16,6 +16,7 @@
 | [03_代谢组.md](./03_代谢组.md) | metab_import ~ metab_interpret（5 节） |
 | [04_宏基因组.md](./04_宏基因组.md) | mgx_import ~ mgx_interpret（5 节） |
 | [NARRATION_录音稿.md](./NARRATION_录音稿.md) | **20 节完整旁白**（可直接送录音棚） |
+| [anime_prompts/](./anime_prompts/README.md) | **20 节动漫视频 LLM Prompt**（一键复制给 Kling/可灵等） |
 
 ## 单节结构说明
 

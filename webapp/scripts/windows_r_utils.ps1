@@ -16,8 +16,9 @@ function Get-EMPRepoRoot {
 # Resolve Rscript.exe without requiring a global PATH entry:
 #   1. EMPI_RSCRIPT = full path to Rscript.exe
 #   2. R_HOME       = R install root (…\R-4.x.x), uses bin\Rscript.exe
-#   3. <parent of repo>\R\<R-version>\bin\Rscript.exe  (e.g. D:\Coding\R\R-4.6.0)
-#   4. Rscript.exe on PATH
+#   3. Standard Windows R installation under Program Files
+#   4. <parent of repo>\R\<R-version>\bin\Rscript.exe  (e.g. D:\Coding\R\R-4.6.0)
+#   5. Rscript.exe on PATH
 function Resolve-EMPRscriptExe {
   $Root = Get-EMPRepoRoot
   if ($env:EMPI_RSCRIPT -and (Test-Path -LiteralPath $env:EMPI_RSCRIPT)) {
@@ -26,6 +27,23 @@ function Resolve-EMPRscriptExe {
   if ($env:R_HOME) {
     $rp = Join-Path $env:R_HOME "bin\Rscript.exe"
     if (Test-Path -LiteralPath $rp) { return (Resolve-Path -LiteralPath $rp).Path }
+  }
+  $programRoots = @($env:ProgramW6432, $env:ProgramFiles, ${env:ProgramFiles(x86)}) |
+    Where-Object { $_ } | Select-Object -Unique
+  $standardR = @(
+    foreach ($programRoot in $programRoots) {
+      $rDir = Join-Path $programRoot "R"
+      if (Test-Path -LiteralPath $rDir) {
+        Get-ChildItem -LiteralPath $rDir -Directory -Filter "R-*" -ErrorAction SilentlyContinue |
+          ForEach-Object {
+            $exe = Join-Path $_.FullName "bin\Rscript.exe"
+            if (Test-Path -LiteralPath $exe) { (Resolve-Path -LiteralPath $exe).Path }
+          }
+      }
+    }
+  )
+  if ($standardR.Count -gt 0) {
+    return ($standardR | Sort-Object -Descending | Select-Object -First 1)
   }
   $parent = Split-Path -Parent $Root
   $rSibling = Join-Path $parent "R"

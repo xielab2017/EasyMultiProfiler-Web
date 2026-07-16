@@ -1,7 +1,7 @@
 /**
  * Page-scoped i18n bindings for Analysis, Clinical, Visualize, Run All, Prepare extras.
  */
-import { t } from "./locale.js?v=2026-06-21-v5.0.2";
+import { t } from "./locale.js?v=2026-07-16-multi-demo";
 
 function $(sel, root = document) {
   return root.querySelector(sel);
@@ -336,6 +336,13 @@ function applyVisualizationPage() {
   setLabelFor("viz-color-panel", "viz.colorPanel");
   setLabelFor("viz-use-custom-colors", "viz.customColors");
   setHtml($("#viz-use-custom-colors")?.closest(".form-group")?.querySelector("small.hint"), "viz.colorHint");
+  setLabelFor("viz-figure-scale", "viz.figureScale");
+  setHtml($("#viz-figure-scale")?.closest(".form-group")?.querySelector("small.hint"), "viz.figureScaleHint");
+  setLabelFor("viz-lock-aspect", "viz.lockAspect");
+  setLabelFor("viz-axis-text-x", "viz.axisTextX");
+  setLabelFor("viz-axis-text-y", "viz.axisTextY");
+  setLabelFor("viz-axis-title-x", "viz.axisTitleX");
+  setLabelFor("viz-axis-title-y", "viz.axisTitleY");
 
   setText($("#viz-barplot h3"), "viz.barplotTitle");
   setLabelFor("bar-mode", "viz.mode");

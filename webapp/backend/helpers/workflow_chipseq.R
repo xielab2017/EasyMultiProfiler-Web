@@ -188,6 +188,68 @@ chip_list_bams <- function(session_id) {
   )
 }
 
+# Accept a pre-called peak file (BED / narrowPeak / broadPeak / gff) and
+# register it in the manifest as `last_peaks`, so downstream annotation
+# and cross-omics analysis can run directly without re-calling.
+chip_upload_peaks <- function(session_id, src_path, original_name = NULL,
+                              genome = "hs", preset = "chipseq_tf") {
+  session_id <- chip_require_session(session_id)
+  src_path <- chip_require_string(src_path, "src_path")
+  if (!file.exists(src_path)) stop("Uploaded peak file not found on server.")
+  ext <- tolower(tools::file_ext(src_path))
+  ok_ext <- c("bed", "narrowpeak", "broadpeak", "gff", "gff3", "txt", "csv", "tsv")
+  if (!(ext %in% ok_ext)) {
+    stop("Unsupported peak file extension: .", ext,
+         " (use .bed / .narrowPeak / .broadPeak / .gff)")
+  }
+  oname <- if (!is.null(original_name) && nzchar(as.character(original_name)[1])) {
+    basename(as.character(original_name)[1])
+  } else basename(src_path)
+  oname <- make.names(oname, unique = TRUE)
+
+  # Tiny header sanity check so we can hint at BED vs GFF without the user
+  # having to re-specify; actual parsing happens in chip_annotate_peaks().
+  hdr <- tryCatch(readLines(src_path, n = 1L, warn = FALSE), error = function(e) "")
+  format_hint <- if (grepl("^track", hdr[1])) "UCSC track" else
+                 if (identical(tools::file_ext(oname), "gff3") || identical(tools::file_ext(oname), "gff")) "gff" else
+                 if (identical(tools::file_ext(oname), "narrowpeak")) "narrowPeak" else
+                 if (identical(tools::file_ext(oname), "broadpeak")) "broadPeak" else
+                 "BED"
+
+  run_dir <- chip_run_dir(session_id,
+                          paste0("preimported_", tools::file_path_sans_ext(oname)))
+  dest <- file.path(run_dir, basename(oname))
+  if (!identical(normalizePath(src_path), normalizePath(dest, mustWork = FALSE))) {
+    file.copy(src_path, dest, overwrite = TRUE)
+  }
+
+  manifest <- chip_load_manifest(session_id)
+  gcfg <- chip_genome_config(genome)
+  manifest$last_peaks <- list(
+    run_dir       = run_dir,
+    peak_file     = dest,
+    summit_file   = "",
+    treatment_bams = character(0),
+    control_bams  = character(0),
+    genome        = gcfg$macs,
+    preset        = preset %||% "custom",
+    macs_args     = character(0),
+    source        = "preimported",
+    format_hint   = format_hint
+  )
+  chip_save_manifest(session_id, manifest)
+
+  list(
+    success = TRUE,
+    peak_file = dest,
+    run_dir = run_dir,
+    format_hint = format_hint,
+    genome = gcfg$macs,
+    preset = preset %||% "custom"
+  )
+}
+
+
 chip_set_bam_group <- function(session_id, file_id, group) {
   session_id <- chip_require_session(session_id)
   manifest <- chip_load_manifest(session_id)
@@ -834,7 +896,8 @@ chip_rnaseq_coanalysis <- function(session_id,
                        use_padj = identical(pcol, "padj") || grepl("adj", pcol, ignore.case = TRUE)),
           error = function(e) NULL
         )
-        if (!is.null(vplot) && nzchar(vplot)) plots$volcano_all <- vplot
+        vplot_b64 <- viz_plot_b64(vplot)
+        if (!is.null(vplot_b64) && nzchar(vplot_b64)) plots$volcano_all <- vplot_b64
       }
     }
   }

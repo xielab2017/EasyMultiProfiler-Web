@@ -98,7 +98,9 @@ m16s_visualize_sankey <- function(session_id, experiment, from_level = "Phylum",
     width = width,
     height = height,
     color_panel = color_panel,
-    custom_colors = custom_colors
+    custom_colors = custom_colors,
+    session_id = session_id,
+    experiment = experiment
   )
 }
 
@@ -112,6 +114,8 @@ m16s_visualize_network <- function(session_id, experiment, method = "spearman", 
     cutoff = cutoff,
     top_n = top_n,
     width = width,
-    height = height
+    height = height,
+    session_id = session_id,
+    experiment = experiment
   )
 }

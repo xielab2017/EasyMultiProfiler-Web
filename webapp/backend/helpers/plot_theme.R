@@ -21,28 +21,94 @@ emp_pub_packages <- function() {
 }
 
 emp_pub_theme <- function(base_size = 12) {
-  ggplot2::theme_bw(base_size = base_size, base_family = "") +
+  st <- getOption("emp.viz_style", list())
+  sc <- suppressWarnings(as.numeric(st$figure_scale %||% 1))
+  if (!is.finite(sc) || sc <= 0) sc <- 1
+  bs <- suppressWarnings(as.numeric(st$base_size %||% base_size))
+  if (!is.finite(bs) || bs <= 0) bs <- base_size
+  bs <- bs * sc
+
+  .axis_sz <- function(key, default) {
+    v <- suppressWarnings(as.numeric(st[[key]]))
+    val <- if (length(v) && is.finite(v[1]) && v[1] > 0) v[1] else default
+    val * sc
+  }
+  txt_x <- .axis_sz("axis_text_x", bs - 1)
+  txt_y <- .axis_sz("axis_text_y", bs - 1)
+  ttl_x <- .axis_sz("axis_title_x", bs)
+  ttl_y <- .axis_sz("axis_title_y", bs)
+
+  ggplot2::theme_bw(base_size = bs, base_family = "") +
     ggplot2::theme(
-      plot.title       = ggplot2::element_text(size = base_size + 2, face = "bold", hjust = 0.5,
+      plot.title       = ggplot2::element_text(size = bs + 2, face = "bold", hjust = 0.5,
                                                 margin = ggplot2::margin(b = 6)),
-      plot.subtitle    = ggplot2::element_text(size = base_size - 1, hjust = 0.5, colour = "grey30"),
-      plot.caption     = ggplot2::element_text(size = base_size - 3, hjust = 1, colour = "grey40"),
-      axis.title       = ggplot2::element_text(size = base_size, face = "bold"),
-      axis.text        = ggplot2::element_text(size = base_size - 1, colour = "grey15"),
+      plot.subtitle    = ggplot2::element_text(size = bs - 1, hjust = 0.5, colour = "grey30"),
+      plot.caption     = ggplot2::element_text(size = bs - 3, hjust = 1, colour = "grey40"),
+      axis.title.x     = ggplot2::element_text(size = ttl_x, face = "bold"),
+      axis.title.y     = ggplot2::element_text(size = ttl_y, face = "bold"),
+      axis.text.x      = ggplot2::element_text(size = txt_x, colour = "grey15"),
+      axis.text.y      = ggplot2::element_text(size = txt_y, colour = "grey15"),
       axis.ticks       = ggplot2::element_line(colour = "grey30", linewidth = 0.4),
       axis.line        = ggplot2::element_line(colour = "grey20", linewidth = 0.5),
       panel.border     = ggplot2::element_rect(colour = "grey20", fill = NA, linewidth = 0.6),
       panel.grid.major = ggplot2::element_line(colour = "grey92", linewidth = 0.3),
       panel.grid.minor = ggplot2::element_blank(),
       strip.background = ggplot2::element_rect(colour = "grey20", fill = "grey95"),
-      strip.text       = ggplot2::element_text(size = base_size - 1, face = "bold"),
+      strip.text       = ggplot2::element_text(size = bs - 1, face = "bold"),
       legend.position  = "right",
-      legend.title     = ggplot2::element_text(size = base_size - 1, face = "bold"),
-      legend.text      = ggplot2::element_text(size = base_size - 2),
+      legend.title     = ggplot2::element_text(size = bs - 1, face = "bold"),
+      legend.text      = ggplot2::element_text(size = bs - 2),
       legend.key       = ggplot2::element_blank(),
       plot.background  = ggplot2::element_rect(fill = "white", colour = NA),
       panel.background = ggplot2::element_rect(fill = "white", colour = NA)
     )
+}
+
+# Global figure typography / proportional scale (set per visualize API request).
+emp_viz_style_begin <- function(b) {
+  old <- getOption("emp.viz_style", NULL)
+  sc <- suppressWarnings(as.numeric(b$figure_scale %||% 1))
+  if (!is.finite(sc) || sc <= 0) sc <- 1
+  .num_or_na <- function(x) {
+    v <- suppressWarnings(as.numeric(x))
+    if (length(v) && is.finite(v[1]) && v[1] > 0) v[1] else NA_real_
+  }
+  options(emp.viz_style = list(
+    figure_scale = sc,
+    axis_text_x = .num_or_na(b$axis_text_x),
+    axis_text_y = .num_or_na(b$axis_text_y),
+    axis_title_x = .num_or_na(b$axis_title_x),
+    axis_title_y = .num_or_na(b$axis_title_y)
+  ))
+  invisible(old)
+}
+
+emp_viz_style_end <- function(old) {
+  options(emp.viz_style = old)
+}
+
+emp_viz_scale_num <- function(x, default = NA_real_) {
+  v <- suppressWarnings(as.numeric(x))
+  if (!length(v) || !is.finite(v[1])) {
+    v <- suppressWarnings(as.numeric(default))
+    if (!is.finite(v)) return(default)
+  } else {
+    v <- v[1]
+  }
+  st <- getOption("emp.viz_style", list())
+  sc <- suppressWarnings(as.numeric(st$figure_scale %||% 1))
+  if (!is.finite(sc) || sc <= 0) sc <- 1
+  v * sc
+}
+
+emp_viz_axis_text_size <- function(axis = c("x", "y"), fallback = 9) {
+  st <- getOption("emp.viz_style", list())
+  sc <- suppressWarnings(as.numeric(st$figure_scale %||% 1))
+  if (!is.finite(sc) || sc <= 0) sc <- 1
+  key <- if (match.arg(axis) == "x") "axis_text_x" else "axis_text_y"
+  v <- suppressWarnings(as.numeric(st[[key]]))
+  val <- if (length(v) && is.finite(v[1]) && v[1] > 0) v[1] else fallback
+  val * sc
 }
 
 emp_normalize_color_panel <- function(panel = NULL, default = "npg") {

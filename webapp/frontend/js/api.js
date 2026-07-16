@@ -164,10 +164,22 @@ export async function optimizeRCode(params = {}) {
   });
 }
 
+export async function getOpenRouterVerified() {
+  return request("GET", "/llm/openrouter_verified");
+}
+
+export async function probeOpenRouterModels(params = {}) {
+  return request("POST", "/llm/probe_openrouter", {
+    config: params.config ?? {},
+    models: params.models ?? null,
+    write_manifest: params.write_manifest ?? true,
+  });
+}
+
 // AI copilot: interpret an analysis result and suggest next steps. Reuses the
 // Code Lab LLM config if the student configured one; otherwise the backend
 // falls back to a deterministic offline interpretation.
-import { getLocale } from "./locale.js?v=2026-06-21-v5.0.2";
+import { getLocale } from "./locale.js?v=2026-07-16-multi-demo";
 
 export async function aiInterpret(context = {}, opts = {}) {
   let provider = opts.provider ?? null;
@@ -244,7 +256,25 @@ export async function importData(formData) {
   });
   url.search = params.toString();
 
-  const res = await fetch(url.toString(), { method: "POST", body: formData });
+  // Normalize file parts to application/octet-stream. Some browsers/Windows
+  // stacks send text/csv or an empty Content-Type, which older Plumber
+  // multipart configs failed to unwrap into uploadable bytes.
+  const body = new FormData();
+  for (const [key, value] of formData.entries()) {
+    if (value instanceof File) {
+      body.append(
+        key,
+        new File([value], value.name || "upload.bin", {
+          type: "application/octet-stream",
+          lastModified: value.lastModified,
+        })
+      );
+    } else {
+      body.append(key, value);
+    }
+  }
+
+  const res = await fetch(url.toString(), { method: "POST", body });
   const data = await res.json();
   if (!res.ok || data.success === false)
     throw new Error(data.error || `HTTP ${res.status}`);
@@ -283,9 +313,14 @@ export async function getColdata(experiment) {
   return request("GET", `/coldata/${sid}/${encodeURIComponent(experiment)}`);
 }
 
-export async function getFeatures(experiment) {
+export async function getFeatures(experiment, { limit = 0, offset = 0, q = "" } = {}) {
   const sid = sessionId();
-  return request("GET", `/features/${sid}/${encodeURIComponent(experiment)}`);
+  const qs = new URLSearchParams();
+  if (limit > 0) qs.set("limit", String(limit));
+  if (offset > 0) qs.set("offset", String(offset));
+  if (q) qs.set("q", q);
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return request("GET", `/features/${sid}/${encodeURIComponent(experiment)}${suffix}`);
 }
 
 export async function inspectOverview(experiment) {
