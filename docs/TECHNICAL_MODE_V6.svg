@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
   <title id="title">EasyMultiProfiler Web V6.0 technical mode diagram</title>
-  <desc id="desc">System architecture diagram showing omics inputs, browser UI, R Plumber API, session engine, workflow modules, AI copilot, and export outputs.</desc>
+  <desc id="desc">System architecture diagram showing omics inputs, browser UI, R runtime, EasyMultiProfiler package core, Plumber API, session engine, workflow modules, AI copilot, and export outputs.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
       <stop offset="0" stop-color="#07111f"/>
@@ -54,7 +54,7 @@
   <circle cx="640" cy="360" r="208" fill="none" stroke="#c59cff" stroke-opacity=".15" stroke-width="2"/>
 
   <text x="64" y="72" class="label" font-size="34">EasyMultiProfiler Web V6.0</text>
-  <text x="64" y="105" class="small">Browser-first multi-omics analysis system with R workflows, session memory, teaching mode, and AI copilot.</text>
+  <text x="64" y="105" class="small">Browser interface powered by R runtime, EasyMultiProfiler package workflows, session memory, and AI-assisted teaching.</text>
   <rect x="1056" y="48" width="132" height="42" rx="21" fill="rgba(72,231,209,.14)" stroke="#48e7d1"/>
   <text x="1085" y="76" class="label" font-size="18">V6.0 Mode</text>
 
@@ -90,17 +90,19 @@
 
   <g>
     <rect x="670" y="154" width="286" height="412" rx="14" fill="rgba(8,22,34,.86)" stroke="#48e7d1" stroke-width="2" filter="url(#glow)"/>
-    <text x="706" y="202" class="label" font-size="25">R Plumber API</text>
-    <text x="706" y="230" class="tiny">REST routes + session-safe execution</text>
+    <text x="704" y="198" class="label" font-size="24">R + EMP Core</text>
+    <text x="706" y="226" class="tiny">Plumber API over EasyMultiProfiler</text>
 
-    <rect class="box" x="704" y="260" width="218" height="50"/>
-    <text x="730" y="292" class="label" font-size="17">Session MAE Store</text>
-    <rect class="box" x="704" y="328" width="218" height="50"/>
-    <text x="730" y="360" class="label" font-size="17">Workflow Registry</text>
-    <rect class="box" x="704" y="396" width="218" height="50"/>
-    <text x="730" y="428" class="label" font-size="17">EMP R Analysis Core</text>
-    <rect class="box" x="704" y="464" width="218" height="50"/>
-    <text x="730" y="496" class="label" font-size="17">Plot Theme + Export</text>
+    <rect class="box" x="704" y="252" width="218" height="48"/>
+    <text x="730" y="282" class="label" font-size="17">R Runtime</text>
+    <rect class="box" x="704" y="314" width="218" height="48"/>
+    <text x="730" y="344" class="label" font-size="17">EasyMultiProfiler</text>
+    <rect class="box" x="704" y="376" width="218" height="48"/>
+    <text x="730" y="406" class="label" font-size="17">Session MAE Store</text>
+    <rect class="box" x="704" y="438" width="218" height="48"/>
+    <text x="730" y="468" class="label" font-size="17">Workflow Registry</text>
+    <rect class="box" x="704" y="500" width="218" height="48"/>
+    <text x="730" y="530" class="label" font-size="17">Plots + Export</text>
   </g>
 
   <g>

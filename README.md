@@ -1,12 +1,12 @@
 # EasyMultiProfiler Web v6.0
 
-**多组学下游分析与可视化 — 浏览器版（R 后端 + 静态前端）**
+**多组学下游分析与可视化 — 浏览器版（R 后端 + EasyMultiProfiler 分析核心 + 静态前端）**
 
 ![](https://img.shields.io/badge/version-6.0-blue)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/macOS%20%7C%20Windows-Web%20install-brightgreen)
 
-面向学生与零基础用户：**无需事先安装 EMP R 包**，按平台运行一键脚本即可（会自动安装 R 依赖并启动网页）。
+面向学生与零基础用户：系统仍然基于 **R + EasyMultiProfiler（EMP）** 运行；Web 版提供分平台安装脚本，帮助自动准备 R 包依赖、EMP 分析环境并启动浏览器界面。
 
 ![EasyMultiProfiler Web V6.0 technical mode diagram](docs/TECHNICAL_MODE_V6.svg)
 
