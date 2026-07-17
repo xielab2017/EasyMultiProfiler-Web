@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 echo ========================================================
-echo   EasyMultiProfiler Web  (Windows launcher)
+echo   EasyMultiProfiler Web v7  (Windows launcher)
 echo   Double-click this file on Windows — NOT the .command file
 echo ========================================================
 echo.

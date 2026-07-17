@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Daily Mac/Linux launcher: check prerequisites, install EMP if missing, start services.
+# Daily Mac/Linux launcher: V7 aware — will auto-install R if missing.
 # Usage:
 #   bash webapp/scripts/launch_emp_web.sh           # smart: install only when needed
 #   bash webapp/scripts/launch_emp_web.sh --repair  # force reinstall R deps
@@ -8,10 +8,27 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
+INSTALL_DIR="${ROOT_DIR}/webapp/scripts/install"
+SCRIPTS_DIR="${ROOT_DIR}/webapp/scripts"
+
 MODE="${1:-}"
 SKIP_INSTALL="${EMP_SKIP_INSTALL:-0}"
 
-bash "${ROOT_DIR}/webapp/scripts/check_prerequisites.sh"
+# ── V7: if R is missing, bootstrap R + git + python3 ───────────────────
+if ! command -v Rscript >/dev/null 2>&1; then
+  echo "[launch] R not found on PATH — invoking V7 auto-installer."
+  bash "${INSTALL_DIR}/install_system_deps.sh" || {
+    echo "[launch] System deps install failed."
+    exit 1
+  }
+  bash "${INSTALL_DIR}/install_r.sh" || {
+    echo "[launch] R install failed."
+    exit 1
+  }
+  hash -r
+fi
+
+bash "${SCRIPTS_DIR}/check_prerequisites.sh" || true   # informational
 
 need_install=0
 if [[ "${MODE}" == "--repair" ]] || [[ "${MODE}" == "repair" ]]; then
@@ -22,10 +39,10 @@ elif ! Rscript -e 'quit(status=if (requireNamespace("EasyMultiProfiler", quietly
 fi
 
 if [[ "${need_install}" -eq 1 ]] && [[ "${SKIP_INSTALL}" != "1" ]]; then
-  bash "${ROOT_DIR}/webapp/scripts/install_runtime.sh"
+  bash "${SCRIPTS_DIR}/install_runtime.sh"
 fi
 
-bash "${ROOT_DIR}/webapp/scripts/start_local.sh"
+bash "${SCRIPTS_DIR}/start_local.sh"
 
 WEB_PORT="${WEB_PORT:-8080}"
 URL="http://127.0.0.1:${WEB_PORT}"

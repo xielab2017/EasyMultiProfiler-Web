@@ -1,0 +1,73 @@
+# bootstrap_and_start.ps1 — V7 zero-dep one-shot installer (Windows).
+#
+# Steps:
+#   1. Install git + python3 if missing          (install_system_deps.ps1)
+#   2. Install R (>= 4.3.3) if missing           (install_r.ps1)
+#   3. Install CRAN + Bioc + EMP dependencies    (install_runtime.R)
+#   4. Start the API + frontend                  (start_local_windows.ps1)
+#
+# Honours:
+#   $env:EMP_AUTO_INSTALL   = "0"     abort when anything is missing
+#   $env:EMP_SKIP_R_INSTALL = "1"     skip R auto-install
+#   $env:EMP_SKIP_DEPS      = "1"     skip system-deps auto-install
+#   $env:EMP_R_VERSION      = "x.y.z" pin a specific R release
+param(
+  [switch]$NoStart
+)
+
+$ErrorActionPreference = "Stop"
+
+$ScriptsDir = $PSScriptRoot
+$InstallDir = Join-Path $ScriptsDir "install"
+$RepoRoot   = Resolve-Path (Join-Path $ScriptsDir "..\..")
+. "$ScriptsDir\windows_r_utils.ps1"
+Initialize-EMPPaths $ScriptsDir
+
+Write-Host "========================================================"
+Write-Host "  EasyMultiProfiler Web v7 — bootstrap (Windows)"
+Write-Host "  Folder: $RepoRoot"
+Write-Host "========================================================"
+
+# ── 1. system deps (git + python3) ─────────────────────────────────────
+if ($env:EMP_SKIP_DEPS -ne "1") {
+  & "$InstallDir\install_system_deps.ps1"
+  if ($LASTEXITCODE -ne 0) { throw "install_system_deps.ps1 failed." }
+} else {
+  Write-Host "[bootstrap] EMP_SKIP_DEPS=1 — skipping system-deps auto-install."
+}
+
+# ── 2. R interpreter ───────────────────────────────────────────────────
+if ($env:EMP_SKIP_R_INSTALL -ne "1") {
+  & "$InstallDir\install_r.ps1" @{
+    Version = $(if ($env:EMP_R_VERSION) { $env:EMP_R_VERSION } else { "4.4.2" })
+    CranMirror = $(if ($env:EMP_R_MIRROR) { $env:EMP_R_MIRROR } else { "https://cran.r-project.org" })
+  }
+  if ($LASTEXITCODE -ne 0) { throw "install_r.ps1 failed." }
+} else {
+  Write-Host "[bootstrap] EMP_SKIP_R_INSTALL=1 — skipping R auto-install."
+}
+
+$RscriptExe = Resolve-EMPRscriptExe
+if (-not $RscriptExe) {
+  Write-Host "Rscript still not on PATH. Reopen PowerShell and try again."
+  exit 1
+}
+Write-Host "[bootstrap] Using Rscript: $RscriptExe"
+
+# ── 3. R packages + EMP ────────────────────────────────────────────────
+Write-Host "[bootstrap] Installing CRAN + Bioconductor + EasyMultiProfiler packages…"
+& $RscriptExe (Join-Path $ScriptsDir "install_runtime.R")
+if ($LASTEXITCODE -ne 0) { throw "install_runtime.R failed." }
+
+# ── 4. Start services ──────────────────────────────────────────────────
+if (-not $NoStart) {
+  & "$ScriptsDir\start_local_windows.ps1"
+  if ($LASTEXITCODE -ne 0) { throw "start_local_windows.ps1 failed." }
+}
+
+Write-Host ""
+Write-Host "========================================================"
+Write-Host "  EasyMultiProfiler Web is running."
+Write-Host "  Open: http://127.0.0.1:8080"
+Write-Host "  Stop: powershell -File webapp\scripts\stop_local_windows.ps1"
+Write-Host "========================================================"

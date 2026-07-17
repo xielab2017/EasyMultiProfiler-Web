@@ -1,121 +1,106 @@
-# EasyMultiProfiler Web — Windows 安装指南（傻瓜版）
+# EasyMultiProfiler Web — Windows 一键安装（V7）
 
-> 适用：Windows 10 / 11（64 位）。目标：装好 R + EMP + Web，浏览器打开 `http://127.0.0.1:8080`。  
-> **Mac 用户请看 [INSTALL_MAC.md](INSTALL_MAC.md)**（命令与脚本完全不同）。  
-> **网页内说明**：启动后左侧 **Guide** 页 · 完整手册 [USER_GUIDE_V5.md](USER_GUIDE_V5.md)
+> **V7 重大升级：从 GitHub clone → 启动网页只需 1 行命令，R / Python / git / EMP 全部自动识别并按系统自动安装。**
 
 ---
 
-## ⚠️ 与 macOS 的区别（请勿混用）
+## 1. 一行命令启动（强烈推荐）
 
-| 项目 | Windows | macOS |
-|------|---------|-------|
-| 一键命令 | PowerShell + `install_from_github.ps1` | `bash` + `install_from_github.sh` |
-| 首次启动 | `Repair-and-Start-EMP-Web.bat` | `Run-EMP-Web.command` 或 bootstrap |
-| 日常启动 | `Start-EMP-Web.bat` | `Run-EMP-Web.command` |
-| 先装 R | `winget install RProject.R` | `brew install --cask r` |
-
----
-
-## 方式 A：一键安装（推荐）
-
-### 第 1 步：安装 R（若尚未安装）
-
-**选项 A1 — winget（Windows 11 / 已装 App Installer）**
-
-以**管理员**打开 **PowerShell**，粘贴：
+以普通用户（**不需要管理员**）打开 **PowerShell**，粘贴：
 
 ```powershell
-winget install --id RProject.R -e --accept-source-agreements --accept-package-agreements
-winget install Python.Python.3.12 Git.Git -e --accept-source-agreements --accept-package-agreements
+irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.ps1 | iex
 ```
 
-安装完成后**关闭并重新打开** PowerShell。
+首次运行时脚本会**自动弹 UAC 提权窗口**（仅在缺失 R / python3 / git 时），装好后：
 
-**选项 A2 — 手动**
-
-1. 打开 https://cran.r-project.org/bin/windows/base/  
-2. 下载并安装 **R ≥ 4.3.3**（安装时勾选 **Add to PATH**）  
-3. 安装 Python 3：https://www.python.org/downloads/（勾选 **Add python.exe to PATH**）  
-4. 安装 Git：https://git-scm.com/download/win  
-
-### 第 2 步：一键克隆 + 安装 + 启动
-
-在 **PowerShell** 中粘贴（可整段复制）：
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
-irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.ps1 | iex
-```
-
-或：下载仓库 ZIP 解压后，进入文件夹，**双击**：
-
-`Repair-and-Start-EMP-Web.bat`
-
-（首次必须用 **Repair**，会安装所有 R 包；之后日常用 `Start-EMP-Web.bat`。）
-
-### 第 3 步：确认成功
-
-- 网页：**http://127.0.0.1:8080**  
-- API：**http://127.0.0.1:8000/api/health**  
+- 后端 API : `http://127.0.0.1:8000/api/health`
+- 前端界面 : `http://127.0.0.1:8080`
 
 ---
 
-## 方式 B：PowerShell 分步（适合 IT / 实验室）
+## 2. 已经被 `git clone` 下来的用户
 
 ```powershell
-git clone https://github.com/xielab2017/EasyMultiProfiler-Web.git
 cd EasyMultiProfiler-Web
-powershell -ExecutionPolicy Bypass -File webapp\scripts\check_prerequisites.ps1
-powershell -ExecutionPolicy Bypass -File webapp\scripts\repair_and_start_windows.ps1
+powershell -ExecutionPolicy Bypass -File webapp\scripts\bootstrap_and_start.ps1
 ```
 
 ---
 
-## 日常使用
+## 3. 日常启动（已装好之后）
 
-| 场景 | 操作 |
-|------|------|
-| 每天打开网页 | 双击 `Start-EMP-Web.bat` |
-| 更新代码后 / 缺包报错 | 双击 `Repair-and-Start-EMP-Web.bat` |
-| 重启服务 | 双击 `Restart-EMP-Web.bat` |
-| 停止 | `powershell -File webapp\scripts\stop_local_windows.ps1` |
+**双击** `Start-EMP-Web.bat`（推荐）：
 
----
+- 自动检测 R / python3 是否还在，缺了再补
+- 缺 EMP 包则自动 `remotes::install_local()`
 
-## R 找不到时
-
-在 PowerShell 中设置（路径按本机修改）：
+**命令行：**
 
 ```powershell
-$env:EMPI_RSCRIPT = "C:\Program Files\R\R-4.4.2\bin\Rscript.exe"
+powershell -ExecutionPolicy Bypass -File webapp\scripts\launch_emp_web.ps1           # 智能启动
+powershell -ExecutionPolicy Bypass -File webapp\scripts\launch_emp_web.ps1 -Repair   # 重装 R 包
 ```
 
-或设置 `$env:R_HOME` 为 R 安装目录。
+---
+
+## 4. 自动安装逻辑
+
+`install_system_deps.ps1` 与 `install_r.ps1` 都是幂等的，按以下顺序探测：
+
+| 探测 | 命中即跳过 | 缺失则执行 |
+|------|-----------|-----------|
+| `git` | `git.exe` 已在 PATH 且不在 WindowsApps 别名 | `winget install Git.Git`（无 winget 时下载 `Git-2.46.0-64-bit.exe` 静默安装） |
+| `python3 ≥ 3.8` | 已在 PATH | `winget install Python.Python.3.12` 或 `python.org/ftp/python/3.12.7` 静默安装 |
+| `R ≥ 4.3.3` | `Rscript.exe` 已找到 | 下载 `R-4.4.2-win.exe`（自动选 x64 / arm64），`/SILENT /ALLUSERS` 安装并写机器 PATH |
+
+所有 `R-*` 版本号均可由 `-Version` / `EMP_R_VERSION` 覆盖。
 
 ---
 
-## Rtools（编译报错时）
+## 5. 环境变量开关（高级）
 
-若 `install_runtime.R` 报 C/Fortran 编译错误：
-
-1. 安装 https://cran.r-project.org/bin/windows/Rtools/  
-2. 安装时勾选 **Add rtools to PATH**  
-3. 重新运行 `Repair-and-Start-EMP-Web.bat`  
-
----
-
-## 常见问题
-
-| 现象 | 处理 |
-|------|------|
-| 脚本无法运行 | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
-| 8080 被占用 | 运行 `stop_local_windows.ps1` 后重试 |
-| 防火墙弹窗 | 允许 **专用网络** 访问 Python / R |
-| 首次不要用 Start | 必须先 **Repair-and-Start** 安装依赖 |
+```powershell
+$env:EMP_AUTO_INSTALL = "0"     # 缺东西不装，只报错（CI / 受限环境）
+$env:EMP_SKIP_DEPS    = "1"     # 跳过 python3 / git 安装
+$env:EMP_SKIP_R_INSTALL = "1"   # 跳过 R 安装
+$env:EMP_R_VERSION    = "4.4.2" # 指定 R 版本
+$env:EMP_R_MIRROR     = "https://mirrors.tuna.tsinghua.edu.cn/CRAN"
+$env:EMPI_PYTHON      = "C:\custom\python.exe"  # 指定 python
+$env:EMPI_RSCRIPT     = "D:\custom\R\R-4.4.2\bin\Rscript.exe"
+```
 
 ---
 
-## 卸载
+## 6. 启动失败排查
 
-删除 `EasyMultiProfiler-Web` 文件夹；R 中 `remove.packages("EasyMultiProfiler")` 可选。
+```powershell
+# 单步日志
+Get-Content .local_run\api.log -Tail 50
+Get-Content .local_run\web.log -Tail 50
+```
+
+最常见的两个原因：
+
+1. **Microsoft Store 别名 python** —— 在「应用执行别名」里关掉 `python.exe` / `python3.exe`，让脚本用真实安装。
+2. **杀毒软件拦截 .exe 下载** —— 把 EasyMultiProfiler-Web 文件夹加白名单。
+
+---
+
+## 7. 与 V6 的差异
+
+| 项目 | V6 | V7 |
+|------|----|----|
+| 安装 R | 用户手动 `winget install RProject.R` | 自动下载 CRAN `.exe` 静默安装 |
+| 安装 git/python | 用户手动 | 自动 winget / 静默下载 |
+| 启动 .bat | 检查依赖，缺则报错 | 缺则自动装，再启 |
+| 默认 R 版本 | 用户已装 | 4.4.2（同时支持 x64 + arm64） |
+| `EMP_AUTO_INSTALL=0` | 不存在 | 受限环境立即报错 |
+
+---
+
+## 8. 卸载 / 重置
+
+- 卸载 R : `winget uninstall RProject.R` 或「控制面板 → 程序」
+- 卸载 EMP : 启动一次 PowerShell，`Rscript -e "remove.packages('EasyMultiProfiler')"`
+- 清理会话缓存 : 删除 `%TEMP%\emp_sessions`

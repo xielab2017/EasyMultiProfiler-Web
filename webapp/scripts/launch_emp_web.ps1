@@ -1,4 +1,4 @@
-# Daily Windows launcher: check prerequisites, install EMP if missing, start services.
+# Daily Windows launcher: V7 aware — auto-installs R + python3 if missing.
 # Usage:
 #   powershell -File webapp\scripts\launch_emp_web.ps1
 #   powershell -File webapp\scripts\launch_emp_web.ps1 -Repair
@@ -11,17 +11,33 @@ $ErrorActionPreference = "Stop"
 Initialize-EMPPaths $PSScriptRoot
 $Root = Get-EMPRepoRoot
 
+$InstallDir = Join-Path $Root "webapp\scripts\install"
+
 Write-Host "========================================================"
-Write-Host "  EasyMultiProfiler Web (Windows)"
+Write-Host "  EasyMultiProfiler Web v7 (Windows)"
 Write-Host "  Folder: $Root"
 Write-Host "========================================================"
 Write-Host ""
 
 try {
-  & "$PSScriptRoot\check_prerequisites.ps1"
-
+  # ── V7: auto-install missing system deps + R if necessary ────────────
   $RscriptExe = Resolve-EMPRscriptExe
-  if (-not $RscriptExe) { throw "Rscript not found." }
+  if (-not $RscriptExe -and $env:EMP_AUTO_INSTALL -ne "0") {
+    Write-Host "[launch] R not found — invoking V7 auto-installer."
+    & "$InstallDir\install_system_deps.ps1"
+    if ($LASTEXITCODE -ne 0) { throw "install_system_deps.ps1 failed." }
+    & "$InstallDir\install_r.ps1"
+    if ($LASTEXITCODE -ne 0) { throw "install_r.ps1 failed." }
+    # Refresh PATH for newly added R
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    $RscriptExe = Resolve-EMPRscriptExe
+    if (-not $RscriptExe) { throw "Rscript still missing after auto-install." }
+  }
+
+  if (-not $RscriptExe) { throw "Rscript not found. Set EMPI_RSCRIPT or install R, then retry." }
+  Write-Host "[launch] Rscript: $RscriptExe"
+
+  & "$PSScriptRoot\check_prerequisites.ps1"
 
   $needInstall = $false
   if ($Repair) {

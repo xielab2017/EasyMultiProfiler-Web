@@ -1,35 +1,54 @@
-# One-click clone + bootstrap for Windows PowerShell.
-# Usage: irm .../install_from_github.ps1 | iex
-#    or: powershell -ExecutionPolicy Bypass -File install_from_github.ps1
+# install_from_github.ps1 — V7 one-line installer for Windows.
+#
+#   irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.ps1 | iex
+#
+# Steps:
+#   1. Verify / install git (so we can clone).
+#   2. Clone the repo at -Branch (default v7.0.0).
+#   3. Run bootstrap_and_start.ps1 — installs python3 + R + EMP if missing,
+#      then starts the API + frontend.
 param(
-  [string]$RepoUrl = "https://github.com/xielab2017/EasyMultiProfiler-Web.git",
+  [string]$RepoUrl   = "https://github.com/xielab2017/EasyMultiProfiler-Web.git",
   [string]$TargetDir = "EasyMultiProfiler-Web",
-  [string]$Branch = "v5.0.2"
+  [string]$Branch    = "v7.0.0"
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-  Write-Error "Git is required. Run: winget install Git.Git"
+function Write-EmpLog  { param($m) Write-Host "[emp-install] $m" -ForegroundColor Cyan }
+function Write-EmpOk   { param($m) Write-Host "[emp-ok] $m" -ForegroundColor Green }
+function Write-EmpWarn { param($m) Write-Host "[emp-warn] $m" -ForegroundColor Yellow }
+function Write-EmpErr  { param($m) Write-Host "[emp-error] $m" -ForegroundColor Red }
+
+# ── 1. Make sure git exists ────────────────────────────────────────────────
+$git = Get-Command git.exe -ErrorAction SilentlyContinue
+if (-not $git -or $git.Source -match "WindowsApps") {
+  Write-EmpWarn "git not found — installing."
+  $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+  if ($winget) {
+    & winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements --silent
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+  } else {
+    Write-EmpErr "Neither git nor winget is available. Install git manually from https://git-scm.com/download/win and re-run."
+    exit 1
+  }
 }
 
+# ── 2. Clone or refresh the repo ───────────────────────────────────────────
 if (Test-Path (Join-Path $TargetDir ".git")) {
-  Write-Host "Updating existing repo at $TargetDir ..."
+  Write-EmpLog "Updating existing repo at $TargetDir ..."
   git -C $TargetDir fetch --all --tags
   git -C $TargetDir checkout $Branch
   git -C $TargetDir pull --ff-only origin $Branch
 } else {
-  Write-Host "Cloning $RepoUrl -> $TargetDir"
-  git clone --branch $Branch $RepoUrl $TargetDir
+  Write-EmpLog "Cloning $RepoUrl (branch $Branch) -> $TargetDir"
+  git clone --branch $Branch --depth 1 $RepoUrl $TargetDir
 }
 
+# ── 3. Hand off to the V7 bootstrap ────────────────────────────────────────
 $Root = Resolve-Path $TargetDir
 Set-Location $Root
 
-Write-Host "Checking prerequisites ..."
-& "$Root\webapp\scripts\check_prerequisites.ps1"
-
-Write-Host "Repair + start (install R packages if needed) ..."
-& "$Root\webapp\scripts\repair_and_start_windows.ps1"
-
-Write-Host "Done. Open http://127.0.0.1:8080"
+Write-EmpLog "Running V7 bootstrap (auto-installs R, python3, EMP)…"
+& "$Root\webapp\scripts\bootstrap_and_start.ps1"
+if ($LASTEXITCODE -ne 0) { throw "bootstrap_and_start.ps1 failed." }

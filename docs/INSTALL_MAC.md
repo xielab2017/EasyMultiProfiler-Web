@@ -1,116 +1,101 @@
-# EasyMultiProfiler Web — Mac 安装指南（傻瓜版）
+# EasyMultiProfiler Web — macOS / Linux 一键安装（V7）
 
-> 适用：macOS 12+（Intel / Apple Silicon）。目标：装好 R + EMP + Web，浏览器打开 `http://127.0.0.1:8080`。  
-> **Windows 用户请看 [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md)**（命令与脚本完全不同）。  
-> **网页内说明**：启动后左侧 **Guide** 页 · 完整手册 [USER_GUIDE_V5.md](USER_GUIDE_V5.md)
+> **V7 重大升级：从 GitHub clone → 启动网页只需 1 行命令，R / Python / git / EMP 全部自动识别并按系统自动安装。**
 
 ---
 
-## ⚠️ 与 Windows 的区别（请勿混用）
+## 1. 一行命令启动（强烈推荐）
 
-| 项目 | macOS | Windows |
-|------|-------|---------|
-| 一键命令 | `bash` + `install_from_github.sh` | PowerShell + `install_from_github.ps1` |
-| 双击启动 | `Run-EMP-Web.command` | `Start-EMP-Web.bat` |
-| 首次修复 | `launch_emp_web.sh --repair` | `Repair-and-Start-EMP-Web.bat` |
-| 先装 R | `brew install --cask r` | `winget install RProject.R` |
-
----
-
-## 方式 A：一键安装（推荐，约 15–40 分钟）
-
-### 第 1 步：打开「终端」
-
-- 按 `Command + 空格`，输入 **Terminal**，回车。
-
-### 第 2 步：粘贴下面**一整行**，回车
+打开 **Terminal.app**（`⌘ + 空格`，输入 Terminal，回车），粘贴下面整行命令：
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.sh)"
 ```
 
-脚本会自动：
+脚本会自动完成：
 
-1. 克隆 GitHub 仓库到当前目录下的 `EasyMultiProfiler-Web` 文件夹  
-2. 检查 Git、Python、R（缺失时会提示如何安装）  
-3. 安装 CRAN / Bioconductor / EasyMultiProfiler 依赖  
-4. 启动后端（8000）和网页（8080）  
-5. 尝试用 Safari 打开网页  
+| 步骤 | 说明 |
+|------|------|
+| ① 检查 / 安装 **git** | 缺失时通过 Homebrew 或 apt 自动装 |
+| ② **克隆仓库** 到当前目录的 `EasyMultiProfiler-Web` |
+| ③ 检查 / 安装 **python3 ≥ 3.8** | 同上 |
+| ④ 检查 / 安装 **R ≥ 4.3.3** | macOS 直接下载 CRAN `.pkg`；Linux 添加 CRAN apt/yum 源后 `apt-get install r-base` |
+| ⑤ 安装 **CRAN + Bioconductor + EasyMultiProfiler** R 包 | `remotes::install_local()`，离线优先用本仓库的 EMP 源码 |
+| ⑥ 启动 **后端 API :8000** + **网页 :8080** | 并尝试 `open` Safari 打开 |
 
-### 第 3 步：确认成功
-
-浏览器地址栏应显示：
-
-- 网页：**http://127.0.0.1:8080**（默认进入 **Course** 课程页）  
-- 健康检查：**http://127.0.0.1:8000/api/health** → 看到 `"status":"ok"`
+首次安装大约 **15–40 分钟**（取决于网络，主要花在 Bioconductor）。
 
 ---
 
-## 方式 B：没有 R？先装 R（只需做一次）
-
-若一键脚本报 **`Rscript not found`**：
-
-### 选项 B1 — Homebrew（推荐）
+## 2. 已经被 `git clone` 下来的用户
 
 ```bash
-# 若未安装 Homebrew，先执行（官网：https://brew.sh）
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-brew install --cask r
-brew install python@3.12 git
-```
-
-关闭终端再打开，然后重新执行 **方式 A** 的一键命令。
-
-### 选项 B2 — 官方安装包
-
-1. 打开 https://cran.r-project.org/bin/macosx/  
-2. 下载 **R-4.x.x.pkg**（需 **≥ 4.3.3**）  
-3. 双击安装，完成后重新执行 **方式 A**  
-
-### 编译工具（若 EMP 安装报 Fortran / gfortran 错误）
-
-```bash
-xcode-select --install
-# 若仍失败，见仓库 tutorial_related/Installation.md
-```
-
----
-
-## 方式 C：已下载 ZIP / 已有仓库文件夹
-
-```bash
-cd /你的路径/EasyMultiProfiler-Web
-bash webapp/scripts/check_prerequisites.sh
+cd EasyMultiProfiler-Web
 bash webapp/scripts/bootstrap_and_start.sh
 ```
 
----
-
-## 日常使用
-
-| 操作 | 命令或文件 |
-|------|------------|
-| 启动 | 双击 `Run-EMP-Web.command`（日常：仅启动；首次或 `--repair`：自动装依赖） |
-| 命令行启动 | `bash webapp/scripts/launch_emp_web.sh` |
-| 强制修复依赖 | `bash webapp/scripts/launch_emp_web.sh --repair` |
-| 仅启动（跳过安装检查） | `bash webapp/scripts/start_local.sh` |
-| 停止 | `bash webapp/scripts/stop_local.sh` |
-| 完整重装 | `bash webapp/scripts/bootstrap_and_start.sh` |
+同样会自动判断并安装缺失组件。
 
 ---
 
-## 常见问题
+## 3. 日常启动（已装好之后）
 
-| 现象 | 处理 |
-|------|------|
-| 8080 打不开 | 先 `bash webapp/scripts/stop_local.sh`，再 `start_local.sh` |
-| 依赖安装很慢 | 设置镜像：`export EMP_CRAN_MIRROR=https://cloud.r-project.org` |
-| 校园 LLM | 设置 `export EMP_CAMPUS_LLM_API_KEY=你的密钥` 后重启 API |
-| 仅学课程、不上传数据 | Course 页 →「一键加载本课示例数据」 |
+```bash
+bash webapp/scripts/launch_emp_web.sh        # 智能启动：缺包才装
+bash webapp/scripts/launch_emp_web.sh --repair   # 强制重装所有 R 包
+```
+
+或直接**双击** `Run-EMP-Web-Mac.command`。
 
 ---
 
-## 卸载
+## 4. 环境变量开关（高级）
 
-删除克隆的 `EasyMultiProfiler-Web` 文件夹；R 包可用 R 控制台：`remove.packages("EasyMultiProfiler")`。
+```bash
+EMP_AUTO_INSTALL=0  bash webapp/scripts/bootstrap_and_start.sh   # 缺东西不装，只报错
+EMP_SKIP_DEPS=1     bash webapp/scripts/bootstrap_and_start.sh   # 跳过 git/python3 安装
+EMP_SKIP_R_INSTALL=1 bash webapp/scripts/bootstrap_and_start.sh # 跳过 R 安装（必须已有 R ≥ 4.3.3）
+EMP_R_VERSION=4.4.2 bash webapp/scripts/bootstrap_and_start.sh  # 指定要装的 R 版本（默认 4.4.2）
+EMP_R_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/CRAN \
+                   bash webapp/scripts/bootstrap_and_start.sh    # 改 CRAN 镜像
+```
+
+---
+
+## 5. 启动失败排查
+
+```bash
+bash webapp/scripts/check_prerequisites.sh   # 单独检查 git/python/R
+cat .local_run/api.log                       # 后端日志
+cat .local_run/web.log                       # 前端日志
+```
+
+修复后再次 `bash webapp/scripts/launch_emp_web.sh --repair`。
+
+---
+
+## 6. 与 V6 的差异
+
+| 项目 | V6 | V7 |
+|------|----|----|
+| 安装 R | 用户手动 `brew install --cask r` | 自动下载 CRAN `.pkg`，按需 sudo |
+| 安装 git/python | 用户手动 | 自动 brew/apt |
+| 一键脚本 | 2 个（mac / win） | 仍 2 个，但**默认行为变化**：缺啥装啥 |
+| `EMP_AUTO_INSTALL=0` | 不存在 | 用于 CI / 受限环境，缺东西时立即报错而非尝试安装 |
+| R 默认版本 | 用户已装 | 4.4.2（Apple Silicon 原生） |
+
+---
+
+## 7. 常见问题
+
+**Q: 自动装 R 时弹出管理员密码？**  
+A: 是的。`.pkg` 必须用 `sudo installer` 写入 `/Library/Frameworks/`。如果你不想输密码，可以用 `brew install --cask r` 预先装好。
+
+**Q: 想用清华 CRAN 镜像怎么办？**  
+A: `EMP_R_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/CRAN bash ...`
+
+**Q: 在 ARM Mac 上没找到 R？**  
+A: V7 默认装 `R-4.4.2-arm64.pkg`（macOS 11+ Big Sur 起）。低于 11 的系统请先升级 macOS。
+
+**Q: Linux 没有 sudo？**  
+A: 直接用 root 跑脚本，或设置 `EMP_AUTO_INSTALL=0` 提前手动装好 git/python/R。
