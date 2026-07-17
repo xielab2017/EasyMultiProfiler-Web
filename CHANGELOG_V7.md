@@ -23,11 +23,25 @@ V7 的最大变化是**安装体验**——R / Python / git / EMP 不再是用�
 ### 一行命令
 
 ```bash
-# macOS / Linux
+# macOS / Linux（任何 bash / zsh）
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.sh)"
 
-# Windows (PowerShell)
+# Windows PowerShell
 irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.ps1 | iex
+```
+
+### 复制错行怎么办？
+
+- 把 bash 那行贴到 **PowerShell**？没事——`.ps1` 入口会检测到当前不是 Windows，自动转给 `.sh`。
+- 把 PowerShell 那行贴到 **macOS / Linux**？同样没事——`.sh` 会按平台正常执行。
+- 想要 CMD 双击？仓库根目录有 **`install.cmd`**，下载下来双击即可。
+
+被 `git clone` 下来的用户：
+
+```bash
+bash install.sh                                       # macOS / Linux
+install.cmd                                           # Windows CMD / 双击
+powershell -File webapp\sscripts\bootstrap_and_start.ps1   # Windows PowerShell
 ```
 
 ### 新增脚本
@@ -38,6 +52,17 @@ irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/we
 - `install_r.sh` —— 按 `uname -s / -m` 选 CRAN `.pkg` 或 Linux 仓库
 - `install_system_deps.ps1` —— winget + 手动 fallback
 - `install_r.ps1` —— CRAN `.exe` 静默安装，自动写机器 PATH
+
+### 自动检测（V7.0.1 微调）
+
+每个入口脚本都内置 `$IsWindows / $IsLinux / $IsMacOS` 自动探测：
+- `install_from_github.ps1` 在 macOS / Linux 的 PowerShell 7 (`pwsh`) 下会**自动转发**到 `install_from_github.sh`，反之亦然。
+- `bootstrap_and_start.ps1` / `launch_emp_web.ps1` / `repair_and_start_windows.ps1` 同理。
+- 参数透传用环境变量 `EMP_REPO_URL / EMP_TARGET_DIR / EMP_BRANCH`（避免跨 shell 的引号转义坑）。
+
+仓库根目录新增两个**跨 shell 双击入口**：
+- `install.sh` —— macOS / Linux 直接 `bash install.sh`
+- `install.cmd` —— Windows CMD / PowerShell / 双击文件管理器
 
 ### 新增 / 重写脚本
 

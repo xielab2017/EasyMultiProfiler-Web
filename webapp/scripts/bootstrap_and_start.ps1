@@ -23,6 +23,21 @@ $RepoRoot   = Resolve-Path (Join-Path $ScriptsDir "..\..")
 . "$ScriptsDir\windows_r_utils.ps1"
 Initialize-EMPPaths $ScriptsDir
 
+# ── Cross-OS auto-detect ────────────────────────────────────────────────
+# When invoked via PowerShell 7 (pwsh) on macOS / Linux we hand off to
+# the bash bootstrap script so a single script entry point covers all OSes.
+$isWinPS = $IsWindows
+if ($null -eq $isWinPS) {
+  $isWinPS = ($env:OS -eq 'Windows_NT') -or [System.Environment]::OSVersion.Platform -eq 'Win32NT'
+}
+if (-not $isWinPS) {
+  Write-Host "[emp-install] Detected host OS: $($IsLinux ? 'linux' : ($IsMacOS ? 'macos' : 'unknown'))"
+  Write-Host "[emp-install] Handing off to bootstrap_and_start.sh"
+  $bashCmd = "bash '$ScriptsDir/bootstrap_and_start.sh'"
+  & bash -c $bashCmd
+  exit $LASTEXITCODE
+}
+
 Write-Host "========================================================"
 Write-Host "  EasyMultiProfiler Web v7 — bootstrap (Windows)"
 Write-Host "  Folder: $RepoRoot"

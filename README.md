@@ -19,18 +19,25 @@
 
 ---
 
-## 一行命令启动（推荐）
+## 一行命令启动（推荐）— 自动识别 OS
 
-| 系统 | 命令 |
+脚本会**自动检测**你的操作系统并选择对应的安装路径（macOS / Linux 走 `.sh`，Windows 走 PowerShell `.ps1`）。你只需要挑与你当前 shell 匹配的那一行：
+
+| 当前 Shell | 命令 |
 |------|------|
-| **macOS / Linux** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.sh)"` |
-| **Windows** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.ps1 \| iex` |
+| **macOS / Linux 终端（bash / zsh）** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.sh)"` |
+| **Windows PowerShell** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.ps1 \| iex` |
+| **Windows CMD / 双击 `.cmd`** | 下载 `install.cmd`，**双击运行**或在 CMD 中输入 `install.cmd` |
 
-已经 `git clone` 下来的用户：
+> 复制错行也没关系——`.sh` / `.ps1` 入口都内置了 OS 自检，会自动转发到正确分支。
+> 例如在 macOS 的 PowerShell 7 (`pwsh`) 里跑 `.ps1`，会自动调 `.sh`。
+
+### 已经被 `git clone` 下来的用户
 
 ```bash
-bash webapp/scripts/bootstrap_and_start.sh            # macOS / Linux
-powershell -ExecutionPolicy Bypass -File webapp\scripts\bootstrap_and_start.ps1   # Windows
+bash install.sh                                  # macOS / Linux（仓库自带）
+powershell -File webapp\sscripts\bootstrap_and_start.ps1   # Windows PowerShell
+install.cmd                                       # Windows CMD / 双击
 ```
 
 ---

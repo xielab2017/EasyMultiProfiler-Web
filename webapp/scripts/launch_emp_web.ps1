@@ -13,6 +13,19 @@ $Root = Get-EMPRepoRoot
 
 $InstallDir = Join-Path $Root "webapp\scripts\install"
 
+# ── Cross-OS auto-detect ────────────────────────────────────────────────
+$isWinPS = $IsWindows
+if ($null -eq $isWinPS) {
+  $isWinPS = ($env:OS -eq 'Windows_NT') -or [System.Environment]::OSVersion.Platform -eq 'Win32NT'
+}
+if (-not $isWinPS) {
+  Write-Host "[emp-install] Detected host OS: $($IsLinux ? 'linux' : ($IsMacOS ? 'macos' : 'unknown'))"
+  Write-Host "[emp-install] Handing off to launch_emp_web.sh"
+  $argsLine = if ($Repair) { " --repair" } else { "" }
+  & bash -c "bash '$PSScriptRoot/launch_emp_web.sh'$argsLine"
+  exit $LASTEXITCODE
+}
+
 Write-Host "========================================================"
 Write-Host "  EasyMultiProfiler Web v7 (Windows)"
 Write-Host "  Folder: $Root"

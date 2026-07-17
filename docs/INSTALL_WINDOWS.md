@@ -12,6 +12,10 @@
 irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.ps1 | iex
 ```
 
+> **复制错行了？** V7 入口脚本会**自动检测**当前操作系统，
+> 复制 bash 命令到 PowerShell 会自动转发，复制 PowerShell 命令到 macOS / Linux bash 也会自动转发。
+> 仓库根目录还有 **`install.cmd`**：直接**双击运行**，不需要 PowerShell 命令行基础。
+
 首次运行时脚本会**自动弹 UAC 提权窗口**（仅在缺失 R / python3 / git 时），装好后：
 
 - 后端 API : `http://127.0.0.1:8000/api/health`

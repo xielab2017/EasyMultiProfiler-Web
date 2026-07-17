@@ -12,6 +12,12 @@
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.sh)"
 ```
 
+> **复制错行了？** V7 入口脚本会**自动检测**当前操作系统（macOS / Linux / Windows），
+> 即使你在 PowerShell 7 (`pwsh`) 里跑 `.ps1` 入口，也会自动转发到 `.sh`。
+> 反过来 bash 入口也会自动转发。复制任意一行都不会装错系统。
+>
+> 想要 Windows CMD / 双击？下载 **`install.cmd`** 双击即可。
+
 脚本会自动完成：
 
 | 步骤 | 说明 |

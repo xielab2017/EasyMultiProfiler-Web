@@ -2,10 +2,14 @@
 #
 #   irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.ps1 | iex
 #
-# Steps:
-#   1. Verify / install git (so we can clone).
-#   2. Clone the repo at -Branch (default v7.0.0).
-#   3. Run bootstrap_and_start.ps1 — installs python3 + R + EMP if missing,
+# What it does:
+#   1. Detects host OS (Windows / macOS / Linux).
+#      - If user runs this .ps1 on macOS / Linux (e.g. PowerShell Core),
+#        we transparently hand off to the .sh equivalent so the same oneliner
+#        works everywhere.
+#   2. Verifies / installs git (so we can clone).
+#   3. Clones the repo at -Branch (default v7.0.0).
+#   4. Runs the V7 bootstrap — installs python3 + R + EMP if missing,
 #      then starts the API + frontend.
 param(
   [string]$RepoUrl   = "https://github.com/xielab2017/EasyMultiProfiler-Web.git",
@@ -19,6 +23,53 @@ function Write-EmpLog  { param($m) Write-Host "[emp-install] $m" -ForegroundColo
 function Write-EmpOk   { param($m) Write-Host "[emp-ok] $m" -ForegroundColor Green }
 function Write-EmpWarn { param($m) Write-Host "[emp-warn] $m" -ForegroundColor Yellow }
 function Write-EmpErr  { param($m) Write-Host "[emp-error] $m" -ForegroundColor Red }
+
+# ───────────────────────────────────────────────────────────────────────
+# OS auto-detect
+# ───────────────────────────────────────────────────────────────────────
+# Powershell 5.x (Windows PowerShell) is always Windows. PowerShell 7+
+# (pwsh) can run on Windows / macOS / Linux — use RuntimeInformation.
+$isWin  = $IsWindows
+if ($null -eq $isWin) {
+  $isWin = ($env:OS -eq 'Windows_NT') -or [System.Environment]::OSVersion.Platform -eq 'Win32NT'
+}
+$osName = if ($IsLinux)  { 'linux' }
+          elseif ($IsMacOS) { 'macos' }
+          elseif ($isWin)   { 'windows' }
+          else { 'unknown' }
+Write-EmpLog "Detected host OS: $osName"
+
+# ───────────────────────────────────────────────────────────────────────
+# On macOS / Linux we forward to the bash equivalent. Same oneliner works
+# in any shell.
+# ───────────────────────────────────────────────────────────────────────
+if (-not $isWin) {
+  # Make sure curl + bash are present (they are on every macOS / Linux
+  # out of the box, but we double-check so the user gets a clear error).
+  if (-not (Get-Command curl -ErrorAction SilentlyContinue)) {
+    Write-EmpErr "curl not found. Install it and re-run."
+    exit 1
+  }
+  if (-not (Get-Command bash -ErrorAction SilentlyContinue)) {
+    Write-EmpErr "bash not found. Install it (brew install bash) and re-run."
+    exit 1
+  }
+  Write-EmpLog "Handing off to install_from_github.sh on $osName"
+  # Use environment variables to pass parameters — PowerShell-quoted
+  # argument passthrough through `bash -s` is unreliable across pwsh
+  # versions, so we avoid positional args entirely.
+  $env:EMP_REPO_URL   = $RepoUrl
+  $env:EMP_TARGET_DIR = $TargetDir
+  $env:EMP_BRANCH     = $Branch
+  $url = "https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/$Branch/webapp/scripts/install_from_github.sh"
+  Write-EmpLog "Fetching: $url"
+  & curl -fsSL "$url" | & bash
+  exit $LASTEXITCODE
+}
+
+# ───────────────────────────────────────────────────────────────────────
+# Windows branch — original logic.
+# ───────────────────────────────────────────────────────────────────────
 
 # ── 1. Make sure git exists ────────────────────────────────────────────────
 $git = Get-Command git.exe -ErrorAction SilentlyContinue

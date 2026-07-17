@@ -13,9 +13,9 @@
 #        - start the API + frontend
 set -euo pipefail
 
-REPO_URL="${1:-https://github.com/xielab2017/EasyMultiProfiler-Web.git}"
-TARGET_DIR="${2:-EasyMultiProfiler-Web}"
-BRANCH="${BRANCH:-v7.0.0}"
+REPO_URL="${1:-${EMP_REPO_URL:-https://github.com/xielab2017/EasyMultiProfiler-Web.git}}"
+TARGET_DIR="${2:-${EMP_TARGET_DIR:-EasyMultiProfiler-Web}}"
+BRANCH="${BRANCH:-${EMP_BRANCH:-v7.0.0}}"
 
 # Bootstrap git itself so even a barebones box can run this script.
 if ! command -v git >/dev/null 2>&1; then
