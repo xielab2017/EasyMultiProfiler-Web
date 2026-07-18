@@ -3,9 +3,9 @@
   <desc id="desc">V7 system architecture: zero-dependency one-line installer for git, python3, R, and the EasyMultiProfiler package; followed by browser UI, R + EMP core, AI copilot, and export outputs. Microbiome family groups 16S amplicon and shotgun metagenomics workflows.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0" stop-color="#07111f"/>
-      <stop offset="0.48" stop-color="#10243a"/>
-      <stop offset="1" stop-color="#0b161f"/>
+      <stop offset="0" stop-color="#06101e"/>
+      <stop offset="0.5" stop-color="#0e2138"/>
+      <stop offset="1" stop-color="#0a161f"/>
     </linearGradient>
     <linearGradient id="cyan" x1="0" x2="1">
       <stop offset="0" stop-color="#3ee7ff"/>
@@ -23,6 +23,10 @@
       <stop offset="0" stop-color="#a6ff8a"/>
       <stop offset="1" stop-color="#48e7d1"/>
     </linearGradient>
+    <linearGradient id="panelBorder" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="rgba(151,219,255,.55)"/>
+      <stop offset="1" stop-color="rgba(151,219,255,.18)"/>
+    </linearGradient>
     <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
       <feGaussianBlur stdDeviation="4" result="blur"/>
       <feMerge>
@@ -30,155 +34,195 @@
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
-    <filter id="glowStrong" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
-    <marker id="arrowCyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <marker id="arrowCyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#48e7d1"/>
     </marker>
-    <marker id="arrowViolet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <marker id="arrowViolet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#bda2ff"/>
     </marker>
-    <marker id="arrowLime" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a6ff8a"/>
-    </marker>
     <style>
-      .label{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#e8f7ff;font-weight:700;letter-spacing:0}
-      .small{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#a9c3d6;font-size:18px;letter-spacing:0}
-      .tiny{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#b7ccda;font-size:15px;letter-spacing:0}
-      .mono{font-family:"JetBrains Mono",Consolas,Menlo,monospace;fill:#cdf3ff;font-size:14px}
-      .box{fill:rgba(9,25,41,.78);stroke:rgba(151,219,255,.35);stroke-width:1.4;rx:10}
-      .box2{fill:rgba(20,34,55,.82);stroke:rgba(199,162,255,.42);stroke-width:1.4;rx:10}
-      .box3{fill:rgba(36,32,28,.82);stroke:rgba(255,211,130,.45);stroke-width:1.4;rx:10}
-      .boxMicrobe{fill:rgba(11,40,34,.82);stroke:rgba(102,221,170,.45);stroke-width:1.4;rx:10}
-      .boxInstall{fill:rgba(14,40,22,.86);stroke:rgba(166,255,138,.55);stroke-width:1.6;rx:14}
-      .line{fill:none;stroke:url(#cyan);stroke-width:3;marker-end:url(#arrowCyan);filter:url(#glow)}
-      .line2{fill:none;stroke:url(#violet);stroke-width:2.5;marker-end:url(#arrowViolet);filter:url(#glow)}
-      .lineLime{fill:none;stroke:url(#lime);stroke-width:3;marker-end:url(#arrowLime);filter:url(#glowStrong)}
-      .dash{stroke-dasharray:8 8}
+      .label{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#e8f7ff;font-weight:700}
+      .labelSm{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#e8f7ff;font-weight:600}
+      .small{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#b8d2e3}
+      .tiny{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#9eb6c6}
+      .micro{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#8aa0b0}
+      .mono{font-family:"JetBrains Mono",Consolas,Menlo,monospace;fill:#cdf3ff}
+      .panel{fill:rgba(10,24,40,.72);stroke:rgba(151,219,255,.32);stroke-width:1.4}
+      .panelMicrobe{fill:rgba(8,30,24,.78);stroke:rgba(102,221,170,.5);stroke-width:1.4}
+      .panelCore{fill:rgba(6,18,28,.86);stroke:rgba(72,231,209,.6);stroke-width:1.6;filter:url(#glow)}
+      .panelAI{fill:rgba(36,28,18,.78);stroke:rgba(255,190,100,.5);stroke-width:1.4}
+      .panelInstall{fill:rgba(8,28,16,.86);stroke:rgba(166,255,138,.65);stroke-width:1.6}
+      .item{fill:rgba(8,22,38,.85);stroke:rgba(151,219,255,.32);stroke-width:1}
+      .itemMicrobe{fill:rgba(8,28,22,.85);stroke:rgba(102,221,170,.42);stroke-width:1}
+      .itemExport{fill:rgba(10,22,40,.85);stroke:rgba(151,219,255,.32);stroke-width:1}
+      .arrow{stroke:url(#cyan);stroke-width:2.4;fill:none;filter:url(#softGlow)}
+      .arrowVio{stroke:url(#violet);stroke-width:2.2;fill:none;stroke-dasharray:8 6;filter:url(#softGlow)}
+      .arrowLime{stroke:url(#lime);stroke-width:2.6;fill:none;filter:url(#softGlow)}
+      .term{font-family:"JetBrains Mono",Consolas,Menlo,monospace;fill:#a6ff8a;font-size:18px;font-weight:700}
     </style>
   </defs>
 
   <rect width="1280" height="720" fill="url(#bg)"/>
-  <g opacity=".22">
-    <path d="M0 112 H1280 M0 224 H1280 M0 336 H1280 M0 448 H1280 M0 560 H1280" stroke="#7ec7ff" stroke-width="1"/>
-    <path d="M128 0 V720 M256 0 V720 M384 0 V720 M512 0 V720 M640 0 V720 M768 0 V720 M896 0 V720 M1024 0 V720 M1152 0 V720" stroke="#7ec7ff" stroke-width="1"/>
-  </g>
-  <circle cx="640" cy="380" r="295" fill="none" stroke="#45e6d0" stroke-opacity=".16" stroke-width="2"/>
-  <circle cx="640" cy="380" r="208" fill="none" stroke="#c59cff" stroke-opacity=".15" stroke-width="2"/>
-
-  <!-- Header band: title + subtitle + V7.0 Mode pill on the same row -->
-  <text x="64" y="60" class="label" font-size="34">EasyMultiProfiler Web V7.0</text>
-  <text x="64" y="92" class="small">Zero-dep one-line install for git, python3, R, and EMP — then the same R + EasyMultiProfiler core as V6.</text>
-  <rect x="1080" y="38" width="132" height="42" rx="21" fill="rgba(166,255,138,.14)" stroke="#a6ff8a"/>
-  <text x="1105" y="66" class="label" font-size="18" fill="#dffcd4">V7.0 Mode</text>
-
-  <!-- V7 install-chain strip across the top, above all main panels -->
-  <g>
-    <rect class="boxInstall" x="64" y="118" width="1148" height="50" rx="25"/>
-    <text x="84" y="148" class="label" font-size="17" fill="#dffcd4">One-line install:</text>
-    <text x="244" y="148" class="small" fill="#cdf3ff">detect OS  →  install git + python3 + R + EMP  →  start web  →  open http://127.0.0.1:8080</text>
+  <g opacity=".18">
+    <path d="M0 100 H1280 M0 200 H1280 M0 300 H1280 M0 400 H1280 M0 500 H1280 M0 600 H1280" stroke="#6fbed6" stroke-width="1"/>
+    <path d="M128 0 V720 M256 0 V720 M384 0 V720 M512 0 V720 M640 0 V720 M768 0 V720 M896 0 V720 M1024 0 V720 M1152 0 V720" stroke="#6fbed6" stroke-width="1"/>
   </g>
 
-  <!-- Main panels start at y=200 so they don't collide with the install strip -->
-  <g>
-    <text x="70" y="220" class="label" font-size="22">Omics Inputs</text>
+  <!-- Header -->
+  <text x="60" y="56" class="label" font-size="36">EasyMultiProfiler Web V7.0</text>
+  <text x="60" y="86" class="small" font-size="16">Zero-dep one-line install for git, python3, R, and EMP — then the same R + EasyMultiProfiler core as V6.</text>
+  <rect x="1112" y="32" width="124" height="42" rx="21" fill="rgba(166,255,138,.14)" stroke="#a6ff8a" stroke-width="1.4"/>
+  <text x="1174" y="60" class="label" font-size="18" text-anchor="middle" fill="#dffcd4">V7.0 Mode</text>
 
-    <g>
-      <rect class="boxMicrobe" x="56" y="238" width="212" height="100"/>
-      <text x="82" y="262" class="label" font-size="16" fill="#cdf3d5">Microbiome family</text>
-      <rect class="box" x="66" y="272" width="194" height="24" fill="rgba(102,221,170,.10)" stroke="rgba(102,221,170,.45)"/>
-      <text x="78" y="289" class="label" font-size="14">16S / Amplicon</text>
-      <rect class="box" x="66" y="302" width="194" height="24" fill="rgba(102,221,170,.10)" stroke="rgba(102,221,170,.45)"/>
-      <text x="78" y="319" class="label" font-size="14">Metagenomics (WGS)</text>
+  <!-- One-line install strip with terminal prompt icon -->
+  <g>
+    <rect class="panelInstall" x="60" y="110" width="1176" height="56" rx="14"/>
+    <!-- terminal prompt icon -->
+    <g transform="translate(78,124)">
+      <rect x="0" y="0" width="38" height="28" rx="6" fill="rgba(166,255,138,.10)" stroke="#a6ff8a" stroke-width="1.2"/>
+      <text x="19" y="20" class="term" text-anchor="middle">&gt;_</text>
     </g>
+    <text x="138" y="146" class="label" font-size="18" fill="#dffcd4">One-line install:</text>
+    <text x="298" y="146" class="mono" font-size="16">detect OS  →  install git + python3 + R + EMP  →  start web  →  open</text>
+    <text x="906" y="146" class="mono" font-size="16" fill="#a6ff8a">http://127.0.0.1:8080</text>
+  </g>
 
-    <rect class="box" x="56" y="350" width="212" height="40"/>
-    <text x="82" y="376" class="label" font-size="17">RNA-seq / GSEA</text>
-    <rect class="box" x="56" y="398" width="212" height="40"/>
-    <text x="82" y="424" class="label" font-size="17">Metabolomics</text>
-    <rect class="box" x="56" y="446" width="212" height="40"/>
-    <text x="82" y="472" class="label" font-size="17">ChIP-seq Peaks</text>
-    <text x="68" y="510" class="tiny">CSV, TSV, BIOM, BAM, KO/EC, metadata, demo cases</text>
+  <!-- OMX PANEL: Omics Inputs (left, expanded to include footer text) -->
+  <g>
+    <rect class="panelMicrobe" x="60" y="190" width="232" height="380" rx="14"/>
+    <text x="80" y="220" class="label" font-size="20">Omics Inputs</text>
+    <rect class="itemMicrobe" x="76" y="236" width="200" height="86" rx="8"/>
+    <text x="86" y="256" class="labelSm" font-size="14" fill="#cdf3d5">Microbiome family</text>
+    <rect x="84" y="266" width="184" height="20" rx="6" fill="rgba(102,221,170,.10)" stroke="rgba(102,221,170,.55)"/>
+    <text x="92" y="281" class="labelSm" font-size="13">16S / Amplicon</text>
+    <rect x="84" y="290" width="184" height="20" rx="6" fill="rgba(102,221,170,.10)" stroke="rgba(102,221,170,.55)"/>
+    <text x="92" y="305" class="labelSm" font-size="13">Metagenomics (WGS)</text>
+    <rect class="item" x="76" y="332" width="200" height="32" rx="6"/>
+    <text x="92" y="353" class="labelSm" font-size="14">RNA-seq / GSEA</text>
+    <rect class="item" x="76" y="370" width="200" height="32" rx="6"/>
+    <text x="92" y="391" class="labelSm" font-size="14">Metabolomics</text>
+    <rect class="item" x="76" y="408" width="200" height="32" rx="6"/>
+    <text x="92" y="429" class="labelSm" font-size="14">ChIP-seq Peaks</text>
+    <text x="80" y="478" class="tiny" font-size="13">CSV, TSV, BIOM, BAM, KO/EC,</text>
+    <text x="80" y="496" class="tiny" font-size="13">metadata, DEM + 16S / MGX /</text>
+    <text x="80" y="514" class="tiny" font-size="13">RNA-seq multi-omics</text>
+    <line x1="76" y1="540" x2="276" y2="540" stroke="rgba(102,221,170,.3)" stroke-width="1"/>
+  </g>
+
+  <!-- PANEL: Browser UI -->
+  <g>
+    <rect class="panel" x="316" y="190" width="252" height="380" rx="14" stroke="rgba(141,162,255,.4)"/>
+    <text x="340" y="220" class="label" font-size="20">Browser UI</text>
+    <rect class="item" x="332" y="240" width="220" height="34" rx="7" fill="rgba(141,162,255,.10)" stroke="rgba(141,162,255,.5)"/>
+    <text x="360" y="262" class="labelSm" font-size="15">Course + Guide</text>
+    <rect class="item" x="332" y="282" width="220" height="34" rx="7" fill="rgba(141,162,255,.10)" stroke="rgba(141,162,255,.5)"/>
+    <text x="362" y="304" class="labelSm" font-size="15">Data Inspector</text>
+    <rect class="item" x="332" y="324" width="220" height="34" rx="7" fill="rgba(141,162,255,.10)" stroke="rgba(141,162,255,.5)"/>
+    <text x="354" y="346" class="labelSm" font-size="15">Run All Engine</text>
+    <rect class="item" x="332" y="366" width="220" height="34" rx="7" fill="rgba(141,162,255,.10)" stroke="rgba(141,162,255,.5)"/>
+    <text x="360" y="388" class="labelSm" font-size="15">Code Lab LLM</text>
+    <rect class="item" x="332" y="408" width="220" height="34" rx="7" fill="rgba(141,162,255,.10)" stroke="rgba(141,162,255,.5)"/>
+    <text x="368" y="430" class="labelSm" font-size="15">Visualization</text>
+    <text x="340" y="510" class="small" font-size="13">Vector PDF · MAE store · Run All</text>
+  </g>
+
+  <!-- PANEL: R + EMP Core (center, glowing) -->
+  <g>
+    <rect class="panelCore" x="592" y="190" width="312" height="380" rx="14"/>
+    <text x="616" y="220" class="label" font-size="20">R + EMP Core</text>
+    <text x="616" y="240" class="micro" font-size="12">Plumber API over EasyMultiProfiler</text>
+    <rect class="item" x="612" y="252" width="272" height="40" rx="7" fill="rgba(72,231,209,.10)" stroke="rgba(72,231,209,.55)"/>
+    <text x="640" y="278" class="labelSm" font-size="16">R Runtime</text>
+    <rect class="item" x="612" y="298" width="272" height="40" rx="7" fill="rgba(72,231,209,.10)" stroke="rgba(72,231,209,.55)"/>
+    <text x="640" y="324" class="labelSm" font-size="16">EasyMultiProfiler</text>
+    <rect class="item" x="612" y="344" width="272" height="40" rx="7" fill="rgba(72,231,209,.10)" stroke="rgba(72,231,209,.55)"/>
+    <text x="640" y="370" class="labelSm" font-size="16">Session MAE Store</text>
+    <rect class="item" x="612" y="390" width="272" height="40" rx="7" fill="rgba(72,231,209,.10)" stroke="rgba(72,231,209,.55)"/>
+    <text x="640" y="416" class="labelSm" font-size="16">Workflow Registry</text>
+    <rect class="item" x="612" y="436" width="272" height="40" rx="7" fill="rgba(72,231,209,.10)" stroke="rgba(72,231,209,.55)"/>
+    <text x="640" y="462" class="labelSm" font-size="16">Plots + Export</text>
+  </g>
+
+  <!-- PANEL: AI Copilot (right top) -->
+  <g>
+    <rect class="panelAI" x="928" y="190" width="308" height="120" rx="14"/>
+    <text x="952" y="220" class="label" font-size="20">AI Copilot</text>
+    <text x="952" y="244" class="small" font-size="13">OpenRouter / local rules</text>
+    <text x="952" y="262" class="small" font-size="13">Prompt templates + repair</text>
+  </g>
+
+  <!-- Export items to the right of R+EMP Core -->
+  <g>
+    <rect class="itemExport" x="928" y="326" width="308" height="42" rx="9"/>
+    <text x="952" y="354" class="labelSm" font-size="16">Tables + QC</text>
+    <rect class="itemExport" x="928" y="376" width="308" height="42" rx="9"/>
+    <text x="952" y="404" class="labelSm" font-size="16">Plots + PDF</text>
+    <rect class="itemExport" x="928" y="426" width="308" height="42" rx="9"/>
+    <text x="952" y="454" class="labelSm" font-size="16">RDS + Reports</text>
+  </g>
+
+  <!-- Connectors -->
+  <!-- Omics Inputs -> Browser UI -->
+  <path class="arrow" d="M292 380 L316 380" marker-end="url(#arrowCyan)"/>
+  <!-- Browser UI -> R+EMP Core -->
+  <path class="arrow" d="M568 380 L592 380" marker-end="url(#arrowCyan)"/>
+  <!-- R+EMP Core -> AI Copilot (purple dashed, top) -->
+  <path class="arrowVio" d="M904 220 L928 220" marker-end="url(#arrowViolet)"/>
+  <!-- AI Copilot -> R+EMP Core (purple dashed, return) -->
+  <path class="arrowVio" d="M928 280 L904 290" marker-end="url(#arrowViolet)"/>
+  <!-- R+EMP Core -> Export items (cyan, three branches) -->
+  <path class="arrow" d="M904 350 Q920 350 928 350" marker-end="url(#arrowCyan)"/>
+  <path class="arrow" d="M904 400 Q920 400 928 400" marker-end="url(#arrowCyan)"/>
+  <path class="arrow" d="M904 450 Q920 450 928 450" marker-end="url(#arrowCyan)"/>
+
+  <!-- V7 install strip -> R+EMP Core (lime) -->
+  <path class="arrowLime" d="M748 166 L748 252" marker-end="url(#arrowCyan)"/>
+
+  <!-- Footer: three rounded capsules with icons -->
+  <g>
+    <!-- Left: pipeline -->
+    <rect x="60" y="606" width="380" height="60" rx="30" fill="rgba(72,231,209,.10)" stroke="rgba(72,231,209,.5)" stroke-width="1.4"/>
+    <g transform="translate(86,624)">
+      <circle cx="0" cy="0" r="3" fill="#48e7d1"/>
+      <circle cx="0" cy="14" r="3" fill="#48e7d1"/>
+      <line x1="0" y1="3" x2="0" y2="11" stroke="#48e7d1" stroke-width="1.4"/>
+      <line x1="0" y1="3" x2="14" y2="3" stroke="#48e7d1" stroke-width="1.4"/>
+      <line x1="14" y1="3" x2="14" y2="20" stroke="#48e7d1" stroke-width="1.4"/>
+      <circle cx="14" cy="0" r="3" fill="#48e7d1"/>
+      <circle cx="14" cy="20" r="3" fill="#48e7d1"/>
+    </g>
+    <text x="116" y="632" class="small" font-size="14">Import → Prepare → Analyze → Clinical →</text>
+    <text x="116" y="654" class="small" font-size="14">Run All → Visualize → Export</text>
   </g>
 
   <g>
-    <rect class="box2" x="345" y="200" width="250" height="400"/>
-    <text x="382" y="232" class="label" font-size="24">Browser UI</text>
-    <rect x="374" y="252" width="192" height="38" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
-    <text x="396" y="277" class="small">Course + Guide</text>
-    <rect x="374" y="298" width="192" height="38" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
-    <text x="399" y="323" class="small">Data Inspector</text>
-    <rect x="374" y="344" width="192" height="38" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
-    <text x="395" y="369" class="small">Run All Engine</text>
-    <rect x="374" y="390" width="192" height="38" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
-    <text x="398" y="415" class="small">Code Lab LLM</text>
-    <rect x="374" y="436" width="192" height="38" rx="8" fill="rgba(141,162,255,.14)" stroke="#95a8ff"/>
-    <text x="400" y="461" class="small">Visualization</text>
-    <text x="384" y="510" class="small" fill="#d8c8ff">+ 16S / MGX / RNA-seq multi-omics</text>
-    <text x="384" y="534" class="tiny">Vector PDF · MAE store · Run All</text>
+    <!-- Center: V7 tagline with rocket icon -->
+    <rect x="464" y="606" width="352" height="60" rx="30" fill="rgba(166,255,138,.10)" stroke="rgba(166,255,138,.55)" stroke-width="1.4"/>
+    <g transform="translate(496,632)">
+      <path d="M0 -10 L6 4 L-6 4 Z" fill="#a6ff8a"/>
+      <path d="M-3 4 L-2 8 L0 4 Z" fill="#a6ff8a"/>
+      <path d="M3 4 L2 8 L0 4 Z" fill="#a6ff8a"/>
+      <circle cx="0" cy="-2" r="2" fill="rgba(8,28,16,.86)"/>
+    </g>
+    <text x="528" y="643" class="labelSm" font-size="16" fill="#dffcd4">V7: install = 0 lines of user setup</text>
   </g>
 
   <g>
-    <rect x="670" y="200" width="286" height="412" rx="14" fill="rgba(8,22,34,.86)" stroke="#48e7d1" stroke-width="2" filter="url(#glow)"/>
-    <text x="704" y="240" class="label" font-size="24">R + EMP Core</text>
-    <text x="706" y="266" class="tiny">Plumber API over EasyMultiProfiler</text>
-
-    <rect class="box" x="704" y="290" width="218" height="44"/>
-    <text x="730" y="318" class="label" font-size="17">R Runtime</text>
-    <rect class="box" x="704" y="346" width="218" height="44"/>
-    <text x="730" y="374" class="label" font-size="17">EasyMultiProfiler</text>
-    <rect class="box" x="704" y="402" width="218" height="44"/>
-    <text x="730" y="430" class="label" font-size="17">Session MAE Store</text>
-    <rect class="box" x="704" y="458" width="218" height="44"/>
-    <text x="730" y="486" class="label" font-size="17">Workflow Registry</text>
-    <rect class="box" x="704" y="514" width="218" height="44"/>
-    <text x="730" y="542" class="label" font-size="17">Plots + Export</text>
-  </g>
-
-  <g>
-    <rect class="box3" x="1008" y="200" width="214" height="100"/>
-    <text x="1040" y="234" class="label" font-size="21">AI Copilot</text>
-    <text x="1030" y="262" class="tiny">OpenRouter / local rules</text>
-    <text x="1030" y="282" class="tiny">Prompt templates + repair</text>
-
-    <rect class="box" x="1008" y="324" width="214" height="50"/>
-    <text x="1043" y="356" class="label" font-size="17">Tables + QC</text>
-    <rect class="box" x="1008" y="386" width="214" height="50"/>
-    <text x="1039" y="418" class="label" font-size="17">Plots + PDF</text>
-    <rect class="box" x="1008" y="448" width="214" height="50"/>
-    <text x="1034" y="480" class="label" font-size="17">RDS + Reports</text>
-  </g>
-
-  <!-- Connectors between the four main panels -->
-  <path class="line" d="M268 400 C300 400 310 400 345 400"/>
-  <path class="line" d="M595 400 C624 400 642 400 670 400"/>
-  <path class="line" d="M956 408 C984 408 989 408 1008 408"/>
-  <path class="line" d="M956 456 C988 456 990 456 1008 456"/>
-  <path class="line" d="M956 504 C988 504 990 504 1008 504"/>
-  <path class="line2 dash" d="M958 256 C980 246 990 246 1008 250"/>
-  <path class="line2 dash" d="M1114 300 C1114 322 1044 326 922 318"/>
-
-  <!-- V7 install strip feeds into R + EMP Core via a single lime arrow.
-       Vertical drop from the install strip into the top of R+EMP Core,
-       then a short right curve into the R Runtime cell. -->
-  <path class="lineLime" d="M813 168 L813 250 L812 290"/>
-
-  <!-- Footer: pipeline order + V7 tagline -->
-  <g>
-    <rect x="64" y="638" width="556" height="46" rx="23" fill="rgba(72,231,209,.10)" stroke="rgba(72,231,209,.5)"/>
-    <text x="342" y="667" class="small" text-anchor="middle">Import → Prepare → Analyze → Clinical → Run All → Visualize → Export</text>
-  </g>
-  <g>
-    <rect x="640" y="638" width="282" height="46" rx="23" fill="rgba(166,255,138,.10)" stroke="rgba(166,255,138,.5)"/>
-    <text x="781" y="667" class="small" text-anchor="middle" fill="#dffcd4">V7: install = 0 lines of user setup</text>
-  </g>
-  <g>
-    <rect x="942" y="638" width="270" height="46" rx="23" fill="rgba(72,231,209,.10)" stroke="rgba(72,231,209,.5)"/>
-    <text x="1077" y="667" class="small" text-anchor="middle">web :8080 · api :8000</text>
+    <!-- Right: ports with globe icon -->
+    <rect x="840" y="606" width="380" height="60" rx="30" fill="rgba(72,231,209,.10)" stroke="rgba(72,231,209,.5)" stroke-width="1.4"/>
+    <g transform="translate(866,636)">
+      <circle cx="0" cy="0" r="12" fill="none" stroke="#48e7d1" stroke-width="1.4"/>
+      <ellipse cx="0" cy="0" rx="6" ry="12" fill="none" stroke="#48e7d1" stroke-width="1.4"/>
+      <line x1="-12" y1="0" x2="12" y2="0" stroke="#48e7d1" stroke-width="1.4"/>
+      <line x1="0" y1="-12" x2="0" y2="12" stroke="#48e7d1" stroke-width="1.4"/>
+    </g>
+    <text x="900" y="643" class="labelSm" font-size="16">web :8080 · api :8000</text>
   </g>
 </svg>
