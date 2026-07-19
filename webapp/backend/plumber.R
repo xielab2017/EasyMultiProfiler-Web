@@ -11,6 +11,7 @@ library(base64enc)
 # Source helpers (absolute paths set at startup via env var or inferred)
 .BACKEND_DIR <- Sys.getenv("BACKEND_DIR", unset = "/app")
 
+source(file.path(.BACKEND_DIR, "helpers/storage.R"))
 source(file.path(.BACKEND_DIR, "helpers/session.R"))
 source(file.path(.BACKEND_DIR, "helpers/utils.R"))
 source(file.path(.BACKEND_DIR, "helpers/plot_theme.R"))
@@ -26,6 +27,7 @@ source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/clinical.R"))
 source(file.path(.BACKEND_DIR, "helpers/jobs.R"))
+source(file.path(.BACKEND_DIR, "helpers/agent_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_exec.R"))
 source(file.path(.BACKEND_DIR, "helpers/llm.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_evolution.R"))
@@ -37,7 +39,7 @@ Sys.setenv(EMP_BACKEND_DIR = .BACKEND_DIR)
 #* @filter cors
 #* @serializer unboxedJSON
 function(req, res) {
-  res$setHeader("Access-Control-Allow-Origin",  "*")
+  res$setHeader("Access-Control-Allow-Origin", Sys.getenv("EMP_CORS_ORIGIN", unset = "*"))
   res$setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
   res$setHeader("Access-Control-Allow-Headers", "Content-Type,X-Session-Id,X-Teaching-Token")
   if (req$REQUEST_METHOD == "OPTIONS") {
@@ -50,6 +52,13 @@ function(req, res) {
 # ══════════════════════════════════════════════════════════
 # SESSION
 # ══════════════════════════════════════════════════════════
+
+#* Agent-facing API capabilities and compatibility contract
+#* @get /api/capabilities
+#* @serializer unboxedJSON
+function(res) {
+  safe_api({ emp_agent_capabilities() }, res)
+}
 
 #* List all supported omics workflows
 #* @get /api/workflows
@@ -106,6 +115,40 @@ function(session_id, res) {
 # ══════════════════════════════════════════════════════════
 # IMPORT
 # ══════════════════════════════════════════════════════════
+
+#* Validate server-local input paths without creating a session
+#* @post /api/import/path/preview
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    body <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    emp_path_import_preview(
+      data_path = body$data_path %||% "",
+      metadata_path = body$metadata_path %||% NULL,
+      data_type = body$data_type %||% "normal",
+      tax_sep = body$tax_sep %||% ";"
+    )
+  }, res)
+}
+
+#* Import server-local files from EMP_ALLOWED_ROOTS
+#* @post /api/import/path
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    body <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    emp_path_import(
+      data_path = body$data_path %||% "",
+      metadata_path = body$metadata_path %||% NULL,
+      experiment_name = body$experiment_name %||% "experiment",
+      data_type = body$data_type %||% "normal",
+      assay_name = body$assay_name %||% "counts",
+      start_level = body$start_level %||% "Species",
+      tax_sep = body$tax_sep %||% ";",
+      session_id = body$session_id %||% NULL
+    )
+  }, res)
+}
 
 # Helper: save a Plumber multipart file entry to a temp file, return path.
 # Plumber 1.3+ multipart parts look like list(value=<raw>, filename=..., parsed=...).
@@ -305,43 +348,16 @@ function(req, res,
       stop("ChIP-seq uses BAM/SAM upload on the Analysis page (ChIP-seq tab), not count matrix import.")
     }
 
-    if (mae_exists) {
-      mae <- load_mae(session_id)
-      if (experiment_name %in% names(mae)) {
-        stop(sprintf(
-          "Experiment name '%s' already exists. Choose a unique name to add another omics dataset.",
-          experiment_name
-        ))
-      }
-      mae <- add_experiment_to_mae(mae, data_file, meta_file,
-                                    experiment_name, data_type,
-                                    assay_name, start_level, tax_sep)
-      import_mode <- "omics_add"
-    } else {
-      mae <- build_mae(data_file, meta_file,
-                       experiment_name, data_type,
-                       assay_name, start_level, tax_sep)
-      import_mode <- "omics_new"
-    }
-
-    save_mae(session_id, mae)
-    tryCatch({
-      save_raw_empt(session_id, experiment_name, .promote_to_empt(mae, experiment_name))
-    }, error = function(e) NULL)
-    register_experiment_meta(session_id, experiment_name, data_type)
-    write_experiments_meta(session_id, mae)
-
-    # Summarise
-    ex <- mae[[experiment_name]]
-    list(success         = TRUE,
-         session_id      = session_id,
-         import_mode     = import_mode,
-         experiment_name = experiment_name,
-         samples         = ncol(ex),
-         features        = nrow(ex),
-         assay           = assay_name,
-         omics           = data_type_to_omics(data_type),
-         experiment_count = length(mae))
+    import_omics_files(
+      data_file = data_file,
+      metadata_file = meta_file,
+      experiment_name = experiment_name,
+      data_type = data_type,
+      assay_name = assay_name,
+      start_level = start_level,
+      tax_sep = tax_sep,
+      session_id = session_id
+    )
   }, res)
 }
 
@@ -2867,6 +2883,10 @@ function(req, res) {
 #* @post /api/user_r/run
 #* @serializer unboxedJSON
 function(req, res) {
+  if (!tolower(trimws(Sys.getenv("EMP_ENABLE_USER_R", unset = "true"))) %in% c("1", "true", "yes", "on")) {
+    res$status <- 403
+    return(list(success = FALSE, error = "User R execution is disabled"))
+  }
   plumber_user_r_post(req, res)
 }
 
@@ -2874,6 +2894,10 @@ function(req, res) {
 #* @post /api/exec/user_r
 #* @serializer unboxedJSON
 function(req, res) {
+  if (!tolower(trimws(Sys.getenv("EMP_ENABLE_USER_R", unset = "true"))) %in% c("1", "true", "yes", "on")) {
+    res$status <- 403
+    return(list(success = FALSE, error = "User R execution is disabled"))
+  }
   plumber_user_r_post(req, res)
 }
 

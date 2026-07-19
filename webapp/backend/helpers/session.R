@@ -1,33 +1,40 @@
 # Session management helpers
 
-SESSION_DIR <- "/tmp/emp_sessions"
+SESSION_DIR <- emp_storage_dir("sessions")
 
 new_session_id <- function() {
   paste0(sample(c(letters, LETTERS, 0:9), 24, replace = TRUE), collapse = "")
 }
 
+validate_session_id <- function(session_id) {
+  value <- trimws(as.character(session_id %||% ""))
+  if (length(value) != 1L || !grepl("^[A-Za-z0-9]{24}$", value)) stop("Invalid session_id")
+  value
+}
+
 session_path <- function(session_id) {
+  session_id <- validate_session_id(session_id)
   file.path(SESSION_DIR, session_id)
 }
 
 mae_path <- function(session_id) {
-  file.path(SESSION_DIR, session_id, "mae.rds")
+  file.path(session_path(session_id), "mae.rds")
 }
 
 empt_path <- function(session_id, experiment) {
-  file.path(SESSION_DIR, session_id, paste0("empt_", make.names(experiment), ".rds"))
+  file.path(session_path(session_id), paste0("empt_", make.names(experiment), ".rds"))
 }
 
 diff_raw_path <- function(session_id, experiment) {
-  file.path(SESSION_DIR, session_id, paste0("diff_raw_", make.names(experiment), ".rds"))
+  file.path(session_path(session_id), paste0("diff_raw_", make.names(experiment), ".rds"))
 }
 
 raw_empt_path <- function(session_id, experiment) {
-  file.path(SESSION_DIR, session_id, paste0("raw_empt_", make.names(experiment), ".rds"))
+  file.path(session_path(session_id), paste0("raw_empt_", make.names(experiment), ".rds"))
 }
 
 prepare_snapshot_dir <- function(session_id, experiment) {
-  file.path(SESSION_DIR, session_id, "prepare_snapshots", make.names(experiment))
+  file.path(session_path(session_id), "prepare_snapshots", make.names(experiment))
 }
 
 save_raw_empt <- function(session_id, experiment, empt) {
@@ -72,12 +79,15 @@ list_prepare_snapshots <- function(session_id, experiment) {
 
 create_session <- function() {
   id <- new_session_id()
-  dir.create(session_path(id), recursive = TRUE, showWarnings = FALSE)
+  if (!isTRUE(dir.create(session_path(id), recursive = TRUE, showWarnings = FALSE)) && !dir.exists(session_path(id))) {
+    stop("Unable to create EMP session directory")
+  }
   id
 }
 
 ensure_session_dir <- function(session_id) {
   if (is.null(session_id) || !nzchar(session_id)) return(FALSE)
+  session_id <- validate_session_id(session_id)
   p <- session_path(session_id)
   if (!dir.exists(p)) dir.create(p, recursive = TRUE, showWarnings = FALSE)
   dir.exists(p)

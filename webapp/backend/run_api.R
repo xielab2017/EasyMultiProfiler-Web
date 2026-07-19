@@ -3,9 +3,6 @@
 
 library(plumber)
 
-# Session storage
-dir.create("/tmp/emp_sessions", showWarnings = FALSE, recursive = TRUE)
-
 # Path to plumber.R (same directory as this script)
 args <- commandArgs(trailingOnly = FALSE)
 file_arg <- grep("^--file=", args, value = TRUE)
@@ -37,4 +34,6 @@ if (!nzchar(Sys.getenv("BACKEND_DIR", unset = ""))) {
 pr <- plumb(plumber_file)
 port <- suppressWarnings(as.integer(Sys.getenv("API_PORT", unset = "8000")))
 if (is.na(port) || port <= 0 || port > 65535) port <- 8000L
-pr$run(host = "0.0.0.0", port = port, docs = FALSE)
+host <- trimws(Sys.getenv("API_HOST", unset = "127.0.0.1"))
+if (!nzchar(host)) host <- "127.0.0.1"
+pr$run(host = host, port = port, docs = FALSE)

@@ -350,3 +350,64 @@ add_experiment_to_mae <- function(mae, data_file, metadata_file = NULL,
     sampleMap = S4Vectors::DataFrame(sample_map)
   )
 }
+
+# Shared omics import path used by multipart and server-local path endpoints.
+import_omics_files <- function(data_file, metadata_file = NULL,
+                               experiment_name = "experiment",
+                               data_type = "normal",
+                               assay_name = "counts",
+                               start_level = "Species",
+                               tax_sep = ";",
+                               session_id = NULL) {
+  if (!data_type %in% c("tax", "normal")) {
+    stop("Path-based omics import supports data_type 'tax' or 'normal'.")
+  }
+  if (is.null(session_id) || !nzchar(session_id)) {
+    session_id <- create_session()
+  } else {
+    ensure_session_dir(session_id)
+  }
+
+  mae_exists <- file.exists(mae_path(session_id))
+  if (mae_exists) {
+    mae <- load_mae(session_id)
+    if (experiment_name %in% names(mae)) {
+      stop(sprintf(
+        "Experiment name '%s' already exists. Choose a unique name to add another omics dataset.",
+        experiment_name
+      ))
+    }
+    mae <- add_experiment_to_mae(
+      mae, data_file, metadata_file, experiment_name, data_type,
+      assay_name, start_level, tax_sep
+    )
+    import_mode <- "omics_add"
+  } else {
+    mae <- build_mae(
+      data_file, metadata_file, experiment_name, data_type,
+      assay_name, start_level, tax_sep
+    )
+    import_mode <- "omics_new"
+  }
+
+  save_mae(session_id, mae)
+  tryCatch(
+    save_raw_empt(session_id, experiment_name, .promote_to_empt(mae, experiment_name)),
+    error = function(e) NULL
+  )
+  register_experiment_meta(session_id, experiment_name, data_type)
+  write_experiments_meta(session_id, mae)
+
+  ex <- mae[[experiment_name]]
+  list(
+    success = TRUE,
+    session_id = session_id,
+    import_mode = import_mode,
+    experiment_name = experiment_name,
+    samples = ncol(ex),
+    features = nrow(ex),
+    assay = assay_name,
+    omics = data_type_to_omics(data_type),
+    experiment_count = length(mae)
+  )
+}

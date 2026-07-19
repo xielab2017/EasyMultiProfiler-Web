@@ -65,13 +65,16 @@ RUN R -e "install.packages('/install/EasyMultiProfiler', repos = NULL, type = 's
 WORKDIR /app
 COPY . /app
 
-# ── Session storage ───────────────────────────────────────────────────────────
-RUN mkdir -p /tmp/emp_sessions && chmod 777 /tmp/emp_sessions
+# ── Persistent runtime storage ────────────────────────────────────────────────
+RUN mkdir -p /data/sessions /data/jobs && chmod -R 777 /data
 
 # ── Expose port ───────────────────────────────────────────────────────────────
 EXPOSE 8000
 
-ENV BACKEND_DIR=/app
+ENV BACKEND_DIR=/app \
+    API_HOST=0.0.0.0 \
+    EMP_SESSION_DIR=/data/sessions \
+    EMP_JOB_DIR=/data/jobs
 
 # ── Start API ─────────────────────────────────────────────────────────────────
 CMD ["Rscript", "/app/run_api.R"]

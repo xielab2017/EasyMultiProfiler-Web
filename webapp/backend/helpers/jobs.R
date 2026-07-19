@@ -10,7 +10,7 @@
 # `submit_job()` launches a callr process, records pid/start, and returns the
 # job id.  `get_job_status()` reads the JSON and surfaces it to the client.
 
-JOB_DIR <- "/tmp/emp_jobs"
+JOB_DIR <- emp_storage_dir("jobs")
 
 .jobs_ensure_dir <- function() {
   dir.create(JOB_DIR, recursive = TRUE, showWarnings = FALSE)
@@ -94,7 +94,10 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL) {
       library(MultiAssayExperiment)
       library(jsonlite)
     })
-    for (f in list.files(file.path(backend_dir, "helpers"), pattern = "\\.R$", full.names = TRUE)) {
+    helper_files <- list.files(file.path(backend_dir, "helpers"), pattern = "\\.R$", full.names = TRUE)
+    storage_file <- helper_files[basename(helper_files) == "storage.R"]
+    helper_files <- c(storage_file, helper_files[basename(helper_files) != "storage.R"])
+    for (f in helper_files) {
       source(f, local = FALSE)
     }
 
