@@ -31,6 +31,10 @@ if (!nzchar(Sys.getenv("BACKEND_DIR", unset = ""))) {
   Sys.setenv(BACKEND_DIR = script_dir)
 }
 
+source(file.path(script_dir, "helpers", "utils.R"))
+source(file.path(script_dir, "helpers", "auth.R"))
+emp_validate_deployment()
+
 pr <- plumb(plumber_file)
 port <- suppressWarnings(as.integer(Sys.getenv("API_PORT", unset = "8000")))
 if (is.na(port) || port <= 0 || port > 65535) port <- 8000L

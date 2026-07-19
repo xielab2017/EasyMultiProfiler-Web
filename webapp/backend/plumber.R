@@ -14,6 +14,8 @@ library(base64enc)
 source(file.path(.BACKEND_DIR, "helpers/storage.R"))
 source(file.path(.BACKEND_DIR, "helpers/session.R"))
 source(file.path(.BACKEND_DIR, "helpers/utils.R"))
+source(file.path(.BACKEND_DIR, "helpers/auth.R"))
+source(file.path(.BACKEND_DIR, "helpers/projects.R"))
 source(file.path(.BACKEND_DIR, "helpers/plot_theme.R"))
 source(file.path(.BACKEND_DIR, "helpers/import.R"))
 source(file.path(.BACKEND_DIR, "helpers/analysis.R"))
@@ -41,12 +43,30 @@ Sys.setenv(EMP_BACKEND_DIR = .BACKEND_DIR)
 function(req, res) {
   res$setHeader("Access-Control-Allow-Origin", Sys.getenv("EMP_CORS_ORIGIN", unset = "*"))
   res$setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
-  res$setHeader("Access-Control-Allow-Headers", "Content-Type,X-Session-Id,X-Teaching-Token")
+  res$setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type,X-Session-Id,X-Teaching-Token")
   if (req$REQUEST_METHOD == "OPTIONS") {
     res$status <- 200
     return(list())
   }
   plumber::forward()
+}
+
+#* @filter auth
+#* @serializer unboxedJSON
+function(req, res) {
+  path <- as.character(req$PATH_INFO %||% "")
+  if (emp_public_api_path(path)) return(plumber::forward())
+  tryCatch({
+    principal <- emp_authenticate_request(req)
+    emp_authorize_request_resources(req, principal)
+    plumber::forward()
+  }, error = function(e) {
+    message <- conditionMessage(e)
+    is_auth <- grepl("authentication required", message, ignore.case = TRUE)
+    res$status <- if (is_auth) 401 else 403
+    if (is_auth) res$setHeader("WWW-Authenticate", "Bearer")
+    list(success = FALSE, error = message)
+  })
 }
 
 # ══════════════════════════════════════════════════════════
@@ -81,10 +101,11 @@ function(workflow_id, res) {
 #* Create a new analysis session
 #* @post /api/session
 #* @serializer unboxedJSON
-function(res) {
+function(req, res) {
   safe_api({
-    id <- create_session()
-    list(success = TRUE, session_id = id)
+    body <- emp_json_request_body(req)
+    id <- emp_create_owned_session(emp_request_principal(req), body$project_id %||% NULL)
+    list(success = TRUE, session_id = id, endpoint_id = emp_endpoint_id())
   }, res)
 }
 
@@ -94,6 +115,7 @@ function(res) {
 function(session_id, res) {
   safe_api({
     delete_session(session_id)
+    emp_delete_session_ownership(session_id)
     list(success = TRUE)
   }, res)
 }
@@ -109,6 +131,44 @@ function(session_id, res) {
     }
     info <- list_experiments_info(session_id)
     list(success = TRUE, experiments = info)
+  }, res)
+}
+
+#* Create an owned persistent project
+#* @post /api/projects
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    body <- emp_json_request_body(req)
+    list(success = TRUE, project = emp_create_project(emp_request_principal(req), body$name %||% NULL))
+  }, res)
+}
+
+#* Get an owned persistent project
+#* @get /api/projects/<project_id>
+#* @serializer unboxedJSON
+function(project_id, req, res) {
+  safe_api({
+    project <- emp_assert_project_owner(project_id, emp_request_principal(req))
+    list(success = TRUE, project = project)
+  }, res)
+}
+
+#* Create a session bound to a persistent project
+#* @post /api/projects/<project_id>/sessions
+#* @serializer unboxedJSON
+function(project_id, req, res) {
+  safe_api({
+    list(success = TRUE, session = emp_create_project_session(project_id, emp_request_principal(req)))
+  }, res)
+}
+
+#* Get a reproducibility manifest for an owned session
+#* @get /api/session/<session_id>/manifest
+#* @serializer unboxedJSON
+function(session_id, req, res) {
+  safe_api({
+    list(success = TRUE, manifest = emp_session_manifest(session_id, emp_request_principal(req)))
   }, res)
 }
 
@@ -137,7 +197,7 @@ function(req, res) {
 function(req, res) {
   safe_api({
     body <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
-    emp_path_import(
+    result <- emp_path_import(
       data_path = body$data_path %||% "",
       metadata_path = body$metadata_path %||% NULL,
       experiment_name = body$experiment_name %||% "experiment",
@@ -145,8 +205,17 @@ function(req, res) {
       assay_name = body$assay_name %||% "counts",
       start_level = body$start_level %||% "Species",
       tax_sep = body$tax_sep %||% ";",
-      session_id = body$session_id %||% NULL
+      session_id = body$session_id %||% NULL,
+      owner_id = emp_request_principal(req),
+      project_id = body$project_id %||% NULL
     )
+    emp_record_session_import(
+      result$session_id,
+      result$input_files %||% NULL,
+      result$experiment %||% body$experiment_name %||% "experiment",
+      body$data_type %||% "normal"
+    )
+    result
   }, res)
 }
 
@@ -232,7 +301,8 @@ function(req, res,
          assay_name      = "counts",
          start_level     = "Species",
          tax_sep         = ";",
-         session_id      = NULL) {
+         session_id      = NULL,
+         project_id      = NULL) {
   safe_api({
     body      <- req$body
     # Plumber multipart: file is a list with $value (raw bytes)
@@ -244,10 +314,12 @@ function(req, res,
     # Create session if not provided; otherwise ensure storage dir still exists
     # (browser may keep an old session_id after /tmp was cleared on server restart).
     if (is.null(session_id) || session_id == "") {
-      session_id <- create_session()
+      session_id <- emp_create_owned_session(emp_request_principal(req), project_id %||% NULL)
     } else {
+      emp_assert_session_owner(session_id, emp_request_principal(req))
       ensure_session_dir(session_id)
     }
+    emp_register_session_owner(session_id, emp_request_principal(req), project_id %||% NULL)
 
     # Check if MAE already exists → add experiment
     mae_exists <- file.exists(mae_path(session_id))
@@ -395,7 +467,9 @@ function(req, res) {
       session_id = session_id,
       dataset_id = dataset_id,
       experiment_name = b$experiment_name %||% NULL,
-      assay_name = b$assay_name %||% NULL
+      assay_name = b$assay_name %||% NULL,
+      owner_id = emp_request_principal(req),
+      project_id = b$project_id %||% NULL
     )
     out
   }, res)
@@ -875,6 +949,20 @@ function(req, res) {
   }, res)
 }
 
+#* Transcriptomics preprocessing policy
+#* @post /api/workflows/transcriptomics/preprocess
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody)
+    tx_preprocess(
+      session_id = b$session_id %||% NULL,
+      experiment = b$experiment %||% NULL,
+      method = b$method %||% "deseq2"
+    )
+  }, res)
+}
+
 #* Transcriptomics differential analysis
 #* @post /api/workflows/transcriptomics/analyze/differential
 #* @serializer unboxedJSON
@@ -985,9 +1073,10 @@ function(req, res) {
 #* List uploaded / registered BAM/SAM files (treatment vs control groups)
 #* @get /api/workflows/chipseq/bams/list
 #* @serializer unboxedJSON
-function(session_id = NULL, res) {
+function(req, session_id = NULL, res) {
   safe_api({
-  chip_list_bams(session_id)
+    emp_assert_session_owner(session_id, emp_request_principal(req))
+    chip_list_bams(session_id)
   }, res)
 }
 
@@ -1001,8 +1090,12 @@ function(session_id = NULL, res) {
 #* @serializer unboxedJSON
 function(req, res, session_id = NULL, group = "t") {
   safe_api({
-    if (is.null(session_id) || session_id == "") session_id <- create_session()
-    else ensure_session_dir(session_id)
+    if (is.null(session_id) || session_id == "") session_id <- emp_create_owned_session(emp_request_principal(req))
+    else {
+      emp_assert_session_owner(session_id, emp_request_principal(req))
+      ensure_session_dir(session_id)
+    }
+    emp_register_session_owner(session_id, emp_request_principal(req))
     body <- req$body
     f <- .save_upload(body$bam_file %||% body$file %||% body$data_file)
     if (is.null(f)) stop("bam_file is required (multipart field: bam_file).")
@@ -1059,8 +1152,12 @@ function(req, res,
          preset      = "chipseq_tf") {
   safe_api({
     session_id <- as.character(session_id %||% "")[1]
-    if (!nzchar(session_id)) session_id <- create_session()
-    else ensure_session_dir(session_id)
+    if (!nzchar(session_id)) session_id <- emp_create_owned_session(emp_request_principal(req))
+    else {
+      emp_assert_session_owner(session_id, emp_request_principal(req))
+      ensure_session_dir(session_id)
+    }
+    emp_register_session_owner(session_id, emp_request_principal(req))
     genome <- as.character(genome %||% "hs")[1]
     preset <- as.character(preset %||% "chipseq_tf")[1]
     body <- req$body
@@ -1477,6 +1574,7 @@ function(job_id, res) {
       res$status <- 404
       return(list(success = FALSE, error = st$error))
     }
+    st$pid <- NULL
     list(success = TRUE, job = st)
   }, res)
 }
@@ -1521,6 +1619,19 @@ function(job_id, res) {
          n_rows  = nrow(result_df),
          columns = names(result_df),
          data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+  }, res)
+}
+
+#* Request cancellation of a running asynchronous job
+#* @post /api/jobs/<job_id>/cancel
+#* @serializer unboxedJSON
+function(job_id, req, res) {
+  safe_api({
+    emp_assert_job_owner(job_id, emp_request_principal(req))
+    result <- cancel_job(job_id)
+    if (identical(result$status, "not_found")) res$status <- 404
+    if (identical(result$status, "not_cancellable")) res$status <- 409
+    list(success = result$status %in% c("cancel_requested", "cancelled", "already_finished"), cancellation = result)
   }, res)
 }
 
@@ -1822,7 +1933,8 @@ function(req, res) {
     job_id <- submit_job(
       kind = "orgdb_install",
       fn   = "install_orgdb",
-      args = list(orgdb = orgdb)
+      args = list(orgdb = orgdb),
+      owner_id = emp_request_principal(req)
     )
     list(success = TRUE, job_id = job_id, orgdb = orgdb)
   }, res)

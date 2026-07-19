@@ -74,7 +74,8 @@ EXPOSE 8000
 ENV BACKEND_DIR=/app \
     API_HOST=0.0.0.0 \
     EMP_SESSION_DIR=/data/sessions \
-    EMP_JOB_DIR=/data/jobs
+    EMP_JOB_DIR=/data/jobs \
+    EMP_PROJECT_DIR=/data/projects
 
 # ── Start API ─────────────────────────────────────────────────────────────────
 CMD ["Rscript", "/app/run_api.R"]

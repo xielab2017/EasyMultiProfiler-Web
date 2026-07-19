@@ -358,14 +358,26 @@ import_omics_files <- function(data_file, metadata_file = NULL,
                                assay_name = "counts",
                                start_level = "Species",
                                tax_sep = ";",
-                               session_id = NULL) {
+                               session_id = NULL,
+                               owner_id = NULL,
+                               project_id = NULL) {
   if (!data_type %in% c("tax", "normal")) {
     stop("Path-based omics import supports data_type 'tax' or 'normal'.")
   }
   if (is.null(session_id) || !nzchar(session_id)) {
-    session_id <- create_session()
+    session_id <- if (!is.null(owner_id) && exists("emp_create_owned_session", mode = "function")) {
+      emp_create_owned_session(owner_id, project_id)
+    } else {
+      create_session()
+    }
   } else {
+    if (!is.null(owner_id) && exists("emp_assert_session_owner", mode = "function")) {
+      emp_assert_session_owner(session_id, owner_id)
+    }
     ensure_session_dir(session_id)
+  }
+  if (!is.null(owner_id) && exists("emp_register_session_owner", mode = "function")) {
+    emp_register_session_owner(session_id, owner_id, project_id)
   }
 
   mae_exists <- file.exists(mae_path(session_id))

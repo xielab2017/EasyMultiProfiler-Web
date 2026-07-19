@@ -137,7 +137,9 @@ resolve_demo_dataset <- function(dataset_id) {
 
 import_demo_dataset <- function(session_id, dataset_id,
                                 experiment_name = NULL,
-                                assay_name = NULL) {
+                                assay_name = NULL,
+                                owner_id = NULL,
+                                project_id = NULL) {
   d <- resolve_demo_dataset(dataset_id)
   exp_name <- experiment_name %||% d$experiment_name
   assay <- assay_name %||% d$assay_name
@@ -146,9 +148,19 @@ import_demo_dataset <- function(session_id, dataset_id,
   meta_file <- d$metadata_file
 
   if (is.null(session_id) || !nzchar(session_id)) {
-    session_id <- create_session()
+    session_id <- if (!is.null(owner_id) && exists("emp_create_owned_session", mode = "function")) {
+      emp_create_owned_session(owner_id, project_id)
+    } else {
+      create_session()
+    }
   } else {
+    if (!is.null(owner_id) && exists("emp_assert_session_owner", mode = "function")) {
+      emp_assert_session_owner(session_id, owner_id)
+    }
     ensure_session_dir(session_id)
+  }
+  if (!is.null(owner_id) && exists("emp_register_session_owner", mode = "function")) {
+    emp_register_session_owner(session_id, owner_id, project_id)
   }
 
   mae_exists <- file.exists(mae_path(session_id))

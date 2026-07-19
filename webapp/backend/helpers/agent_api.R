@@ -149,7 +149,8 @@ emp_path_import_preview <- function(data_path, metadata_path = NULL,
 emp_path_import <- function(data_path, metadata_path = NULL,
                             experiment_name = "experiment", data_type = "normal",
                             assay_name = "counts", start_level = "Species",
-                            tax_sep = ";", session_id = NULL) {
+                            tax_sep = ";", session_id = NULL,
+                            owner_id = NULL, project_id = NULL) {
   preview <- emp_path_import_preview(data_path, metadata_path, data_type, tax_sep)
   result <- import_omics_files(
     data_file = preview$data$path,
@@ -159,7 +160,9 @@ emp_path_import <- function(data_path, metadata_path = NULL,
     assay_name = assay_name,
     start_level = start_level,
     tax_sep = tax_sep,
-    session_id = session_id
+    session_id = session_id,
+    owner_id = owner_id,
+    project_id = project_id
   )
   result$input_files <- list(data = preview$data, metadata = preview$metadata)
   result$sample_overlap <- preview$sample_overlap
@@ -169,7 +172,16 @@ emp_path_import <- function(data_path, metadata_path = NULL,
 
 emp_agent_capabilities <- function() {
   package_version <- tryCatch(as.character(utils::packageVersion("EasyMultiProfiler")), error = function(e) "unknown")
-  workflows <- c("microbiome_16s", "transcriptomics", "metabolomics", "metagenomics", "chipseq")
+  workflows <- c("microbiome_16s", "transcriptomics", "metabolomics", "metagenomics", "clinical", "chipseq")
+  agent_tools <- c(
+    "emp.workflow.validate",
+    "emp.prepare.taxonomy",
+    "emp.prepare.normalize",
+    "emp.analyze.alpha",
+    "emp.analyze.differential",
+    "emp.analyze.enrichment",
+    "emp.analyze.association"
+  )
   user_r_enabled <- tolower(trimws(Sys.getenv("EMP_ENABLE_USER_R", unset = "true"))) %in% c("1", "true", "yes", "on")
   list(
     success = TRUE,
@@ -179,12 +191,15 @@ emp_agent_capabilities <- function() {
     features = list(
       path_import = length(.emp_allowed_roots()) > 0,
       async_jobs = TRUE,
-      job_cancel = FALSE,
+      job_cancel = TRUE,
       bundles = TRUE,
       persistent_sessions = TRUE,
+      persistent_projects = TRUE,
+      bearer_auth = emp_auth_required(),
       arbitrary_r = user_r_enabled
     ),
     workflows = workflows,
+    tools = agent_tools,
     limits = list(
       max_upload_bytes = .emp_env_int("EMP_PATH_IMPORT_MAX_BYTES", 2147483647L),
       preview_max_rows = .emp_env_int("EMP_PREVIEW_MAX_ROWS", 100L),

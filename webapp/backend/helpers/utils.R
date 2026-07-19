@@ -422,7 +422,7 @@ safe_api <- function(expr, res) {
       message <- conditionMessage(e)
       if (!is.null(res)) {
         lower <- tolower(message)
-        res$status <- if (grepl("allowed root|outside allowed|not allowed|invalid session_id", lower)) 403 else if (
+        res$status <- if (grepl("access denied|ownership|allowed root|outside allowed|not allowed|invalid session_id|invalid project_id|invalid job_id", lower)) 403 else if (
           grepl("validation|metadata|sample|group|invalid|required|unsupported", lower)
         ) 400 else 500
       }

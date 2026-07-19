@@ -15,9 +15,14 @@
   file.path(base, "EasyMultiProfiler")
 }
 
-emp_storage_dir <- function(kind = c("sessions", "jobs")) {
+emp_storage_dir <- function(kind = c("sessions", "jobs", "projects")) {
   kind <- match.arg(kind)
-  env_name <- if (identical(kind, "sessions")) "EMP_SESSION_DIR" else "EMP_JOB_DIR"
+  env_name <- switch(
+    kind,
+    sessions = "EMP_SESSION_DIR",
+    jobs = "EMP_JOB_DIR",
+    projects = "EMP_PROJECT_DIR"
+  )
   configured <- trimws(Sys.getenv(env_name, unset = ""))
   target <- if (nzchar(configured)) path.expand(configured) else file.path(.emp_platform_data_root(), kind)
   if (!dir.exists(target) && !isTRUE(dir.create(target, recursive = TRUE, showWarnings = FALSE))) {

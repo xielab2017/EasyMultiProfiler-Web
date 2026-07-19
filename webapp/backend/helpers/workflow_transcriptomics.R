@@ -47,6 +47,21 @@ tx_validate <- function(session_id, experiment) {
   )
 }
 
+tx_preprocess <- function(session_id, experiment, method = "deseq2") {
+  profile <- tx_profile(session_id, experiment, assay_hint = "counts")
+  method_use <- tolower(trimws(as.character(method %||% "deseq2")[1]))
+  if (!method_use %in% c("deseq2", "tmm", "log2")) {
+    stop("Unsupported transcriptomics preprocessing method.")
+  }
+  list(
+    success = TRUE,
+    method = method_use,
+    applied_by = if (method_use %in% c("deseq2", "tmm")) "differential_model" else "workflow",
+    counts_preserved = TRUE,
+    profile = profile
+  )
+}
+
 tx_run_differential <- function(session_id, experiment, method = "DESeq2",
                                 group_var = NULL, ref_group = NULL, test_group = NULL,
                                 filter_low = TRUE, subset_two_groups = TRUE,
@@ -84,7 +99,9 @@ tx_run_gsea <- function(session_id, experiment, database = "KEGG", organism = "h
   if (!requireNamespace("clusterProfiler", quietly = TRUE)) {
     stop("Package 'clusterProfiler' is required for GSEA.")
   }
-  raw <- ensure_diff_raw(session_id, experiment)
+  raw_cache <- ensure_diff_raw(session_id, experiment)
+  raw <- if (is.list(raw_cache) && !is.null(raw_cache$data)) raw_cache$data else raw_cache
+  raw <- tryCatch(as.data.frame(raw, stringsAsFactors = FALSE), error = function(e) NULL)
   if (is.null(raw) || !nrow(raw)) {
     stop("No differential table found for GSEA. Run differential analysis first.")
   }

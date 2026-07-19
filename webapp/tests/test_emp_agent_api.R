@@ -11,6 +11,7 @@ allowed <- file.path(tmp, "allowed")
 outside <- file.path(tmp, "outside")
 sessions <- file.path(tmp, "sessions")
 jobs <- file.path(tmp, "jobs")
+projects <- file.path(tmp, "projects")
 dir.create(allowed, recursive = TRUE)
 dir.create(outside, recursive = TRUE)
 on.exit(unlink(tmp, recursive = TRUE, force = TRUE), add = TRUE)
@@ -25,9 +26,12 @@ writeLines(c("feature,S1", "x,1"), outside_file)
 Sys.setenv(
   EMP_SESSION_DIR = sessions,
   EMP_JOB_DIR = jobs,
+  EMP_PROJECT_DIR = projects,
   EMP_ALLOWED_ROOTS = allowed,
-  EMP_PREVIEW_MAX_ROWS = "80"
+  EMP_PREVIEW_MAX_ROWS = "80",
+  API_HOST = "127.0.0.1"
 )
+Sys.unsetenv(c("EMP_API_TOKEN", "EMP_API_TOKEN_SHA256S", "EMP_API_OWNER_ID"))
 
 suppressPackageStartupMessages({
   library(EasyMultiProfiler)
@@ -39,6 +43,8 @@ suppressPackageStartupMessages({
 source(file.path(backend, "helpers", "storage.R"))
 source(file.path(backend, "helpers", "session.R"))
 source(file.path(backend, "helpers", "utils.R"))
+source(file.path(backend, "helpers", "auth.R"))
+source(file.path(backend, "helpers", "projects.R"))
 source(file.path(backend, "helpers", "import.R"))
 source(file.path(backend, "helpers", "agent_api.R"))
 
@@ -57,7 +63,9 @@ stopifnot(
   isTRUE(caps$features$path_import),
   isTRUE(caps$features$persistent_sessions),
   isTRUE(caps$features$arbitrary_r),
-  "microbiome_16s" %in% caps$workflows
+  "microbiome_16s" %in% caps$workflows,
+  "clinical" %in% caps$workflows,
+  "emp.analyze.association" %in% caps$tools
 )
 
 old_user_r <- Sys.getenv("EMP_ENABLE_USER_R", unset = NA_character_)
@@ -106,6 +114,22 @@ stopifnot(
   imported$features > 0,
   session_exists(imported$session_id),
   file.exists(mae_path(imported$session_id))
+)
+
+project <- emp_create_project("local", "Owned path import")
+owned_import <- emp_path_import(
+  data_path = data_file,
+  metadata_path = metadata_file,
+  experiment_name = "owned_agent_16s",
+  data_type = "tax",
+  assay_name = "counts",
+  start_level = "Species",
+  owner_id = "local",
+  project_id = project$project_id
+)
+stopifnot(
+  identical(emp_get_session_owner(owned_import$session_id)$project_id, project$project_id),
+  owned_import$session_id %in% unlist(emp_get_project(project$project_id)$session_ids, use.names = FALSE)
 )
 
 cat("EMP agent API tests passed\n")
