@@ -38,7 +38,7 @@ EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API
 
 | 层 | 能力 |
 |----|------|
-| Course | 4 条轨道（16S / RNA-seq / 代谢组 / 宏基因组）× 第 1–5 周 + 期末项目 |
+| Course | 4 条组学轨道 + **自定义 (Customize)**；作业为第 **1–16 周** + 课程大作业 + 期末项目 + 自定义作业 |
 | Student | 学号注册登录；服务端会话 token（`X-Student-Token`） |
 | Analyze | 完整继承 V7：导入、预处理、差异/多样性、可视化、Clinical、Run All、Code Lab、AI |
 | Sync | 打包 manifest / 表格 / 图 / 教学报告 → 推送到学生仓库约定目录 |

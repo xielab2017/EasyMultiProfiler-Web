@@ -102,32 +102,145 @@ github_load_assignments <- function() {
   .github_read_json(path)
 }
 
+.github_slugify <- function(text, fallback = "custom") {
+  raw <- trimws(as.character(text %||% ""))
+  if (!nzchar(raw)) return(fallback)
+  # Keep ASCII letters/digits/_/- ; map spaces to _
+  ascii <- iconv(raw, to = "ASCII//TRANSLIT", sub = "")
+  if (is.na(ascii) || !nzchar(ascii)) ascii <- raw
+  slug <- gsub("[^A-Za-z0-9._-]+", "_", ascii)
+  slug <- gsub("^_+|_+$", "", slug)
+  slug <- substr(slug, 1L, 48L)
+  if (!nzchar(slug) || !grepl("^[A-Za-z0-9]", slug)) {
+    # Chinese / non-ASCII titles: stable hash suffix
+    hx <- substr(digest::digest(raw, algo = "sha1", serialize = FALSE), 1L, 8L)
+    slug <- paste0(fallback, "_", hx)
+  }
+  slug
+}
+
+.github_phase_for_week <- function(week) {
+  week <- as.integer(week)
+  if (week <= 1L) return("import")
+  if (week == 2L) return("prepare")
+  if (week == 3L) return("analysis")
+  if (week == 4L) return("visualization")
+  if (week == 5L) return("interpretation")
+  "weekly"
+}
+
+.github_build_week_assignment <- function(week, track, data) {
+  week <- as.integer(week)
+  titles <- track$week_titles %||% list()
+  key <- as.character(week)
+  named <- if (!is.null(titles[[key]])) titles[[key]] else NULL
+  title <- if (nzchar(as.character(named %||% ""))) {
+    sprintf("第%d周 · %s", week, named)
+  } else {
+    sprintf("第%d周", week)
+  }
+  task_map <- track$week_task_ids %||% list()
+  tasks <- if (!is.null(task_map[[key]])) task_map[[key]] else list()
+  include <- data$default_week_include %||% list(
+    "manifest", "assay", "coldata", "results", "plots", "teaching"
+  )
+  list(
+    id = sprintf("week_%02d", week),
+    week = week,
+    type = "weekly",
+    title = title,
+    task_ids = tasks,
+    phase = .github_phase_for_week(week),
+    include = include
+  )
+}
+
+.github_expand_track <- function(track, data) {
+  week_count <- as.integer(data$week_count %||% 16L)
+  if (!is.finite(week_count) || week_count < 1L) week_count <- 16L
+  if (week_count > 32L) week_count <- 32L
+  weeks <- lapply(seq_len(week_count), function(w) .github_build_week_assignment(w, track, data))
+  projects <- data$projects %||% list()
+  assignments <- c(weeks, projects)
+  list(
+    id = track$id,
+    case_id = track$case_id %||% NULL,
+    title = track$title %||% track$id,
+    custom = isTRUE(track$custom),
+    assignments = assignments
+  )
+}
+
 github_list_assignments <- function() {
   data <- github_load_assignments()
+  tracks <- lapply(data$tracks %||% list(), function(tr) .github_expand_track(tr, data))
   list(
     success = TRUE,
     course_code = data$course_code %||% EMP_COURSE_CODE,
     repo_root = data$repo_root %||% (data$course_code %||% EMP_COURSE_CODE),
-    tracks = data$tracks %||% list()
+    week_count = as.integer(data$week_count %||% 16L),
+    tracks = tracks
   )
 }
 
-github_get_assignment <- function(track_id, assignment_id) {
+github_get_assignment <- function(track_id, assignment_id,
+                                  custom_track_name = NULL,
+                                  custom_assignment_title = NULL) {
   data <- github_load_assignments()
+  track <- NULL
   for (tr in data$tracks %||% list()) {
-    if (!identical(tr$id, track_id)) next
-    for (a in tr$assignments %||% list()) {
-      if (identical(a$id, assignment_id)) {
-        a$track_id <- tr$id
-        a$case_id <- tr$case_id
-        a$track_title <- tr$title
-        a$course_code <- data$course_code %||% EMP_COURSE_CODE
-        a$repo_root <- data$repo_root %||% a$course_code
-        return(a)
-      }
-    }
+    if (identical(tr$id, track_id)) { track = tr; break }
   }
-  stop(sprintf("Unknown assignment: %s / %s", track_id, assignment_id))
+  if (is.null(track)) stop(sprintf("Unknown track: %s", track_id))
+
+  expanded <- .github_expand_track(track, data)
+  hit <- NULL
+  for (a in expanded$assignments %||% list()) {
+    if (identical(a$id, assignment_id)) { hit <- a; break }
+  }
+  if (is.null(hit)) stop(sprintf("Unknown assignment: %s / %s", track_id, assignment_id))
+
+  # Folder / display overrides for customize track
+  track_folder <- track$id
+  track_title <- track$title %||% track$id
+  if (isTRUE(track$custom)) {
+    cname <- trimws(as.character(custom_track_name %||% ""))
+    if (!nzchar(cname)) stop("自定义轨道请填写轨道名称。")
+    track_title <- cname
+    track_folder <- .github_slugify(cname, fallback = "customize")
+  }
+
+  title <- hit$title
+  ctitle <- trimws(as.character(custom_assignment_title %||% ""))
+  if (identical(hit$type, "custom") || identical(hit$id, "assignment_custom")) {
+    if (!nzchar(ctitle)) stop("自定义作业请填写作业标题。")
+    title <- ctitle
+  } else if (nzchar(ctitle)) {
+    # Optional student override for week / project title
+    title <- ctitle
+  }
+
+  assignment_folder <- hit$id
+  if (identical(hit$type, "custom") || identical(hit$id, "assignment_custom")) {
+    assignment_folder <- paste0("custom_", .github_slugify(title, fallback = "assignment"))
+  }
+
+  list(
+    id = hit$id,
+    folder_id = assignment_folder,
+    week = hit$week %||% NULL,
+    type = hit$type %||% "weekly",
+    title = title,
+    task_ids = hit$task_ids %||% list(),
+    phase = hit$phase %||% "weekly",
+    include = hit$include %||% list("manifest", "teaching"),
+    track_id = track_folder,
+    track_key = track$id,
+    case_id = track$case_id %||% NULL,
+    track_title = track_title,
+    course_code = data$course_code %||% EMP_COURSE_CODE,
+    repo_root = data$repo_root %||% (data$course_code %||% EMP_COURSE_CODE)
+  )
 }
 
 .github_public_profile <- function(profile) {
@@ -389,8 +502,10 @@ github_status <- function(identity) {
   }
 
   repo_root <- assignment$repo_root %||% EMP_COURSE_CODE
+  track_folder <- assignment$track_id %||% "track"
+  asg_folder <- assignment$folder_id %||% assignment$id %||% "assignment"
   base_rel <- file.path(
-    repo_root, "assignments", assignment$track_id, assignment$id, "runs", run_id
+    repo_root, "assignments", track_folder, asg_folder, "runs", run_id
   )
   base_rel <- gsub("\\\\", "/", base_rel)
 
@@ -398,8 +513,11 @@ github_status <- function(identity) {
   if ("manifest" %in% include) {
     man <- list(
       course_code = assignment$course_code %||% EMP_COURSE_CODE,
-      track_id = assignment$track_id,
+      track_id = track_folder,
+      track_key = assignment$track_key %||% track_folder,
+      track_title = assignment$track_title %||% track_folder,
       assignment_id = assignment$id,
+      assignment_folder = asg_folder,
       assignment_title = assignment$title,
       week = assignment$week,
       type = assignment$type %||% "weekly",
@@ -525,7 +643,7 @@ github_status <- function(identity) {
   }
 
   # LATEST pointer + profile snapshot at course root
-  latest_rel <- file.path(repo_root, "assignments", assignment$track_id, assignment$id, "LATEST")
+  latest_rel <- file.path(repo_root, "assignments", track_folder, asg_folder, "LATEST")
   write_text(gsub("\\\\", "/", latest_rel), run_id)
 
   profile_rel <- file.path(repo_root, "profile.json")
@@ -547,7 +665,10 @@ github_status <- function(identity) {
     "",
     "Synced from EasyMultiProfiler Web. Each assignment keeps historical `runs/`.",
     "",
-    sprintf("Latest sync: `%s / %s` → `%s`", assignment$track_id, assignment$id, run_id),
+    sprintf(
+      "Latest sync: `%s / %s` -> `%s`",
+      track_folder, asg_folder, run_id
+    ),
     sep = "\n"
   )
   write_text(gsub("\\\\", "/", readme_rel), readme)
@@ -557,8 +678,8 @@ github_status <- function(identity) {
   } else {
     sprintf(
       "[EMP] sync %s/%s (%s) run %s",
-      assignment$track_id, assignment$id,
-      assignment$title %||% assignment$id, run_id
+      track_folder, asg_folder,
+      assignment$title %||% asg_folder, run_id
     )
   }
 
@@ -690,8 +811,13 @@ github_list_syncs <- function(identity, limit = 30L) {
 
 github_sync_assignment <- function(identity, track_id, assignment_id, session_id = NULL,
                                    experiment = NULL, include_rds = FALSE, commit_message = NULL,
-                                   owner_id = NULL) {
-  assignment <- github_get_assignment(track_id, assignment_id)
+                                   owner_id = NULL, custom_track_name = NULL,
+                                   custom_assignment_title = NULL) {
+  assignment <- github_get_assignment(
+    track_id, assignment_id,
+    custom_track_name = custom_track_name,
+    custom_assignment_title = custom_assignment_title
+  )
   profile <- identity$profile
   gh <- profile$github %||% list()
   if (!isTRUE(gh$bound)) stop("请先绑定 GitHub 仓库与 Token。")
@@ -719,8 +845,11 @@ github_sync_assignment <- function(identity, track_id, assignment_id, session_id
 
   entry <- list(
     synced_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-    track_id = track_id,
-    assignment_id = assignment_id,
+    track_id = assignment$track_id,
+    track_key = assignment$track_key %||% track_id,
+    track_title = assignment$track_title,
+    assignment_id = assignment$id,
+    assignment_folder = assignment$folder_id %||% assignment$id,
     assignment_title = assignment$title,
     run_id = bundle$run_id,
     n_files = bundle$n_files,
@@ -817,7 +946,9 @@ plumber_github_sync_post <- function(req, res) {
       experiment = b$experiment,
       include_rds = isTRUE(b$include_rds),
       commit_message = b$commit_message,
-      owner_id = emp_request_principal(req)
+      owner_id = emp_request_principal(req),
+      custom_track_name = b$custom_track_name,
+      custom_assignment_title = b$custom_assignment_title
     )
   }, res)
 }

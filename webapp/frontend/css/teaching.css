@@ -548,6 +548,28 @@
   margin-bottom: 12px;
 }
 
+.gh-sync-grid {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .gh-sync-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gh-sync-grid label {
+  position: relative;
+  z-index: 1;
+}
+
+.gh-sync-grid select {
+  max-width: 100%;
+  position: relative;
+  z-index: 2;
+}
+
 .gh-form-grid label {
   display: flex;
   flex-direction: column;

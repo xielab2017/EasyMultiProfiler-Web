@@ -1,10 +1,12 @@
 // Course GitHub sync panel: student login, repo bind, weekly / project sync.
-import * as API from "./api.js?v=2026-07-21-gh-sync-v1";
+import * as API from "./api.js?v=2026-07-21-gh-sync-v2";
 import { t } from "./locale.js?v=2026-07-16-multi-demo-v2";
 
 const LS_STUDENT_TOKEN = "emp_student_token";
 const LS_TRACK = "emp_github_track";
 const LS_ASSIGNMENT = "emp_github_assignment";
+const LS_CUSTOM_TRACK = "emp_github_custom_track";
+const LS_CUSTOM_ASG = "emp_github_custom_assignment";
 
 let _tracks = [];
 let _student = null;
@@ -28,6 +30,33 @@ function esc(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function currentTrack() {
+  const id = $("gh-track")?.value;
+  return _tracks.find((tr) => tr.id === id) || null;
+}
+
+function currentAssignment() {
+  const track = currentTrack();
+  const id = $("gh-assignment")?.value;
+  if (!track) return null;
+  return (track.assignments || []).find((a) => a.id === id) || null;
+}
+
+function updateCustomFields() {
+  const track = currentTrack();
+  const asg = currentAssignment();
+  const trackWrap = $("gh-custom-track-wrap");
+  const asgInput = $("gh-custom-assignment");
+  if (trackWrap) trackWrap.classList.toggle("hidden", !(track && track.custom));
+  if (asgInput) {
+    const must = !!(asg && (asg.custom || asg.type === "custom" || asg.id === "assignment_custom"));
+    asgInput.placeholder = must
+      ? (t("github.customAsgRequired") || "必填：自定义作业标题")
+      : (t("github.customAsgOptional") || "可选：覆盖默认周次/项目标题");
+    asgInput.required = must;
+  }
 }
 
 function setPanelMode(mode) {
@@ -64,6 +93,10 @@ function fillTrackSelect() {
     `<option value="${esc(tr.id)}">${esc(tr.title || tr.id)}</option>`
   ).join("");
   if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  const ct = $("gh-custom-track");
+  if (ct && localStorage.getItem(LS_CUSTOM_TRACK)) ct.value = localStorage.getItem(LS_CUSTOM_TRACK);
+  const ca = $("gh-custom-assignment");
+  if (ca && localStorage.getItem(LS_CUSTOM_ASG)) ca.value = localStorage.getItem(LS_CUSTOM_ASG);
   fillAssignmentSelect();
 }
 
@@ -75,12 +108,14 @@ function fillAssignmentSelect() {
   const list = (track && track.assignments) || [];
   const prev = localStorage.getItem(LS_ASSIGNMENT) || asgSel.value;
   asgSel.innerHTML = list.map((a) => {
-    const label = a.type === "project"
-      ? `${a.title}`
-      : (a.week != null ? `W${a.week} · ${a.title}` : a.title);
+    let label = a.title || a.id;
+    if (a.type === "weekly" && a.week != null) label = `W${a.week} · ${a.title}`;
+    else if (a.type === "project") label = `★ ${a.title}`;
+    else if (a.type === "custom" || a.custom) label = `✎ ${a.title}`;
     return `<option value="${esc(a.id)}">${esc(label)}</option>`;
   }).join("");
   if (prev && [...asgSel.options].some((o) => o.value === prev)) asgSel.value = prev;
+  updateCustomFields();
 }
 
 async function refreshStatus() {
@@ -125,12 +160,13 @@ async function refreshSyncHistory() {
     }
     box.innerHTML = `<ul class="gh-sync-list">${syncs.map((s) => {
       const title = s.assignment_title || s.assignment_id || "";
+      const track = s.track_title || s.track_id || "";
       const when = s.synced_at || "";
       const link = s.html_url
         ? `<a href="${esc(s.html_url)}" target="_blank" rel="noopener noreferrer">${esc(t("github.viewCommit"))}</a>`
         : "";
       return `<li><span class="gh-sync-meta">${esc(when)}</span>
-        <strong>${esc(s.track_id)} / ${esc(title)}</strong>
+        <strong>${esc(track)} / ${esc(title)}</strong>
         <span class="hint">run ${esc(s.run_id || "")} · ${esc(String(s.n_files || 0))} files</span>
         ${link}</li>`;
     }).join("")}</ul>`;
@@ -243,8 +279,25 @@ async function onSync() {
     toast(t("github.needAssignment"), "error");
     return;
   }
+  const track = currentTrack();
+  const asg = currentAssignment();
+  const custom_track_name = ($("gh-custom-track")?.value || "").trim();
+  const custom_assignment_title = ($("gh-custom-assignment")?.value || "").trim();
+
+  if (track?.custom && !custom_track_name) {
+    toast(t("github.needCustomTrack") || "请填写自定义轨道名称。", "error");
+    return;
+  }
+  if ((asg?.custom || asg?.type === "custom" || asg?.id === "assignment_custom") && !custom_assignment_title) {
+    toast(t("github.needCustomAsg") || "请填写自定义作业标题。", "error");
+    return;
+  }
+
   localStorage.setItem(LS_TRACK, track_id);
   localStorage.setItem(LS_ASSIGNMENT, assignment_id);
+  if (custom_track_name) localStorage.setItem(LS_CUSTOM_TRACK, custom_track_name);
+  if (custom_assignment_title) localStorage.setItem(LS_CUSTOM_ASG, custom_assignment_title);
+
   const commit_message = ($("gh-commit-msg")?.value || "").trim() || null;
   const include_rds = !!$("gh-include-rds")?.checked;
   const session_id = localStorage.getItem("emp_session_id") || null;
@@ -255,6 +308,8 @@ async function onSync() {
     const res = await API.githubSync({
       track_id,
       assignment_id,
+      custom_track_name: custom_track_name || null,
+      custom_assignment_title: custom_assignment_title || null,
       session_id,
       experiment,
       include_rds,
@@ -292,6 +347,9 @@ export function applyGithubSyncI18n() {
     const el = $(id);
     if (el) el.textContent = t(key);
   }
+  const hint = $("gh-assignment-hint");
+  if (hint) hint.textContent = t("github.assignmentHint") || hint.textContent;
+  updateCustomFields();
 }
 
 export async function initGithubSync() {
@@ -310,6 +368,7 @@ export async function initGithubSync() {
   });
   $("gh-assignment")?.addEventListener("change", () => {
     localStorage.setItem(LS_ASSIGNMENT, $("gh-assignment").value);
+    updateCustomFields();
   });
 
   try {
