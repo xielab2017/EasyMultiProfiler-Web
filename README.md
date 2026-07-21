@@ -32,7 +32,9 @@ EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API
 
 ## 架构一览
 
-![V8 Education architecture](docs/TECHNICAL_MODE_V8_EDUCATION.svg)
+![V8 Education architecture](docs/images/emp-web-v8-architecture.png)
+
+> 矢量源文件：[docs/TECHNICAL_MODE_V8_EDUCATION.svg](docs/TECHNICAL_MODE_V8_EDUCATION.svg)（与上图同内容）
 
 | 层 | 能力 |
 |----|------|
