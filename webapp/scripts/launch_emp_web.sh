@@ -46,6 +46,11 @@ bash "${SCRIPTS_DIR}/start_local.sh"
 
 WEB_PORT="${WEB_PORT:-8080}"
 URL="http://127.0.0.1:${WEB_PORT}"
+# Java Desktop embeds the UI — do not steal focus with an external browser.
+if [[ "${EMP_DESKTOP:-0}" == "1" ]] || [[ "${BROWSER:-}" == "none" ]]; then
+  echo "EasyMultiProfiler Web is running (desktop mode, no browser open): ${URL}"
+  exit 0
+fi
 if command -v open >/dev/null 2>&1; then
   open "${URL}" >/dev/null 2>&1 || true
 elif command -v xdg-open >/dev/null 2>&1; then
