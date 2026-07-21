@@ -177,7 +177,7 @@ async function refreshSyncHistory() {
         : "";
       return `<li><span class="gh-sync-meta">${esc(when)}</span>
         <strong>${esc(track)} / ${esc(title)}</strong>
-        <span class="hint">run ${esc(s.run_id || "")} · ${esc(String(s.n_files || 0))} files</span>
+        <span class="hint">${esc(s.git_path || s.week_dir || "")} · v${esc(s.emp_version || "")} · run ${esc(s.run_id || "")} · ${esc(String(s.n_files || 0))} files</span>
         ${link}</li>`;
     }).join("")}</ul>`;
   } catch {

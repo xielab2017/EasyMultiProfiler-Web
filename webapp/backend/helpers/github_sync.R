@@ -546,8 +546,57 @@ github_status <- function(identity) {
   }, error = function(e) FALSE)
 }
 
+.github_emp_version <- function() {
+  Sys.getenv(
+    "EMP_WEB_VERSION",
+    unset = tryCatch(
+      as.character(utils::packageVersion("EasyMultiProfiler")),
+      error = function(e) "8.0.0-Education"
+    )
+  )
+}
+
+.github_week_dir <- function(assignment) {
+  w <- suppressWarnings(as.integer(assignment$week %||% NA_integer_))
+  if (is.finite(w) && w >= 1L) return(sprintf("Week_%02d", w))
+  id <- as.character(assignment$id %||% "")
+  m <- regexec("^week_([0-9]{1,2})$", id)
+  parts <- regmatches(id, m)[[1]]
+  if (length(parts) == 2L) {
+    n <- as.integer(parts[[2]])
+    if (is.finite(n)) return(sprintf("Week_%02d", n))
+  }
+  if (identical(id, "project_major")) return("Project_Major")
+  if (identical(id, "project_final")) return("Project_Final")
+  "Project_Other"
+}
+
+.github_type_dir <- function(assignment) {
+  typ <- as.character(assignment$type %||% "weekly")
+  if (identical(typ, "project")) return("project")
+  if (identical(typ, "custom")) return("custom")
+  "weekly"
+}
+
+.github_layout_paths <- function(assignment) {
+  repo_root <- assignment$repo_root %||% EMP_COURSE_CODE
+  track_folder <- assignment$track_id %||% "track"
+  week_dir <- .github_week_dir(assignment)
+  type_dir <- .github_type_dir(assignment)
+  # EMP2026/Week_01/<track>/<type>/
+  slot_rel <- file.path(repo_root, week_dir, track_folder, type_dir)
+  list(
+    repo_root = repo_root,
+    week_dir = week_dir,
+    track_folder = track_folder,
+    type_dir = type_dir,
+    slot_rel = gsub("\\\\", "/", slot_rel)
+  )
+}
+
 .github_build_run_files <- function(identity, assignment, session_id, experiment = NULL,
-                                    include_rds = FALSE, commit_message = NULL) {
+                                    include_rds = FALSE, commit_message = NULL,
+                                    github_meta = NULL) {
   include <- unlist(assignment$include %||% list("manifest", "teaching"))
   run_id <- .github_run_id()
   staging <- tempfile(pattern = "emp-gh-")
@@ -569,23 +618,30 @@ github_status <- function(identity) {
     add_file(rel, abs_path)
   }
 
-  repo_root <- assignment$repo_root %||% EMP_COURSE_CODE
-  track_folder <- assignment$track_id %||% "track"
-  asg_folder <- assignment$folder_id %||% assignment$id %||% "assignment"
-  base_rel <- file.path(
-    repo_root, "assignments", track_folder, asg_folder, "runs", run_id
-  )
+  layout <- .github_layout_paths(assignment)
+  repo_root <- layout$repo_root
+  track_folder <- layout$track_folder
+  week_dir <- layout$week_dir
+  type_dir <- layout$type_dir
+  emp_version <- .github_emp_version()
+  gh_meta <- github_meta %||% list()
+  # EMP2026/Week_01/<track>/<type>/runs/<run_id>/
+  base_rel <- file.path(layout$slot_rel, "runs", run_id)
   base_rel <- gsub("\\\\", "/", base_rel)
+  git_path <- base_rel
 
   # manifest
   if ("manifest" %in% include) {
     man <- list(
       course_code = assignment$course_code %||% EMP_COURSE_CODE,
+      emp_version = emp_version,
+      layout = "week_first",
+      week_dir = week_dir,
       track_id = track_folder,
       track_key = assignment$track_key %||% track_folder,
       track_title = assignment$track_title %||% track_folder,
+      assignment_type = type_dir,
       assignment_id = assignment$id,
-      assignment_folder = asg_folder,
       assignment_title = assignment$title,
       week = assignment$week,
       type = assignment$type %||% "weekly",
@@ -593,6 +649,10 @@ github_status <- function(identity) {
       task_ids = assignment$task_ids %||% list(),
       student_id = identity$student_id,
       display_name = identity$profile$display_name %||% identity$student_id,
+      github_login = gh_meta$github_login %||% NULL,
+      github_repo = gh_meta$github_repo %||% NULL,
+      github_branch = gh_meta$github_branch %||% NULL,
+      git_path = git_path,
       session_id = session_id,
       experiment = experiment,
       run_id = run_id,
@@ -710,33 +770,78 @@ github_status <- function(identity) {
     }, error = function(e) NULL)
   }
 
-  # LATEST pointer + profile snapshot at course root
-  latest_rel <- file.path(repo_root, "assignments", track_folder, asg_folder, "LATEST")
+  # LATEST pointer under Week_XX/<track>/<type>/
+  latest_rel <- file.path(layout$slot_rel, "LATEST")
   write_text(gsub("\\\\", "/", latest_rel), run_id)
 
+  # Student + GitHub + version registry (visible in GitHub UI)
   profile_rel <- file.path(repo_root, "profile.json")
   profile_pub <- list(
     student_id = identity$student_id,
     display_name = identity$profile$display_name %||% identity$student_id,
     course_code = assignment$course_code %||% EMP_COURSE_CODE,
+    emp_version = emp_version,
+    github_login = gh_meta$github_login %||% NULL,
+    github_repo = gh_meta$github_repo %||% NULL,
+    github_branch = gh_meta$github_branch %||% NULL,
+    github_html_url = gh_meta$github_html_url %||% NULL,
+    last_git_path = git_path,
+    last_week_dir = week_dir,
+    last_track = track_folder,
+    last_assignment_type = type_dir,
+    last_run_id = run_id,
     updated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
   p_prof <- file.path(staging, "profile.json")
-  jsonlite::write_json(profile_pub, p_prof, auto_unbox = TRUE, pretty = TRUE)
+  jsonlite::write_json(profile_pub, p_prof, auto_unbox = TRUE, pretty = TRUE, null = "null")
   add_file(gsub("\\\\", "/", profile_rel), p_prof)
+
+  # Per-sync ledger entry (additive file; does not erase prior ledger rows)
+  ledger <- list(
+    event = "sync",
+    synced_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    student_id = identity$student_id,
+    display_name = identity$profile$display_name %||% identity$student_id,
+    emp_version = emp_version,
+    github_login = gh_meta$github_login %||% NULL,
+    github_repo = gh_meta$github_repo %||% NULL,
+    github_branch = gh_meta$github_branch %||% NULL,
+    week_dir = week_dir,
+    track = track_folder,
+    assignment_type = type_dir,
+    assignment_id = assignment$id,
+    assignment_title = assignment$title,
+    git_path = git_path,
+    run_id = run_id
+  )
+  ledger_rel <- file.path(repo_root, "_ledger", paste0(run_id, ".json"))
+  p_ledger <- file.path(staging, paste0("ledger__", run_id, ".json"))
+  jsonlite::write_json(ledger, p_ledger, auto_unbox = TRUE, pretty = TRUE, null = "null")
+  add_file(gsub("\\\\", "/", ledger_rel), p_ledger)
 
   readme_rel <- file.path(repo_root, "README.md")
   readme <- paste(
     sprintf("# %s Course Submissions", assignment$course_code %||% EMP_COURSE_CODE),
     "",
-    sprintf("Student: **%s** (%s)", profile_pub$display_name, profile_pub$student_id),
+    sprintf("- Student ID: `%s`", profile_pub$student_id),
+    sprintf("- Display name: **%s**", profile_pub$display_name),
+    sprintf("- EMP version: `%s`", emp_version),
+    sprintf("- GitHub: `%s` / `%s`", profile_pub$github_login %||% "-", profile_pub$github_repo %||% "-"),
     "",
-    "Synced from EasyMultiProfiler Web. Each assignment keeps historical `runs/`.",
+    "## Layout",
     "",
-    sprintf(
-      "Latest sync: `%s / %s` -> `%s`",
-      track_folder, asg_folder, run_id
-    ),
+    "```text",
+    "EMP2026/",
+    "  Week_01/<track>/weekly/runs/...",
+    "  Week_02/<track>/weekly/runs/...",
+    "  Project_Major/<track>/project/runs/...",
+    "  profile.json",
+    "  _ledger/<run_id>.json",
+    "```",
+    "",
+    "Sync is additive: new runs are created; existing files are not deleted.",
+    "",
+    sprintf("Latest sync: `%s` (run `%s`)", git_path, run_id),
     sep = "\n"
   )
   write_text(gsub("\\\\", "/", readme_rel), readme)
@@ -745,9 +850,10 @@ github_status <- function(identity) {
     trimws(as.character(commit_message))
   } else {
     sprintf(
-      "[EMP] sync %s/%s (%s) run %s",
-      track_folder, asg_folder,
-      assignment$title %||% asg_folder, run_id
+      "[EMP] sync %s/%s/%s (%s) v%s run %s",
+      week_dir, track_folder, type_dir,
+      assignment$title %||% assignment$id,
+      emp_version, run_id
     )
   }
 
@@ -756,6 +862,10 @@ github_status <- function(identity) {
     files = files,
     run_id = run_id,
     base_rel = base_rel,
+    git_path = git_path,
+    week_dir = week_dir,
+    type_dir = type_dir,
+    emp_version = emp_version,
     commit_message = msg,
     n_files = length(files)
   )
@@ -910,7 +1020,13 @@ github_sync_assignment <- function(identity, track_id, assignment_id, session_id
     session_id = session_id %||% "",
     experiment = experiment,
     include_rds = isTRUE(include_rds),
-    commit_message = commit_message
+    commit_message = commit_message,
+    github_meta = list(
+      github_login = gh$github_login %||% NULL,
+      github_repo = sprintf("%s/%s", owner, repo),
+      github_branch = branch,
+      github_html_url = sprintf("https://github.com/%s/%s", owner, repo)
+    )
   )
   on.exit(unlink(bundle$staging, recursive = TRUE, force = TRUE), add = TRUE)
 
@@ -918,19 +1034,24 @@ github_sync_assignment <- function(identity, track_id, assignment_id, session_id
 
   entry <- list(
     synced_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    student_id = identity$student_id,
+    emp_version = bundle$emp_version %||% .github_emp_version(),
     track_id = assignment$track_id,
     track_key = assignment$track_key %||% track_id,
     track_title = assignment$track_title,
+    week_dir = bundle$week_dir,
+    assignment_type = bundle$type_dir,
     assignment_id = assignment$id,
-    assignment_folder = assignment$folder_id %||% assignment$id,
     assignment_title = assignment$title,
+    git_path = bundle$git_path %||% bundle$base_rel,
     run_id = bundle$run_id,
     n_files = bundle$n_files,
     commit_sha = push$commit_sha,
     html_url = push$html_url,
     branch = push$branch,
     session_id = session_id,
-    repo = sprintf("%s/%s", owner, repo)
+    repo = sprintf("%s/%s", owner, repo),
+    github_login = gh$github_login %||% NULL
   )
   .github_append_sync_log(identity$student_id, entry)
 
@@ -938,11 +1059,15 @@ github_sync_assignment <- function(identity, track_id, assignment_id, session_id
     success = TRUE,
     sync = entry,
     path = bundle$base_rel,
+    git_path = bundle$git_path %||% bundle$base_rel,
     merge_mode = push$merge_mode %||% "additive",
     message = sprintf(
-      "已同步到 %s/%s（%d 个文件，%s：保留仓库已有文件）",
-      owner, repo, bundle$n_files,
-      if (identical(push$merge_mode, "create")) "新建" else "增量写入"
+      "已同步到 %s/%s → `%s`（%d 个文件，%s，v%s）",
+      owner, repo,
+      bundle$git_path %||% bundle$base_rel,
+      bundle$n_files,
+      if (identical(push$merge_mode, "create")) "新建" else "增量写入",
+      bundle$emp_version %||% .github_emp_version()
     )
   )
 }

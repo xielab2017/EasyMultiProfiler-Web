@@ -96,30 +96,31 @@ bash webapp/scripts/start_local.sh
 
 ```text
 EMP2026/
-  README.md
-  profile.json                 # 学号 / 显示名（不含 Token）
-  assignments/
+  Week_01/
     microbiome_16s/
-      week_01_import/
-        LATEST                 # 指向最近一次 run_id
-        runs/
-          2026-07-21T15-30-00Z/
-            manifest.json
-            data/              # assay / metadata CSV
-            results/           # 差异 / alpha 等
-            plots/             # PDF
-            teaching/          # progress / journal / report
-      week_02_prepare/
-      ...
-      project_final/
+      weekly/
+        LATEST
+        runs/<timestamp>/
+          manifest.json      # 含学号、版本、GitHub、git_path
+          data/ results/ plots/ teaching/
     transcriptomics/
-    metabolomics/
-    metagenomics/
+      weekly/
+        ...
+  Week_02/
+    ...
+  Project_Major/
+    transcriptomics/
+      project/
+        runs/...
+  profile.json               # 学号、GitHub 账号/仓库、EMP 版本、最近 git_path
+  _ledger/<run_id>.json      # 每次同步一条记录（增量，不擦除历史）
+  README.md
 ```
 
-同步策略：**每次同步新建 `runs/<时间戳>/`，不覆盖历史**；`LATEST` 指向最新一次。
+路径规则：`EMP2026 / Week_XX / <课程轨道> / <作业类型> / runs / ...`  
+作业类型：`weekly`（周作业）或 `project`（项目大作业）。
 
-默认不推送完整 `.rds`（体积大）；需要时在界面勾选「同时同步完整 RDS」。
+同步策略：**增量写入**；每次新建 `runs/<时间戳>/`，不删除仓库已有文件。
 
 ---
 
@@ -128,7 +129,8 @@ EMP2026/
 - 作业槽位定义：[`webapp/data/course_assignments.json`](webapp/data/course_assignments.json)  
 - 教学 case：[`webapp/data/teaching_cases.json`](webapp/data/teaching_cases.json)  
 - 学生资料目录：平台数据根下 `students/`（可用 `EMP_STUDENTS_DIR` 覆盖）  
-- 批改时可看学生仓库中对应 `week_XX` / `project_final` 的最新 `LATEST` 与 commit 历史  
+- 批改时可看学生仓库 `Week_XX/<track>/weekly/` 与 `profile.json` / `_ledger/`  
+- 每次同步会写入学号、GitHub 登录名/仓库、EMP 版本号与 `git_path` 
 - 局域网 / Tailscale 访问说明：[`webapp/docs/LAN_TAILSCALE_ACCESS.md`](webapp/docs/LAN_TAILSCALE_ACCESS.md)
 
 ---
