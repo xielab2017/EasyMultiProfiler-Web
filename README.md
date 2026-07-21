@@ -182,7 +182,7 @@ EasyMultiProfiler-Web/
 ├── DESCRIPTION
 ├── R/                          # EMP R 包
 ├── docs/
-│   ├── images/                 # README 配图
+│   ├── images/                 # README 配图（banner / sync / architecture PNG）
 │   ├── TECHNICAL_MODE_V8_EDUCATION.svg
 │   └── RELEASE_NOTES_v8.0.0_Education.md
 └── webapp/
