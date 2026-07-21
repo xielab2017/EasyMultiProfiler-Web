@@ -290,7 +290,6 @@ async function onSync() {
     return;
   }
   const track = currentTrack();
-  const asg = currentAssignment();
   const custom_track_name = ($("gh-custom-track")?.value || "").trim();
   const custom_assignment_title = ($("gh-custom-assignment")?.value || "").trim();
 
