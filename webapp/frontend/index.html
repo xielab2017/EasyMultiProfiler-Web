@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EasyMultiProfiler Web V8.0.0 Education</title>
-    <link rel="stylesheet" href="css/style.css?v=2026-07-21-gh-sync-v2">
+    <link rel="stylesheet" href="css/style.css?v=2026-07-21-gh-sync-v3">
     <link rel="stylesheet" href="css/code_lab.css?v=2026-07-16-multi-demo-v2">
-    <link rel="stylesheet" href="css/teaching.css?v=2026-07-21-gh-sync-v2">
+    <link rel="stylesheet" href="css/teaching.css?v=2026-07-21-gh-sync-v3">
   <script>
     (function () {
       var s = parseFloat(localStorage.getItem("emp_font_scale"));
@@ -2610,18 +2610,36 @@
           <label id="gh-custom-track-wrap" class="hidden">自定义轨道名称
             <input type="text" id="gh-custom-track" placeholder="例如：我的课题 / Lab Project A" autocomplete="off">
           </label>
-          <label>本周作业 / 项目
-            <select id="gh-assignment" size="1"></select>
+          <label class="gh-field">本周作业 / 项目
+            <select id="gh-assignment" class="gh-select">
+              <option value="week_01">Week 1</option>
+              <option value="week_02">Week 2</option>
+              <option value="week_03">Week 3</option>
+              <option value="week_04">Week 4</option>
+              <option value="week_05">Week 5</option>
+              <option value="week_06">Week 6</option>
+              <option value="week_07">Week 7</option>
+              <option value="week_08">Week 8</option>
+              <option value="week_09">Week 9</option>
+              <option value="week_10">Week 10</option>
+              <option value="week_11">Week 11</option>
+              <option value="week_12">Week 12</option>
+              <option value="week_13">Week 13</option>
+              <option value="week_14">Week 14</option>
+              <option value="week_15">Week 15</option>
+              <option value="week_16">Week 16</option>
+              <option value="project_major">项目大作业</option>
+            </select>
           </label>
-          <label id="gh-custom-asg-wrap">作业标题（可自定义）
-            <input type="text" id="gh-custom-assignment" placeholder="可选：覆盖周次标题；选「自定义作业」时必填" autocomplete="off">
+          <label id="gh-custom-asg-wrap" class="gh-field">作业备注标题（可选）
+            <input type="text" id="gh-custom-assignment" placeholder="可选：例如 Midterm / Final write-up" autocomplete="off">
           </label>
           <label>提交说明（可选）
             <input type="text" id="gh-commit-msg" placeholder="可选：自定义 commit message">
           </label>
           <label class="gh-check"><input type="checkbox" id="gh-include-rds"> 同时同步完整 RDS（体积大，默认关闭）</label>
         </div>
-        <p class="hint" id="gh-assignment-hint">作业含第 1–16 周、课程大作业、期末项目；也可选「自定义作业」自行命名。</p>
+        <p class="hint" id="gh-assignment-hint">固定选项：Week 1–Week 16，以及「项目大作业」。可另填备注标题。</p>
         <div class="gh-actions">
           <button type="button" class="btn btn-primary" id="btn-gh-sync"><i data-lucide="upload-cloud"></i> 同步到 GitHub</button>
           <a class="btn btn-outline hidden" id="gh-last-commit" href="#" target="_blank" rel="noopener noreferrer">查看提交</a>
@@ -2705,7 +2723,7 @@
     else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
   }
 </script>
-<script type="module" src="js/app.js?v=2026-07-21-gh-sync-v2"></script>
+<script type="module" src="js/app.js?v=2026-07-21-gh-sync-v3"></script>
 <script>
   // Initialise Lucide icons after all content is ready
   document.addEventListener("DOMContentLoaded", () => lucide.createIcons());

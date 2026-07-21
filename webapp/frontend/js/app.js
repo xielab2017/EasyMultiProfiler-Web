@@ -3,7 +3,7 @@
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
 // this value in lock-step with the one used in index.html (app.js ?v=).
-import * as API from "./api.js?v=2026-07-21-gh-sync-v2";
+import * as API from "./api.js?v=2026-07-21-gh-sync-v3";
 import {
   initCodeLab,
   notifyCodeLabNavigate,
@@ -23,7 +23,7 @@ import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-07-16-multi-de
 import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=2026-07-16-multi-demo-v2";
 import { initFontScale } from "./font_scale.js?v=2026-07-16-multi-demo-v2";
 import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
-import { initGithubSync } from "./github_sync.js?v=2026-07-21-gh-sync-v2";
+import { initGithubSync } from "./github_sync.js?v=2026-07-21-gh-sync-v3";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -4656,7 +4656,7 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
     document.querySelectorAll(".ai-copilot-btn-label").forEach((el) => {
       el.textContent = t("copilot.btn");
     });
-    import("./github_sync.js?v=2026-07-21-gh-sync-v2").then((m) => m.applyGithubSyncI18n?.());
+    import("./github_sync.js?v=2026-07-21-gh-sync-v3").then((m) => m.applyGithubSyncI18n?.());
     if (document.getElementById("page-clinical")?.classList.contains("active")) {
       updateClinicalPrecheck();
     }

@@ -1,5 +1,5 @@
 // Course GitHub sync panel: student login, repo bind, weekly / project sync.
-import * as API from "./api.js?v=2026-07-21-gh-sync-v2";
+import * as API from "./api.js?v=2026-07-21-gh-sync-v3";
 import { t } from "./locale.js?v=2026-07-16-multi-demo-v2";
 
 const LS_STUDENT_TOKEN = "emp_student_token";
@@ -7,6 +7,16 @@ const LS_TRACK = "emp_github_track";
 const LS_ASSIGNMENT = "emp_github_assignment";
 const LS_CUSTOM_TRACK = "emp_github_custom_track";
 const LS_CUSTOM_ASG = "emp_github_custom_assignment";
+
+/** Fixed assignment menu — always available even if API is down. */
+const BUILTIN_ASSIGNMENTS = [
+  ...Array.from({ length: 16 }, (_, i) => {
+    const n = i + 1;
+    const id = `week_${String(n).padStart(2, "0")}`;
+    return { id, week: n, type: "weekly", title: `Week ${n}` };
+  }),
+  { id: "project_major", type: "project", title: "项目大作业" },
+];
 
 let _tracks = [];
 let _student = null;
@@ -38,25 +48,33 @@ function currentTrack() {
 }
 
 function currentAssignment() {
-  const track = currentTrack();
   const id = $("gh-assignment")?.value;
-  if (!track) return null;
-  return (track.assignments || []).find((a) => a.id === id) || null;
+  return BUILTIN_ASSIGNMENTS.find((a) => a.id === id) || null;
 }
 
 function updateCustomFields() {
   const track = currentTrack();
-  const asg = currentAssignment();
   const trackWrap = $("gh-custom-track-wrap");
-  const asgInput = $("gh-custom-assignment");
   if (trackWrap) trackWrap.classList.toggle("hidden", !(track && track.custom));
-  if (asgInput) {
-    const must = !!(asg && (asg.custom || asg.type === "custom" || asg.id === "assignment_custom"));
-    asgInput.placeholder = must
-      ? (t("github.customAsgRequired") || "必填：自定义作业标题")
-      : (t("github.customAsgOptional") || "可选：覆盖默认周次/项目标题");
-    asgInput.required = must;
+}
+
+function fillAssignmentSelect() {
+  const asgSel = $("gh-assignment");
+  if (!asgSel) return;
+  const prev = localStorage.getItem(LS_ASSIGNMENT) || asgSel.value || "week_01";
+  // Always rebuild from builtin list so the control is never empty / unusable.
+  asgSel.innerHTML = BUILTIN_ASSIGNMENTS.map((a) => {
+    const label = a.type === "project" ? a.title : a.title;
+    return `<option value="${esc(a.id)}">${esc(label)}</option>`;
+  }).join("");
+  asgSel.disabled = false;
+  asgSel.removeAttribute("aria-disabled");
+  if (prev && [...asgSel.options].some((o) => o.value === prev)) {
+    asgSel.value = prev;
+  } else {
+    asgSel.value = "week_01";
   }
+  updateCustomFields();
 }
 
 function setPanelMode(mode) {
@@ -89,33 +107,25 @@ function fillTrackSelect() {
   const sel = $("gh-track");
   if (!sel) return;
   const prev = localStorage.getItem(LS_TRACK) || sel.value;
-  sel.innerHTML = _tracks.map((tr) =>
+  const fallbackTracks = [
+    { id: "microbiome_16s", title: "16S 微生物组" },
+    { id: "transcriptomics", title: "转录组 RNA-seq" },
+    { id: "metabolomics", title: "代谢组" },
+    { id: "metagenomics", title: "宏基因组" },
+    { id: "customize", title: "自定义 (Customize)", custom: true },
+  ];
+  const tracks = (_tracks && _tracks.length) ? _tracks : fallbackTracks;
+  if (!_tracks.length) _tracks = fallbackTracks;
+  sel.innerHTML = tracks.map((tr) =>
     `<option value="${esc(tr.id)}">${esc(tr.title || tr.id)}</option>`
   ).join("");
+  sel.disabled = false;
   if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
   const ct = $("gh-custom-track");
   if (ct && localStorage.getItem(LS_CUSTOM_TRACK)) ct.value = localStorage.getItem(LS_CUSTOM_TRACK);
   const ca = $("gh-custom-assignment");
   if (ca && localStorage.getItem(LS_CUSTOM_ASG)) ca.value = localStorage.getItem(LS_CUSTOM_ASG);
   fillAssignmentSelect();
-}
-
-function fillAssignmentSelect() {
-  const trackSel = $("gh-track");
-  const asgSel = $("gh-assignment");
-  if (!trackSel || !asgSel) return;
-  const track = _tracks.find((tr) => tr.id === trackSel.value);
-  const list = (track && track.assignments) || [];
-  const prev = localStorage.getItem(LS_ASSIGNMENT) || asgSel.value;
-  asgSel.innerHTML = list.map((a) => {
-    let label = a.title || a.id;
-    if (a.type === "weekly" && a.week != null) label = `W${a.week} · ${a.title}`;
-    else if (a.type === "project") label = `★ ${a.title}`;
-    else if (a.type === "custom" || a.custom) label = `✎ ${a.title}`;
-    return `<option value="${esc(a.id)}">${esc(label)}</option>`;
-  }).join("");
-  if (prev && [...asgSel.options].some((o) => o.value === prev)) asgSel.value = prev;
-  updateCustomFields();
 }
 
 async function refreshStatus() {
@@ -288,10 +298,6 @@ async function onSync() {
     toast(t("github.needCustomTrack") || "请填写自定义轨道名称。", "error");
     return;
   }
-  if ((asg?.custom || asg?.type === "custom" || asg?.id === "assignment_custom") && !custom_assignment_title) {
-    toast(t("github.needCustomAsg") || "请填写自定义作业标题。", "error");
-    return;
-  }
 
   localStorage.setItem(LS_TRACK, track_id);
   localStorage.setItem(LS_ASSIGNMENT, assignment_id);
@@ -374,10 +380,12 @@ export async function initGithubSync() {
   try {
     const data = await API.githubAssignments();
     _tracks = data.tracks || [];
-    fillTrackSelect();
   } catch (e) {
-    console.warn("github assignments load failed", e);
+    console.warn("github assignments load failed; using builtin menus", e);
+    _tracks = [];
   }
+  fillTrackSelect();
+  fillAssignmentSelect();
 
   applyGithubSyncI18n();
   await refreshStatus();

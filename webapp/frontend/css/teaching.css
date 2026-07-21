@@ -564,10 +564,26 @@
   z-index: 1;
 }
 
-.gh-sync-grid select {
+.gh-sync-grid select,
+.gh-select {
   max-width: 100%;
+  width: 100%;
+  min-height: 40px;
   position: relative;
-  z-index: 2;
+  z-index: 5;
+  pointer-events: auto;
+  background: var(--clr-surface, #fff);
+  color: var(--clr-text, #0f172a);
+  border: 1px solid var(--clr-border, #cbd5e1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.gh-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .gh-form-grid label {

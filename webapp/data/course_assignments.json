@@ -6,22 +6,7 @@
     {
       "id": "project_major",
       "type": "project",
-      "title": "课程大作业",
-      "phase": "project",
-      "include": ["manifest", "assay", "coldata", "results", "plots", "teaching", "report"]
-    },
-    {
-      "id": "project_final",
-      "type": "project",
-      "title": "期末项目",
-      "phase": "project",
-      "include": ["manifest", "assay", "coldata", "results", "plots", "teaching", "report"]
-    },
-    {
-      "id": "assignment_custom",
-      "type": "custom",
-      "title": "自定义作业",
-      "custom": true,
+      "title": "项目大作业",
       "phase": "project",
       "include": ["manifest", "assay", "coldata", "results", "plots", "teaching", "report"]
     }
@@ -38,71 +23,25 @@
         "3": "多样性分析",
         "4": "可视化",
         "5": "解读与假设"
-      },
-      "week_task_ids": {
-        "1": ["s1_import"],
-        "2": ["s2_prepare"],
-        "3": ["s3_analysis"],
-        "4": ["s4_visualization"],
-        "5": ["s5_interpretation"]
       }
     },
     {
       "id": "transcriptomics",
       "case_id": "course_transcriptomics",
       "title": "转录组 RNA-seq",
-      "week_titles": {
-        "1": "数据导入",
-        "2": "归一化与过滤",
-        "3": "差异表达分析",
-        "4": "火山图与热图",
-        "5": "功能富集与解读"
-      },
-      "week_task_ids": {
-        "1": ["s1_import"],
-        "2": ["s2_prepare"],
-        "3": ["s3_analysis"],
-        "4": ["s4_visualization"],
-        "5": ["s5_interpretation"]
-      }
+      "week_titles": {}
     },
     {
       "id": "metabolomics",
       "case_id": "course_metabolomics",
       "title": "代谢组",
-      "week_titles": {
-        "1": "数据导入",
-        "2": "缺失/归一化/标度化",
-        "3": "多元与差异分析",
-        "4": "可视化",
-        "5": "通路与因果解读"
-      },
-      "week_task_ids": {
-        "1": ["s1_import"],
-        "2": ["s2_prepare"],
-        "3": ["s3_analysis"],
-        "4": ["s4_visualization"],
-        "5": ["s5_interpretation"]
-      }
+      "week_titles": {}
     },
     {
       "id": "metagenomics",
       "case_id": "course_metagenomics",
       "title": "宏基因组",
-      "week_titles": {
-        "1": "数据导入",
-        "2": "过滤与归一化",
-        "3": "结构与差异分析",
-        "4": "功能/物种可视化",
-        "5": "功能与因果解读"
-      },
-      "week_task_ids": {
-        "1": ["s1_import"],
-        "2": ["s2_prepare"],
-        "3": ["s3_analysis"],
-        "4": ["s4_visualization"],
-        "5": ["s5_interpretation"]
-      }
+      "week_titles": {}
     },
     {
       "id": "customize",
