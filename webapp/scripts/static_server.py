@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Static file server with HTTP Range support (needed for <video> seeking/Safari).
 
-Usage: python3 static_server.py [port] [directory]
-Defaults: port 8080, directory webapp/frontend
+Usage: python3 static_server.py [port] [directory] [host]
+Defaults: port 8080, directory webapp/frontend, host 0.0.0.0
+  (bind all interfaces so LAN / Tailscale clients can reach the UI)
+
+Env overrides:
+  WEB_PORT, WEB_DIR, WEB_HOST
 """
 import os
 import re
@@ -72,11 +76,14 @@ class RangeHandler(SimpleHTTPRequestHandler):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
-    directory = sys.argv[2] if len(sys.argv) > 2 else "webapp/frontend"
+    port = int(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("WEB_PORT", "8080"))
+    directory = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("WEB_DIR", "webapp/frontend")
+    host = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("WEB_HOST", "0.0.0.0")
+    if not str(host).strip():
+        host = "0.0.0.0"
     handler = partial(RangeHandler, directory=directory)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
-    print(f"Serving {directory} at http://127.0.0.1:{port} (Range enabled)")
+    httpd = ThreadingHTTPServer((host, port), handler)
+    print(f"Serving {directory} on {host}:{port} (Range enabled)")
     httpd.serve_forever()
 
 

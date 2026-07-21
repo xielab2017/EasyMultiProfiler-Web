@@ -35,15 +35,20 @@ source(file.path(.BACKEND_DIR, "helpers/llm.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_evolution.R"))
 source(file.path(.BACKEND_DIR, "helpers/ai_copilot.R"))
 source(file.path(.BACKEND_DIR, "helpers/teaching.R"))
+source(file.path(.BACKEND_DIR, "helpers/github_sync.R"))
 source(file.path(.BACKEND_DIR, "helpers/demo_data.R"))
 Sys.setenv(EMP_BACKEND_DIR = .BACKEND_DIR)
 
 #* @filter cors
 #* @serializer unboxedJSON
 function(req, res) {
-  res$setHeader("Access-Control-Allow-Origin", Sys.getenv("EMP_CORS_ORIGIN", unset = "*"))
+  allowed <- emp_resolve_cors_origin(req)
+  if (nzchar(allowed)) {
+    res$setHeader("Access-Control-Allow-Origin", allowed)
+    if (!identical(allowed, "*")) res$setHeader("Vary", "Origin")
+  }
   res$setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
-  res$setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type,X-Session-Id,X-Teaching-Token")
+  res$setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type,X-Session-Id,X-Teaching-Token,X-Student-Token")
   if (req$REQUEST_METHOD == "OPTIONS") {
     res$status <- 200
     return(list())
@@ -2487,13 +2492,15 @@ function(req, res) {
     source     <- b$source %||% "current"
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
+    include_levels <- unique(c(b$reference_level %||% character(), b$test_level %||% character()))
     width  <- emp_viz_scale_num(b$width %||% 8, 8)
     height <- emp_viz_scale_num(b$height %||% 6, 6)
 
     out <- make_alpha_plot(session_id, experiment, group, metric, source,
                            width = width, height = height,
                            color_panel = color_panel,
-                           custom_colors = custom_colors)
+                           custom_colors = custom_colors,
+                           include_levels = include_levels)
     .viz_api_plot_response(out)
   }, res)
 }
@@ -3169,6 +3176,73 @@ function(req, res) {
 #* @serializer unboxedJSON
 function(req, res) {
   plumber_teaching_report_get(req, res)
+}
+
+# ══════════════════════════════════════════════════════════
+# GITHUB COURSE SYNC (student login + weekly / project push)
+# ══════════════════════════════════════════════════════════
+
+#* List course assignment slots (weekly + project) by track
+#* @get /api/github/assignments
+#* @serializer unboxedJSON
+function(res) {
+  plumber_github_assignments_get(res)
+}
+
+#* Register student (学号 + 口令)
+#* @post /api/github/register
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_register_post(req, res)
+}
+
+#* Student login
+#* @post /api/github/login
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_login_post(req, res)
+}
+
+#* Student logout
+#* @post /api/github/logout
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_logout_post(req, res)
+}
+
+#* Current student + GitHub bind status
+#* @get /api/github/status
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_status_get(req, res)
+}
+
+#* Bind GitHub repo + PAT
+#* @post /api/github/bind
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_bind_post(req, res)
+}
+
+#* Unbind GitHub repo
+#* @post /api/github/unbind
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_unbind_post(req, res)
+}
+
+#* Sync current analysis / teaching artifacts to weekly or project slot
+#* @post /api/github/sync
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_sync_post(req, res)
+}
+
+#* Local sync history for logged-in student
+#* @get /api/github/syncs
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_syncs_get(req, res)
 }
 
 # ══════════════════════════════════════════════════════════

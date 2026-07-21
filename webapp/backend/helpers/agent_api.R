@@ -178,6 +178,7 @@ emp_agent_capabilities <- function() {
     "emp.prepare.taxonomy",
     "emp.prepare.normalize",
     "emp.analyze.alpha",
+    "emp.visualize.alpha",
     "emp.analyze.differential",
     "emp.analyze.enrichment",
     "emp.analyze.association"
@@ -186,7 +187,7 @@ emp_agent_capabilities <- function() {
   list(
     success = TRUE,
     api_version = "1.0",
-    emp_version = Sys.getenv("EMP_WEB_VERSION", unset = "7.0.0"),
+    emp_version = Sys.getenv("EMP_WEB_VERSION", unset = "8.0.0-Education"),
     package_version = package_version,
     features = list(
       path_import = length(.emp_allowed_roots()) > 0,

@@ -9,6 +9,61 @@ emp_is_loopback_host <- function(host) {
   normalized %in% c("127.0.0.1", "::1", "localhost")
 }
 
+emp_is_private_or_tailscale_ip <- function(host) {
+  host <- tolower(trimws(as.character(host %||% "")))
+  if (!nzchar(host)) return(FALSE)
+  if (emp_is_loopback_host(host)) return(TRUE)
+  # Strip IPv6 brackets if present.
+  host <- gsub("^\\[|\\]$", "", host)
+  # Tailscale MagicDNS / Funnel hostnames
+  if (grepl("\\.ts\\.net$", host) || grepl("\\.tailscale\\.io$", host)) return(TRUE)
+  if (grepl("^100\\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\\.", host)) return(TRUE) # Tailscale CGNAT
+  if (grepl("^10\\.", host)) return(TRUE)
+  if (grepl("^192\\.168\\.", host)) return(TRUE)
+  if (grepl("^172\\.(1[6-9]|2[0-9]|3[0-1])\\.", host)) return(TRUE)
+  FALSE
+}
+
+emp_origin_host <- function(origin) {
+  origin <- trimws(as.character(origin %||% ""))
+  if (!nzchar(origin)) return("")
+  m <- regexec("^https?://([^/:]+)", origin, ignore.case = TRUE)
+  parts <- regmatches(origin, m)[[1]]
+  if (length(parts) != 2L) return("")
+  parts[[2]]
+}
+
+emp_cors_allows_origin <- function(cors_cfg, origin) {
+  cors_cfg <- trimws(as.character(cors_cfg %||% "*"))
+  origin <- trimws(as.character(origin %||% ""))
+  if (identical(cors_cfg, "*")) return(TRUE)
+  if (!nzchar(cors_cfg)) return(FALSE)
+  if (identical(tolower(cors_cfg), "reflect-private")) {
+    return(nzchar(origin) && emp_is_private_or_tailscale_ip(emp_origin_host(origin)))
+  }
+  if (grepl(",", cors_cfg, fixed = TRUE)) {
+    allowed <- trimws(unlist(strsplit(cors_cfg, ",", fixed = TRUE), use.names = FALSE))
+    return(nzchar(origin) && origin %in% allowed)
+  }
+  identical(origin, cors_cfg) || identical(cors_cfg, origin)
+}
+
+emp_resolve_cors_origin <- function(req) {
+  cors_cfg <- trimws(Sys.getenv("EMP_CORS_ORIGIN", unset = "*"))
+  origin <- trimws(as.character(req$HTTP_ORIGIN %||% ""))
+  if (identical(tolower(cors_cfg), "reflect-private")) {
+    if (emp_cors_allows_origin(cors_cfg, origin)) return(origin)
+    return("")
+  }
+  if (grepl(",", cors_cfg, fixed = TRUE)) {
+    if (emp_cors_allows_origin(cors_cfg, origin)) return(origin)
+    return("")
+  }
+  if (identical(cors_cfg, "*")) return("*")
+  if (nzchar(origin) && identical(origin, cors_cfg)) return(origin)
+  cors_cfg
+}
+
 emp_api_token <- function() trimws(Sys.getenv("EMP_API_TOKEN", unset = ""))
 
 emp_token_hashes <- function() {
@@ -43,7 +98,10 @@ emp_validate_deployment <- function() {
   }
   cors_origin <- trimws(Sys.getenv("EMP_CORS_ORIGIN", unset = "*"))
   if (!emp_is_loopback_host(host) && (!nzchar(cors_origin) || identical(cors_origin, "*"))) {
-    stop("EMP_CORS_ORIGIN must be an explicit trusted origin for non-loopback deployment.")
+    stop(paste(
+      "EMP_CORS_ORIGIN must be an explicit trusted origin for non-loopback deployment.",
+      "For LAN/Tailscale local sharing use EMP_CORS_ORIGIN=reflect-private."
+    ))
   }
   invisible(TRUE)
 }

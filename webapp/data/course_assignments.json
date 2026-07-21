@@ -1,0 +1,250 @@
+{
+  "course_code": "EMP2026",
+  "repo_root": "EMP2026",
+  "tracks": [
+    {
+      "id": "microbiome_16s",
+      "case_id": "course_microbiome_16s",
+      "title": "16S 微生物组",
+      "assignments": [
+        {
+          "id": "week_01_import",
+          "week": 1,
+          "type": "weekly",
+          "title": "第1周 · 数据导入",
+          "task_ids": ["s1_import"],
+          "phase": "import",
+          "include": ["manifest", "assay", "coldata", "teaching"]
+        },
+        {
+          "id": "week_02_prepare",
+          "week": 2,
+          "type": "weekly",
+          "title": "第2周 · 质控与预处理",
+          "task_ids": ["s2_prepare"],
+          "phase": "prepare",
+          "include": ["manifest", "assay", "coldata", "teaching"]
+        },
+        {
+          "id": "week_03_analysis",
+          "week": 3,
+          "type": "weekly",
+          "title": "第3周 · 多样性分析",
+          "task_ids": ["s3_analysis"],
+          "phase": "analysis",
+          "include": ["manifest", "assay", "coldata", "results", "teaching"]
+        },
+        {
+          "id": "week_04_visualization",
+          "week": 4,
+          "type": "weekly",
+          "title": "第4周 · 可视化",
+          "task_ids": ["s4_visualization"],
+          "phase": "visualization",
+          "include": ["manifest", "results", "plots", "teaching"]
+        },
+        {
+          "id": "week_05_interpretation",
+          "week": 5,
+          "type": "weekly",
+          "title": "第5周 · 解读与假设",
+          "task_ids": ["s5_interpretation"],
+          "phase": "interpretation",
+          "include": ["manifest", "results", "plots", "teaching", "report"]
+        },
+        {
+          "id": "project_final",
+          "week": null,
+          "type": "project",
+          "title": "期末项目",
+          "task_ids": ["s1_import", "s2_prepare", "s3_analysis", "s4_visualization", "s5_interpretation"],
+          "phase": "project",
+          "include": ["manifest", "assay", "coldata", "results", "plots", "teaching", "report"]
+        }
+      ]
+    },
+    {
+      "id": "transcriptomics",
+      "case_id": "course_transcriptomics",
+      "title": "转录组 RNA-seq",
+      "assignments": [
+        {
+          "id": "week_01_import",
+          "week": 1,
+          "type": "weekly",
+          "title": "第1周 · 数据导入",
+          "task_ids": ["s1_import"],
+          "phase": "import",
+          "include": ["manifest", "assay", "coldata", "teaching"]
+        },
+        {
+          "id": "week_02_prepare",
+          "week": 2,
+          "type": "weekly",
+          "title": "第2周 · 归一化与过滤",
+          "task_ids": ["s2_prepare"],
+          "phase": "prepare",
+          "include": ["manifest", "assay", "coldata", "teaching"]
+        },
+        {
+          "id": "week_03_analysis",
+          "week": 3,
+          "type": "weekly",
+          "title": "第3周 · 差异表达分析",
+          "task_ids": ["s3_analysis"],
+          "phase": "analysis",
+          "include": ["manifest", "assay", "coldata", "results", "teaching"]
+        },
+        {
+          "id": "week_04_visualization",
+          "week": 4,
+          "type": "weekly",
+          "title": "第4周 · 火山图与热图",
+          "task_ids": ["s4_visualization"],
+          "phase": "visualization",
+          "include": ["manifest", "results", "plots", "teaching"]
+        },
+        {
+          "id": "week_05_interpretation",
+          "week": 5,
+          "type": "weekly",
+          "title": "第5周 · 功能富集与解读",
+          "task_ids": ["s5_interpretation"],
+          "phase": "interpretation",
+          "include": ["manifest", "results", "plots", "teaching", "report"]
+        },
+        {
+          "id": "project_final",
+          "week": null,
+          "type": "project",
+          "title": "期末项目",
+          "task_ids": ["s1_import", "s2_prepare", "s3_analysis", "s4_visualization", "s5_interpretation"],
+          "phase": "project",
+          "include": ["manifest", "assay", "coldata", "results", "plots", "teaching", "report"]
+        }
+      ]
+    },
+    {
+      "id": "metabolomics",
+      "case_id": "course_metabolomics",
+      "title": "代谢组",
+      "assignments": [
+        {
+          "id": "week_01_import",
+          "week": 1,
+          "type": "weekly",
+          "title": "第1周 · 数据导入",
+          "task_ids": ["s1_import"],
+          "phase": "import",
+          "include": ["manifest", "assay", "coldata", "teaching"]
+        },
+        {
+          "id": "week_02_prepare",
+          "week": 2,
+          "type": "weekly",
+          "title": "第2周 · 缺失/归一化/标度化",
+          "task_ids": ["s2_prepare"],
+          "phase": "prepare",
+          "include": ["manifest", "assay", "coldata", "teaching"]
+        },
+        {
+          "id": "week_03_analysis",
+          "week": 3,
+          "type": "weekly",
+          "title": "第3周 · 多元与差异分析",
+          "task_ids": ["s3_analysis"],
+          "phase": "analysis",
+          "include": ["manifest", "assay", "coldata", "results", "teaching"]
+        },
+        {
+          "id": "week_04_visualization",
+          "week": 4,
+          "type": "weekly",
+          "title": "第4周 · 可视化",
+          "task_ids": ["s4_visualization"],
+          "phase": "visualization",
+          "include": ["manifest", "results", "plots", "teaching"]
+        },
+        {
+          "id": "week_05_interpretation",
+          "week": 5,
+          "type": "weekly",
+          "title": "第5周 · 通路与因果解读",
+          "task_ids": ["s5_interpretation"],
+          "phase": "interpretation",
+          "include": ["manifest", "results", "plots", "teaching", "report"]
+        },
+        {
+          "id": "project_final",
+          "week": null,
+          "type": "project",
+          "title": "期末项目",
+          "task_ids": ["s1_import", "s2_prepare", "s3_analysis", "s4_visualization", "s5_interpretation"],
+          "phase": "project",
+          "include": ["manifest", "assay", "coldata", "results", "plots", "teaching", "report"]
+        }
+      ]
+    },
+    {
+      "id": "metagenomics",
+      "case_id": "course_metagenomics",
+      "title": "宏基因组",
+      "assignments": [
+        {
+          "id": "week_01_import",
+          "week": 1,
+          "type": "weekly",
+          "title": "第1周 · 数据导入",
+          "task_ids": ["s1_import"],
+          "phase": "import",
+          "include": ["manifest", "assay", "coldata", "teaching"]
+        },
+        {
+          "id": "week_02_prepare",
+          "week": 2,
+          "type": "weekly",
+          "title": "第2周 · 过滤与归一化",
+          "task_ids": ["s2_prepare"],
+          "phase": "prepare",
+          "include": ["manifest", "assay", "coldata", "teaching"]
+        },
+        {
+          "id": "week_03_analysis",
+          "week": 3,
+          "type": "weekly",
+          "title": "第3周 · 结构与差异分析",
+          "task_ids": ["s3_analysis"],
+          "phase": "analysis",
+          "include": ["manifest", "assay", "coldata", "results", "teaching"]
+        },
+        {
+          "id": "week_04_visualization",
+          "week": 4,
+          "type": "weekly",
+          "title": "第4周 · 功能/物种可视化",
+          "task_ids": ["s4_visualization"],
+          "phase": "visualization",
+          "include": ["manifest", "results", "plots", "teaching"]
+        },
+        {
+          "id": "week_05_interpretation",
+          "week": 5,
+          "type": "weekly",
+          "title": "第5周 · 功能与因果解读",
+          "task_ids": ["s5_interpretation"],
+          "phase": "interpretation",
+          "include": ["manifest", "results", "plots", "teaching", "report"]
+        },
+        {
+          "id": "project_final",
+          "week": null,
+          "type": "project",
+          "title": "期末项目",
+          "task_ids": ["s1_import", "s2_prepare", "s3_analysis", "s4_visualization", "s5_interpretation"],
+          "phase": "project",
+          "include": ["manifest", "assay", "coldata", "results", "plots", "teaching", "report"]
+        }
+      ]
+    }
+  ]
+}

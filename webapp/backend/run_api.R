@@ -38,6 +38,9 @@ emp_validate_deployment()
 pr <- plumb(plumber_file)
 port <- suppressWarnings(as.integer(Sys.getenv("API_PORT", unset = "8000")))
 if (is.na(port) || port <= 0 || port > 65535) port <- 8000L
-host <- trimws(Sys.getenv("API_HOST", unset = "127.0.0.1"))
-if (!nzchar(host)) host <- "127.0.0.1"
+# Default 0.0.0.0 so LAN / Tailscale peers can reach the API.
+# Override with API_HOST=127.0.0.1 for loopback-only.
+host <- trimws(Sys.getenv("API_HOST", unset = "0.0.0.0"))
+if (!nzchar(host)) host <- "0.0.0.0"
+cat(sprintf("Binding API on %s:%s\n", host, port))
 pr$run(host = host, port = port, docs = FALSE)

@@ -1328,7 +1328,8 @@ make_structure <- function(session_id, experiment, group = NULL,
 # -----------------------------------------------------------------------------
 make_alpha_plot <- function(session_id, experiment, group = NULL,
                              metric = "shannon", source = "current", width = 8, height = 6,
-                             color_panel = NULL, custom_colors = NULL) {
+                             color_panel = NULL, custom_colors = NULL,
+                             include_levels = NULL) {
   old_panel <- emp_set_color_panel(color_panel, custom_colors = custom_colors)
   on.exit(emp_restore_color_panel(old_panel), add = TRUE)
   empt <- .viz_load_empt(session_id, experiment)
@@ -1391,7 +1392,15 @@ make_alpha_plot <- function(session_id, experiment, group = NULL,
   pick <- if (!is.null(group) && nzchar(group) && group %in% names(cd))
             list(name = group, values = cd[match(df$sample, rownames(cd)), group]) else .viz_pick_group(empt, NULL)
   if (!is.null(pick)) {
-    df$group <- .viz_group_levels(pick$values)
+    group_values <- as.character(pick$values)
+    keep_group <- !is.na(group_values) & nzchar(trimws(group_values))
+    requested_levels <- unique(trimws(as.character(include_levels %||% character())))
+    requested_levels <- requested_levels[nzchar(requested_levels)]
+    if (length(requested_levels)) keep_group <- keep_group & group_values %in% requested_levels
+    df <- df[keep_group, , drop = FALSE]
+    group_values <- group_values[keep_group]
+    if (!nrow(df)) stop("No samples match the selected group levels for alpha plotting.")
+    df$group <- .viz_group_levels(group_values)
     grp_name <- pick$name
   } else {
     df$group <- factor("All"); grp_name <- "Group"

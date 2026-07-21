@@ -521,3 +521,86 @@
   width: 100%;
   margin-top: 4px;
 }
+
+/* GitHub course sync (Export page) */
+#github-sync-card .gh-student-chip {
+  margin: 8px 0 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.gh-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--clr-border);
+}
+
+.gh-panel.hidden {
+  display: none;
+}
+
+.gh-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.gh-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.92rem;
+  color: var(--clr-text);
+}
+
+.gh-form-grid input,
+.gh-form-grid select {
+  width: 100%;
+}
+
+.gh-check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.gh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gh-sync-history {
+  margin-top: 12px;
+}
+
+.gh-sync-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gh-sync-list li {
+  padding: 10px 12px;
+  border: 1px solid var(--clr-border);
+  border-radius: 8px;
+  background: var(--clr-surface);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+}
+
+.gh-sync-meta {
+  font-size: 0.8rem;
+  color: var(--clr-muted);
+  min-width: 11rem;
+}
+

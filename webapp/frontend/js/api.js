@@ -53,11 +53,26 @@ function headers(extra = {}) {
   const h = { "Content-Type": "application/json", ...extra };
   const sid = sessionId();
   if (sid) h["X-Session-Id"] = sid;
+  const token = (
+    (typeof window !== "undefined" && window.EMP_API_TOKEN) ||
+    (typeof localStorage !== "undefined" && localStorage.getItem("emp_api_token")) ||
+    ""
+  ).trim();
+  if (token) h["Authorization"] = `Bearer ${token}`;
+  const studentToken = (
+    typeof localStorage !== "undefined" && localStorage.getItem("emp_student_token")
+  ) || "";
+  if (studentToken) h["X-Student-Token"] = studentToken;
   return h;
 }
 
 async function request(method, path, body = null, multipart = false) {
-  const opts = { method, headers: multipart ? {} : headers() };
+  const authHeaders = headers();
+  if (multipart) {
+    // Let the browser set multipart boundary; keep auth + session headers.
+    delete authHeaders["Content-Type"];
+  }
+  const opts = { method, headers: authHeaders };
   if (body && !multipart) opts.body = JSON.stringify(body);
   if (body && multipart) opts.body = body; // FormData
 
@@ -935,4 +950,41 @@ export async function teachingSaveJournal(payload) {
 
 export async function teachingReport() {
   return request("GET", "/teaching/report");
+}
+
+// ── GITHUB COURSE SYNC ────────────────────────────
+export async function githubAssignments() {
+  return request("GET", "/github/assignments");
+}
+
+export async function githubRegister(payload) {
+  return request("POST", "/github/register", payload);
+}
+
+export async function githubLogin(payload) {
+  return request("POST", "/github/login", payload);
+}
+
+export async function githubLogout() {
+  return request("POST", "/github/logout", {});
+}
+
+export async function githubStatus() {
+  return request("GET", "/github/status");
+}
+
+export async function githubBind(payload) {
+  return request("POST", "/github/bind", payload);
+}
+
+export async function githubUnbind() {
+  return request("POST", "/github/unbind", {});
+}
+
+export async function githubSync(payload) {
+  return request("POST", "/github/sync", payload);
+}
+
+export async function githubSyncs() {
+  return request("GET", "/github/syncs");
 }
