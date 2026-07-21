@@ -67,6 +67,14 @@ bash "${SCRIPTS_DIR}/start_local.sh"
 
 WEB_PORT="${WEB_PORT:-8080}"
 URL="http://127.0.0.1:${WEB_PORT}"
+if [[ "${EMP_DESKTOP:-0}" == "1" ]] || [[ "${BROWSER:-}" == "none" ]]; then
+  echo ""
+  echo "════════════════════════════════════════════════════════"
+  echo "  EasyMultiProfiler Web (desktop mode): ${URL}"
+  echo "  Stop with: bash webapp/scripts/stop_local.sh"
+  echo "════════════════════════════════════════════════════════"
+  exit 0
+fi
 if command -v open >/dev/null 2>&1; then
   open "${URL}" >/dev/null 2>&1 || true
 elif command -v xdg-open >/dev/null 2>&1; then
