@@ -161,7 +161,8 @@ github_load_assignments <- function() {
   if (week_count > 32L) week_count <- 32L
   weeks <- lapply(seq_len(week_count), function(w) .github_build_week_assignment(w, track, data))
   projects <- data$projects %||% list()
-  assignments <- c(weeks, projects)
+  # append keeps list-of-lists; c() can flatten in edge cases
+  assignments <- append(weeks, projects)
   list(
     id = track$id,
     case_id = track$case_id %||% NULL,
@@ -183,44 +184,111 @@ github_list_assignments <- function() {
   )
 }
 
+.github_synthesize_assignment <- function(assignment_id, track, data) {
+  assignment_id <- trimws(as.character(assignment_id %||% ""))
+  m <- regexec("^week_([0-9]{1,2})$", assignment_id)
+  parts <- regmatches(assignment_id, m)[[1]]
+  if (length(parts) == 2L) {
+    week <- as.integer(parts[[2]])
+    if (is.finite(week) && week >= 1L && week <= 32L) {
+      return(.github_build_week_assignment(week, track, data))
+    }
+  }
+  if (identical(assignment_id, "project_major")) {
+    return(list(
+      id = "project_major",
+      week = NULL,
+      type = "project",
+      title = "项目大作业",
+      task_ids = list(),
+      phase = "project",
+      include = data$default_week_include %||% list(
+        "manifest", "assay", "coldata", "results", "plots", "teaching", "report"
+      )
+    ))
+  }
+  if (identical(assignment_id, "project_final")) {
+    return(list(
+      id = "project_final",
+      week = NULL,
+      type = "project",
+      title = "期末项目",
+      task_ids = list(),
+      phase = "project",
+      include = data$default_week_include %||% list(
+        "manifest", "assay", "coldata", "results", "plots", "teaching", "report"
+      )
+    ))
+  }
+  NULL
+}
+
 github_get_assignment <- function(track_id, assignment_id,
                                   custom_track_name = NULL,
                                   custom_assignment_title = NULL) {
-  data <- github_load_assignments()
+  track_id <- trimws(as.character(track_id %||% ""))
+  assignment_id <- trimws(as.character(assignment_id %||% ""))
+  if (!nzchar(track_id) || !nzchar(assignment_id)) {
+    stop("track_id and assignment_id are required.")
+  }
+
+  data <- tryCatch(github_load_assignments(), error = function(e) {
+    list(
+      course_code = EMP_COURSE_CODE,
+      repo_root = EMP_COURSE_CODE,
+      week_count = 16L,
+      projects = list(),
+      default_week_include = list("manifest", "assay", "coldata", "results", "plots", "teaching"),
+      tracks = list()
+    )
+  })
+
   track <- NULL
   for (tr in data$tracks %||% list()) {
-    if (identical(tr$id, track_id)) { track = tr; break }
+    if (identical(as.character(tr$id %||% ""), track_id)) { track <- tr; break }
   }
-  if (is.null(track)) stop(sprintf("Unknown track: %s", track_id))
+  # Allow unknown track ids (e.g. stale UI) by synthesizing a bare track
+  if (is.null(track)) {
+    track <- list(
+      id = track_id,
+      title = track_id,
+      custom = identical(track_id, "customize"),
+      case_id = NULL,
+      week_titles = list()
+    )
+  }
 
-  expanded <- .github_expand_track(track, data)
+  expanded <- tryCatch(.github_expand_track(track, data), error = function(e) list(assignments = list()))
   hit <- NULL
   for (a in expanded$assignments %||% list()) {
-    if (identical(a$id, assignment_id)) { hit <- a; break }
+    if (is.list(a) && identical(as.character(a$id %||% ""), assignment_id)) {
+      hit <- a
+      break
+    }
   }
+  if (is.null(hit)) hit <- .github_synthesize_assignment(assignment_id, track, data)
   if (is.null(hit)) stop(sprintf("Unknown assignment: %s / %s", track_id, assignment_id))
 
   # Folder / display overrides for customize track
-  track_folder <- track$id
-  track_title <- track$title %||% track$id
-  if (isTRUE(track$custom)) {
+  track_folder <- as.character(track$id %||% track_id)
+  track_title <- as.character(track$title %||% track$id %||% track_id)
+  if (isTRUE(track$custom) || identical(track_id, "customize")) {
     cname <- trimws(as.character(custom_track_name %||% ""))
     if (!nzchar(cname)) stop("自定义轨道请填写轨道名称。")
     track_title <- cname
     track_folder <- .github_slugify(cname, fallback = "customize")
   }
 
-  title <- hit$title
+  title <- as.character(hit$title %||% hit$id)
   ctitle <- trimws(as.character(custom_assignment_title %||% ""))
   if (identical(hit$type, "custom") || identical(hit$id, "assignment_custom")) {
     if (!nzchar(ctitle)) stop("自定义作业请填写作业标题。")
     title <- ctitle
   } else if (nzchar(ctitle)) {
-    # Optional student override for week / project title
     title <- ctitle
   }
 
-  assignment_folder <- hit$id
+  assignment_folder <- as.character(hit$id)
   if (identical(hit$type, "custom") || identical(hit$id, "assignment_custom")) {
     assignment_folder <- paste0("custom_", .github_slugify(title, fallback = "assignment"))
   }
@@ -235,7 +303,7 @@ github_get_assignment <- function(track_id, assignment_id,
     phase = hit$phase %||% "weekly",
     include = hit$include %||% list("manifest", "teaching"),
     track_id = track_folder,
-    track_key = track$id,
+    track_key = as.character(track$id %||% track_id),
     case_id = track$case_id %||% NULL,
     track_title = track_title,
     course_code = data$course_code %||% EMP_COURSE_CODE,
@@ -696,6 +764,8 @@ github_status <- function(identity) {
 .github_push_files <- function(owner, repo, branch, token, files, commit_message) {
   if (!length(files)) stop("没有可同步的文件。请先完成分析或选择包含教学报告的作业。")
 
+  # Additive merge: always build on the current branch tree so existing
+  # files/folders are kept. We only add/update paths present in `files`.
   ref <- .github_api("GET", sprintf("/repos/%s/%s/git/ref/heads/%s", owner, repo, utils::URLencode(branch, reserved = TRUE)), token)
   parent_sha <- NULL
   base_tree <- NULL
@@ -706,14 +776,17 @@ github_status <- function(identity) {
       stop(sprintf("无法读取分支提交：%s", commit$body$message %||% commit$raw))
     }
     base_tree <- commit$body$tree$sha
-  } else if (ref$status != 404) {
+  } else if (ref$status == 404) {
+    # Branch missing — first commit will create folders/files from scratch.
+    parent_sha <- NULL
+    base_tree <- NULL
+  } else {
     stop(sprintf("无法读取分支 %s：%s", branch, ref$body$message %||% ref$raw))
   }
 
   tree_items <- list()
   for (f in files) {
     raw <- readBin(f$abs, "raw", file.info(f$abs)$size)
-    # GitHub rejects empty blobs in some flows; skip empty files
     if (!length(raw)) next
     is_text <- grepl("\\.(csv|json|md|txt|tsv|html|r|R)$", f$path, ignore.case = TRUE)
     if (is_text) {
@@ -737,6 +810,7 @@ github_status <- function(identity) {
   if (!length(tree_items)) stop("没有有效文件可提交。")
 
   tree_body <- list(tree = tree_items)
+  # Critical: base_tree keeps all untouched paths (no wipe of existing repo content).
   if (!is.null(base_tree)) tree_body$base_tree <- base_tree
   tree <- .github_api("POST", sprintf("/repos/%s/%s/git/trees", owner, repo), token, tree_body)
   if (tree$status < 200 || tree$status >= 300) {
@@ -755,16 +829,14 @@ github_status <- function(identity) {
   new_sha <- commit$body$sha
 
   if (is.null(parent_sha)) {
-    # create branch ref
     created <- .github_api(
       "POST", sprintf("/repos/%s/%s/git/refs", owner, repo), token,
       list(ref = paste0("refs/heads/", branch), sha = new_sha)
     )
     if (created$status < 200 || created$status >= 300) {
-      # empty repo may need different flow — try update
       upd <- .github_api(
         "PATCH", sprintf("/repos/%s/%s/git/refs/heads/%s", owner, repo, utils::URLencode(branch, reserved = TRUE)),
-        token, list(sha = new_sha, force = TRUE)
+        token, list(sha = new_sha)
       )
       if (upd$status < 200 || upd$status >= 300) {
         stop(sprintf("无法写入分支：%s", created$body$message %||% created$raw))
@@ -785,7 +857,8 @@ github_status <- function(identity) {
   list(
     commit_sha = new_sha,
     html_url = commit$body$html_url %||% sprintf("https://github.com/%s/%s/commit/%s", owner, repo, new_sha),
-    branch = branch
+    branch = branch,
+    merge_mode = if (is.null(base_tree)) "create" else "additive"
   )
 }
 
@@ -865,7 +938,12 @@ github_sync_assignment <- function(identity, track_id, assignment_id, session_id
     success = TRUE,
     sync = entry,
     path = bundle$base_rel,
-    message = sprintf("已同步到 %s/%s（%d 个文件）", owner, repo, bundle$n_files)
+    merge_mode = push$merge_mode %||% "additive",
+    message = sprintf(
+      "已同步到 %s/%s（%d 个文件，%s：保留仓库已有文件）",
+      owner, repo, bundle$n_files,
+      if (identical(push$merge_mode, "create")) "新建" else "增量写入"
+    )
   )
 }
 
