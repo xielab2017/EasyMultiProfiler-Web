@@ -3331,7 +3331,7 @@
           <button type="button" class="btn btn-outline" id="btn-gh-unbind">解除绑定</button>
           <button type="button" class="btn btn-outline" id="btn-gh-logout">退出登录</button>
         </div>
-        <p class="hint">Token 需要对目标仓库有 Contents 写权限。推荐 fine-grained PAT，仅授权本仓库。</p>
+        <p class="hint" id="gh-token-hint">Token 需要对目标仓库有 Contents 写权限。推荐 fine-grained PAT，仅授权本仓库。</p>
       </div>
 
       <div id="gh-sync-panel" class="gh-panel hidden">
@@ -3456,7 +3456,7 @@
     else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
   }
 </script>
-<script type="module" src="js/app.js?v=v9-recipe-syntax-fix"></script>
+<script type="module" src="js/app.js?v=i18n-locale-v1"></script>
 <script>
   // Initialise Lucide icons after all content is ready
   document.addEventListener("DOMContentLoaded", () => lucide.createIcons());

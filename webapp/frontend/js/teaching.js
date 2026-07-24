@@ -3,7 +3,7 @@
  */
 import * as API from "./api.js?v=2026-07-16-multi-demo";
 import { omicsDefaultsHint } from "./omics_defaults.js?v=2026-07-16-multi-demo";
-import { getLocale, t } from "./locale.js?v=2026-07-16-multi-demo";
+import { getLocale, t } from "./locale.js?v=i18n-locale-v1";
 
 const LS_CASE = "emp_teaching_active_case";
 
@@ -273,27 +273,31 @@ function bindCaseDetailEvents(detail, caseId) {
         const qid = f.dataset.qid;
         const picked = f.querySelector(`input[name="quiz-${taskId}-${qid}"]:checked`);
         if (!picked) {
-          box.querySelector(".teaching-quiz-feedback").textContent = "请回答所有题目。";
+          box.querySelector(".teaching-quiz-feedback").textContent = t("teach.answerAll");
           return;
         }
         answers.push({ id: qid, choice: Number(picked.value) });
       }
       btn.disabled = true;
       const feedback = box.querySelector(".teaching-quiz-feedback");
-      feedback.textContent = "提交中…";
+      feedback.textContent = t("teach.submitting");
       try {
         await ensureSession();
         const res = await API.teachingSubmitQuiz({ case_id: caseId, task_id: taskId, answers });
         if (res.passed) {
-          feedback.textContent = "全部正确！下一步已解锁。";
+          feedback.textContent = t("teach.quizAllCorrect");
           await traceEvent({ event_type: "quiz_pass", case_id: caseId, task_id: taskId });
           await loadCaseDetail(caseId);
           await renderCaseList();
         } else {
           const wrongHint = (res.wrong_ids || []).length
-            ? `（第 ${(res.wrong_ids || []).join("、")} 题需复习）`
+            ? t("teach.quizWrongHint", null, { ids: (res.wrong_ids || []).join("、") })
             : "";
-          feedback.textContent = `答对 ${res.correct}/${res.total} 题，请复习视频后重试。${wrongHint}`;
+          feedback.textContent = t("teach.quizPartial", null, {
+            correct: res.correct,
+            total: res.total,
+            wrong: wrongHint,
+          });
           box.querySelectorAll(".teaching-quiz-q").forEach((f) => {
             if ((res.wrong_ids || []).includes(f.dataset.qid)) f.classList.add("is-wrong");
           });
@@ -319,7 +323,7 @@ function bindCaseDetailEvents(detail, caseId) {
           ai_declaration: ai?.value || "",
         });
         await loadCaseDetail(caseId);
-        teachToast("反思已保存并记录到 Learning Trace。", "success");
+        teachToast(t("teach.reflectionSaved"), "success");
       } catch (err) {
         teachToast(err.message || String(err), "error");
       }
@@ -342,7 +346,7 @@ async function loadCaseDetail(caseId) {
   const detail = document.getElementById("teaching-case-detail");
   if (!detail) return;
   setActiveCaseId(caseId);
-  detail.innerHTML = '<p class="hint">加载中…</p>';
+  detail.innerHTML = `<p class="hint">${t("teach.loading")}</p>`;
   try {
     await ensureSession();
     const { case: c } = await API.teachingCase(caseId);
@@ -354,15 +358,15 @@ async function loadCaseDetail(caseId) {
       <div class="card">
         <h2>${esc(c.title)}</h2>
         <p class="hint">${esc(c.subtitle || "")}</p>
-        <p><strong>科学问题：</strong>${esc(c.scientific_question)}</p>
+        <p><strong>${t("teach.sciQ")}</strong>${esc(c.scientific_question)}</p>
         <p>${esc(c.background)}</p>
-        <p class="hint"><strong>数据提示：</strong>${esc(c.data_hint)}</p>
-        <p class="hint"><strong>推荐路径：</strong>${esc(OMICS_PATHS[c.omics] || "Import → Prepare → Analyze → Visualize")}</p>
-        <p class="hint"><strong>推荐参数：</strong>${esc(omicsDefaultsHint(c.omics))}</p>
-        <p class="hint"><strong>学习流程：</strong>观看教学视频 → 完成测验（全部正确）→ 解锁下一步 → EMP 实操与反思</p>
+        <p class="hint"><strong>${t("teach.dataHint")}</strong>${esc(c.data_hint)}</p>
+        <p class="hint"><strong>${t("teach.recPath")}</strong>${esc(OMICS_PATHS[c.omics] || "Import → Prepare → Analyze → Visualize")}</p>
+        <p class="hint"><strong>${t("teach.recParams")}</strong>${esc(omicsDefaultsHint(c.omics))}</p>
+        <p class="hint"><strong>${t("teach.learnFlow")}</strong>${t("teach.learnFlowBody")}</p>
         <div class="btn-row teaching-case-actions">
-          <button type="button" class="btn btn-primary btn-load-case-demo" data-omics="${esc(c.omics || "")}">一键加载本课示例数据</button>
-          <button type="button" class="btn btn-outline btn-apply-case-defaults" data-omics="${esc(c.omics || "")}">套用推荐参数</button>
+          <button type="button" class="btn btn-primary btn-load-case-demo" data-omics="${esc(c.omics || "")}">${t("teach.loadDemo")}</button>
+          <button type="button" class="btn btn-outline btn-apply-case-defaults" data-omics="${esc(c.omics || "")}">${t("teach.applyDefaults")}</button>
         </div>
       </div>
       <div class="teaching-task-list">
@@ -381,7 +385,7 @@ async function loadCaseDetail(caseId) {
       const demoId = demoMap[omics] || "m16s_course";
       window.dispatchEvent(new CustomEvent("emp:navigate", { detail: { page: "import" } }));
       window.dispatchEvent(new CustomEvent("emp:import-demo", { detail: { datasetId: demoId, omics } }));
-      teachToast("正在加载课程示例数据…", "info");
+      teachToast(t("teach.loadingDemo"), "info");
     });
     detail.querySelector(".btn-apply-case-defaults")?.addEventListener("click", () => {
       window.dispatchEvent(new CustomEvent("emp:apply-omics-defaults", {
@@ -390,14 +394,14 @@ async function loadCaseDetail(caseId) {
     });
     await traceEvent({ event_type: "case_open", case_id: caseId });
   } catch (e) {
-    detail.innerHTML = `<p class="hint">加载失败：${esc(e.message)}</p>`;
+    detail.innerHTML = `<p class="hint">${t("teach.loadFail")}${esc(e.message)}</p>`;
   }
 }
 
 async function renderPromptLibrary() {
   const root = document.getElementById("teaching-prompt-root");
   if (!root) return;
-  root.innerHTML = '<p class="hint">加载 Prompt 库…</p>';
+  root.innerHTML = `<p class="hint">${t("teach.loadingPrompts")}</p>`;
   try {
     const data = await API.teachingPrompts();
     const cats = data.categories || [];
@@ -513,7 +517,7 @@ function setupJournalAndReport() {
         limitations: document.getElementById("teaching-journal-limitations")?.value || "",
         ai_declaration: document.getElementById("teaching-journal-ai")?.value || "",
       });
-      teachToast("科学解读与假设已保存。", "success");
+      teachToast(t("teach.journalSaved"), "success");
     } catch (e) {
       teachToast(e.message || String(e), "error");
     }
@@ -543,7 +547,11 @@ export async function initTeaching() {
     if (page && typeof window.__empNavigate === "function") window.__empNavigate(page);
   });
   window.addEventListener("emp:locale-change", async () => {
-    if (document.getElementById("page-course")?.classList.contains("active")) await renderCaseList();
+    if (document.getElementById("page-course")?.classList.contains("active")) {
+      await renderCaseList();
+      const cid = activeCaseId();
+      if (cid) await loadCaseDetail(cid);
+    }
     if (document.getElementById("page-prompts")?.classList.contains("active")) await renderPromptLibrary();
     const critique = document.getElementById("teaching-panel-critique");
     if (critique && !critique.classList.contains("hidden")) await renderCritiqueLab();

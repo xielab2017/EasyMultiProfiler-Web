@@ -2,8 +2,8 @@
  * UI locale: Auto (browser + region hint) or manual 中文 / English.
  * Dispatches emp:locale-change when the active locale changes.
  */
-import { I18N_CATALOG } from "./i18n_catalog.js?v=chipseq-downstream-v1";
-import { applyDomI18n } from "./ui_dom_i18n.js?v=chipseq-downstream-v1";
+import { I18N_CATALOG } from "./i18n_catalog.js?v=i18n-locale-v1";
+import { applyDomI18n } from "./ui_dom_i18n.js?v=i18n-locale-v1";
 
 const LS_MODE = "emp_ui_locale_mode"; // auto | zh | en
 const LS_RESOLVED = "emp_ui_locale_resolved";
@@ -241,13 +241,14 @@ async function fetchIpCountry() {
     }
   } catch { /* fallback */ }
   try {
+    // HTTPS-only fallback (avoids mixed-content block on https deploys).
     const ctl = new AbortController();
     const tm = setTimeout(() => ctl.abort(), 1500);
-    const r = await fetch("http://ip-api.com/json/?fields=countryCode", { signal: ctl.signal });
+    const r = await fetch("https://ipwho.is/", { signal: ctl.signal });
     clearTimeout(tm);
     if (r.ok) {
       const j = await r.json();
-      const c = String(j?.countryCode || "").toUpperCase();
+      const c = String(j?.country_code || "").toUpperCase();
       if (c) return { country: c, source: "ip" };
     }
   } catch { /* ignore */ }
@@ -261,7 +262,7 @@ async function detectLocaleAuto() {
   const ip = await fetchIpCountry();
   _autoMeta = ip;
   if (ip.country) {
-    locale = ["CN", "HK", "MO", "TW"].includes(ip.country) ? "zh" : "en";
+    locale = ["CN", "HK", "MO", "TW", "SG"].includes(ip.country) ? "zh" : "en";
   }
   return locale;
 }

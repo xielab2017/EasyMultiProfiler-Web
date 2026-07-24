@@ -2,8 +2,8 @@
  * Maps static DOM nodes in index.html to i18n keys (bulk labeling without tagging every node).
  * attr: text | html | title | placeholder | aria | value
  */
-import { t } from "./locale.js?v=2026-07-22-chipseq-downstream-v1";
-import { applyPagesI18n } from "./i18n_pages.js?v=2026-07-16-multi-demo";
+import { t } from "./locale.js?v=i18n-locale-v1";
+import { applyPagesI18n } from "./i18n_pages.js?v=i18n-locale-v1";
 
 export const DOM_I18N = [
   { sel: "#gp-label", key: "common.working" },
@@ -197,9 +197,214 @@ export function applyDomI18n() {
   applyClinicalOptions();
   applyImportFormLabels();
   applyJournalLabels();
+  applyUploadCardsI18n();
+  applyChipdsFilterI18n();
+  applyChipDepsStaticI18n();
   setFormGroupLabel("prep-mode", t("prep.mode"));
   setFormGroupLabel("prep-snapshot-select", t("prep.snapshot"));
   applyPagesI18n();
+}
+
+const UPLOAD_TYPE_KEYS = {
+  transcriptomics: "tx",
+  proteomics: "pro",
+  microbiome_16s: "m16s",
+  metagenomics: "mgx",
+  metabolomics: "mbx",
+  chipseq: "chip",
+  clinical: "clinical",
+};
+
+function applyUploadCardsI18n() {
+  const hint = document.querySelector("#page-import .card[data-clinical-script] > .hint");
+  if (hint) hint.innerHTML = t("upload.pageHint");
+
+  document.querySelectorAll(".upload-card[data-upload-type]").forEach((card) => {
+    const type = card.dataset.uploadType;
+    const short = UPLOAD_TYPE_KEYS[type];
+    if (!short) return;
+    const h3 = card.querySelector("header h3");
+    if (h3) h3.textContent = t(`upload.card.${short}`);
+
+    const cardHint = card.querySelector(":scope > .hint");
+    if (cardHint && ["mgx", "chip", "clinical"].includes(short)) {
+      cardHint.innerHTML = t(`upload.hint.${short}`);
+    }
+
+    card.querySelectorAll(".form-group > label").forEach((lab) => {
+      const sel = lab.parentElement?.querySelector("select, input");
+      if (!sel) return;
+      if (sel.classList.contains("upload-import-mode")) lab.textContent = t("upload.importMode");
+      else if (sel.classList.contains("upload-exp-name")) {
+        lab.textContent = short === "clinical" ? t("upload.clinicalTableName") : t("upload.expName");
+      } else if (sel.classList.contains("upload-assay-name")) lab.textContent = t("upload.assayName");
+      else if (sel.classList.contains("upload-start-level")) lab.textContent = t("upload.taxLevel");
+      else if (sel.classList.contains("upload-tax-sep")) lab.textContent = t("upload.taxSep");
+      else if (sel.classList.contains("upload-genome")) lab.textContent = t("upload.genome");
+      else if (sel.classList.contains("upload-preset")) lab.textContent = t("upload.assayMeta");
+      else if (sel.classList.contains("upload-clinical-kind")) lab.textContent = t("upload.clinicalKind");
+    });
+
+    const modeSel = card.querySelector(".upload-import-mode");
+    if (modeSel) {
+      [...modeSel.options].forEach((o) => {
+        if (o.value === "matrix") o.textContent = t(`upload.mode.matrix.${short}`);
+        else if (o.value === "diff_raw") {
+          if (short === "m16s") o.textContent = t("upload.mode.diff.marker");
+          else if (short === "mgx") o.textContent = t("upload.mode.diff.func");
+          else o.textContent = t("upload.mode.diff");
+        }
+      });
+    }
+    const clinKind = card.querySelector(".upload-clinical-kind");
+    if (clinKind) {
+      [...clinKind.options].forEach((o) => {
+        if (o.value === "clinical_raw") o.textContent = t("import.clinicalRaw");
+        if (o.value === "clinical_meta") o.textContent = t("import.clinicalMeta");
+      });
+    }
+
+    const dataLabel = card.querySelector(".upload-data-label");
+    if (dataLabel) {
+      dataLabel.dataset.matrixLabelKey = `upload.dataLabel.${short}`;
+      const isDiff = card.querySelector(".upload-import-mode")?.value === "diff_raw";
+      dataLabel.textContent = isDiff ? t("upload.dataLabel.diff") : t(`upload.dataLabel.${short}`);
+    }
+
+    const rowsHint = card.querySelector(".upload-matrix-only.hint, .hint.upload-matrix-only");
+    if (rowsHint && ["tx", "pro", "mgx", "mbx"].includes(short)) {
+      rowsHint.textContent = t(`upload.rows.${short}`);
+    }
+    card.querySelectorAll(".upload-diff-only.hint, .hint.upload-diff-only").forEach((el) => {
+      el.textContent = t("upload.diffHint");
+    });
+
+    card.querySelectorAll(".drop-meta p strong, .upload-zone.drop-meta p strong").forEach((el) => {
+      if (short === "m16s") el.textContent = t("upload.metaSampleOptional");
+      else if (short === "clinical") el.textContent = t("upload.metaCompanion");
+      else el.textContent = t("upload.metaOptional");
+    });
+
+    card.querySelectorAll("label.btn[for^='upload-']").forEach((lab) => {
+      lab.textContent = short === "chip" && lab.getAttribute("for")?.includes("chipseq")
+        ? t("upload.choosePeak")
+        : t("upload.chooseFile");
+    });
+
+    const btn = card.querySelector(".upload-btn");
+    if (btn) {
+      const icon = btn.querySelector("i")?.outerHTML || "";
+      const isDiff = card.querySelector(".upload-import-mode")?.value === "diff_raw";
+      const key = isDiff && short !== "chip" && short !== "clinical"
+        ? `upload.btnDiff.${short}`
+        : `upload.btn.${short}`;
+      btn.dataset.labelMatrixKey = `upload.btn.${short}`;
+      if (short !== "chip" && short !== "clinical") btn.dataset.labelDiffKey = `upload.btnDiff.${short}`;
+      btn.innerHTML = `${icon} ${t(key)}`.trim();
+    }
+  });
+
+  const goChip = document.getElementById("btn-go-chipseq");
+  if (goChip) {
+    const icon = goChip.querySelector("i")?.outerHTML || "";
+    goChip.innerHTML = `${icon} ${t("upload.btn.openChip")}`.trim();
+  }
+
+  const chipPeakP = document.querySelector('.upload-card[data-upload-type="chipseq"] .drop-data p');
+  if (chipPeakP && !chipPeakP.querySelector(".upload-data-label")) {
+    chipPeakP.innerHTML = `<strong>${t("upload.dataLabel.chip")}</strong> ${t("upload.peakFileFmt")}`;
+  } else if (chipPeakP?.querySelector(".upload-data-label")) {
+    /* handled above */
+  } else {
+    const p = document.querySelector('.upload-card[data-upload-type="chipseq"] .upload-zone.drop-data > p');
+    if (p) p.innerHTML = `<strong>${t("upload.dataLabel.chip")}</strong> ${t("upload.peakFileFmt")}`;
+  }
+}
+
+function applyChipdsFilterI18n() {
+  const maps = {
+    "chipds-filter-priority": {
+      "": "chipds.opt.all",
+      must: "chipds.opt.must",
+      recommend: "chipds.opt.recommend",
+      advanced: "chipds.opt.advanced",
+      optional: "chipds.opt.optional",
+    },
+    "chipds-filter-bam": {
+      "": "chipds.opt.all",
+      no: "chipds.opt.bamNo",
+      yes: "chipds.opt.bamYes",
+    },
+    "chipds-filter-status": {
+      "": "chipds.opt.all",
+      available: "chipds.opt.available",
+      planned: "chipds.opt.planned",
+    },
+  };
+  Object.entries(maps).forEach(([id, map]) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    [...sel.options].forEach((o) => {
+      if (map[o.value] != null) o.textContent = t(map[o.value]);
+    });
+  });
+  const stage = document.getElementById("chipds-filter-stage");
+  if (stage?.options?.[0] && !stage.options[0].value) {
+    stage.options[0].textContent = t("chipds.opt.allStages");
+  }
+  const search = document.getElementById("chipds-search");
+  if (search) search.placeholder = t("chipds.searchPh");
+}
+
+function applyChipDepsStaticI18n() {
+  const labelMap = [
+    ["chip-deps-peak", "chip.deps.peak"],
+    ["chip-deps-assay", "chip.deps.assay"],
+    ["chip-deps-rna", "chip.label.rnaseq"],
+    ["chip-deps-proteomics", "chip.label.proteomics"],
+    ["chip-deps-m16s", "omics.microbiome_16s"],
+    ["chip-deps-mgx", "omics.metagenomics"],
+    ["chip-deps-mbx", "omics.metabolomics"],
+    ["chip-deps-clinical", "omics.clinical"],
+  ];
+  labelMap.forEach(([id, key]) => {
+    const lab = document.querySelector(`label[for="${id}"]`);
+    if (lab) lab.textContent = t(key);
+  });
+  document.querySelectorAll("#chip-recipe-deps .form-group").forEach((fg) => {
+    if (fg.querySelector("#chip-deps-bam")) {
+      const lab = fg.querySelector("label");
+      if (lab) lab.textContent = t("chip.deps.bam");
+    }
+  });
+  const refresh = document.getElementById("chip-deps-refresh");
+  if (refresh) refresh.textContent = t("chip.deps.refresh");
+  const comboRun = document.getElementById("chip-recipe-combo-run");
+  if (comboRun) {
+    const icon = comboRun.querySelector("i")?.outerHTML || "";
+    comboRun.innerHTML = `${icon} ${t("chip.recipe.comboRun")}`.trim();
+  }
+  const results = document.getElementById("chip-recipe-results");
+  if (results && results.querySelector(":scope > .hint") && results.children.length === 1) {
+    results.querySelector(".hint").textContent = t("chip.recipe.resultsHint");
+  }
+  document.querySelectorAll("#chip-btn-goto-step2, #chip-btn-goto-step2-b").forEach((btn) => {
+    const icon = btn.querySelector("i")?.outerHTML || "";
+    btn.innerHTML = `${icon} ${t("chip.btn.gotoStep2Short")}`.trim();
+  });
+  // empty peak / none options in static HTML
+  ["chip-deps-peak", "chip-deps-rna", "chip-deps-proteomics", "chip-deps-m16s", "chip-deps-mgx", "chip-deps-mbx", "chip-deps-clinical"]
+    .forEach((id) => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      [...sel.options].forEach((o) => {
+        if (!o.value) {
+          o.textContent = id === "chip-deps-peak" ? t("chip.opt.noPeaks") : t("chip.opt.none");
+        } else if (o.value === "standalone") {
+          o.textContent = t("chip.opt.standaloneClin");
+        }
+      });
+    });
 }
 
 function applyImportFormLabels() {

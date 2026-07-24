@@ -17,13 +17,13 @@ import {
   initTeaching,
   onTeachingPage,
   setupTeachingTraceHooks,
-} from "./teaching.js?v=2026-07-16-multi-demo-v2";
+} from "./teaching.js?v=i18n-locale-v1";
 import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=2026-07-22-multiomics-v1";
 import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-07-23-rnaseq-final";
-import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=chipseq-peaks-fix-v1";
+import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=i18n-locale-v1";
 import { initFontScale } from "./font_scale.js?v=2026-07-16-multi-demo-v2";
 import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
-import { initGithubSync } from "./github_sync.js?v=2026-07-22-multiomics-v1";
+import { initGithubSync } from "./github_sync.js?v=i18n-locale-v1";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -2339,15 +2339,20 @@ function syncUploadCardMode(card) {
   card.classList.toggle("upload-card--diff", isDiff);
   card.querySelectorAll(".upload-matrix-only").forEach((el) => el.classList.toggle("hidden", isDiff));
   card.querySelectorAll(".upload-diff-only").forEach((el) => el.classList.toggle("hidden", !isDiff));
+  const type = card.dataset.uploadType;
+  const short = ({
+    transcriptomics: "tx", proteomics: "pro", microbiome_16s: "m16s",
+    metagenomics: "mgx", metabolomics: "mbx",
+  })[type];
   const label = card.querySelector(".upload-data-label");
-  if (label) {
-    if (!label.dataset.matrixLabel) label.dataset.matrixLabel = label.textContent;
-    label.textContent = isDiff ? "DE / marker results" : label.dataset.matrixLabel;
+  if (label && short) {
+    label.textContent = isDiff ? t("upload.dataLabel.diff") : t(`upload.dataLabel.${short}`);
   }
   const btn = card.querySelector(".upload-btn");
-  if (btn && btn.dataset.labelMatrix) {
+  if (btn && short) {
     const icon = btn.querySelector("i")?.outerHTML || "";
-    btn.innerHTML = `${icon} ${isDiff ? (btn.dataset.labelDiff || "Upload DE results") : btn.dataset.labelMatrix}`;
+    const key = isDiff ? `upload.btnDiff.${short}` : `upload.btn.${short}`;
+    btn.innerHTML = `${icon} ${t(key)}`.trim();
   }
 }
 
@@ -2363,13 +2368,16 @@ function bindUploadCard(omicsType) {
   const btn       = card.querySelector(".upload-btn");
   if (!dataInput || !btn) return;
 
-  if (!btn.dataset.labelMatrix) {
-    btn.dataset.labelMatrix = btn.textContent.replace(/\s+/g, " ").trim();
-    btn.dataset.labelDiff = `Upload DE → ${omicsType}`;
+  if (!btn.dataset.labelMatrixKey) {
+    const short = ({
+      transcriptomics: "tx", proteomics: "pro", microbiome_16s: "m16s",
+      metagenomics: "mgx", metabolomics: "mbx", clinical: "clinical",
+    })[omicsType];
+    if (short) {
+      btn.dataset.labelMatrixKey = `upload.btn.${short}`;
+      if (short !== "clinical") btn.dataset.labelDiffKey = `upload.btnDiff.${short}`;
+    }
   }
-  card.querySelectorAll(".upload-data-label").forEach((lab) => {
-    if (!lab.dataset.matrixLabel) lab.dataset.matrixLabel = lab.textContent;
-  });
   modeSel?.addEventListener("change", () => syncUploadCardMode(card));
   syncUploadCardMode(card);
 
@@ -4589,20 +4597,23 @@ function updateChipDownstreamSummary(catalog, filteredCount) {
   const elM = document.getElementById("chipds-badge-modules");
   const elMust = document.getElementById("chipds-badge-must");
   const elAv = document.getElementById("chipds-badge-available");
-  if (elM) elM.textContent = `模块: ${filteredCount ?? s.modules ?? "—"} / ${s.modules ?? "—"}`;
-  if (elMust) elMust.textContent = `必做: ${s.must ?? "—"}`;
-  if (elAv) elAv.textContent = `可运行: ${s.available ?? "—"}`;
+  if (elM) elM.textContent = t("chipds.badge.modules", null, { cur: filteredCount ?? s.modules ?? "—", total: s.modules ?? "—" });
+  if (elMust) elMust.textContent = t("chipds.badge.must", null, { n: s.must ?? "—" });
+  if (elAv) elAv.textContent = t("chipds.badge.available", null, { n: s.available ?? "—" });
 }
 
 function fillChipDownstreamStageSelect(catalog) {
   const sel = document.getElementById("chipds-filter-stage");
-  if (!sel || sel.dataset.filled === "1") return;
+  if (!sel) return;
+  const prev = sel.value;
   const stages = catalog.stages?.length
     ? catalog.stages
     : [...new Set((catalog.items || []).map((i) => i.stage).filter(Boolean))];
-  sel.innerHTML = `<option value="">全部阶段</option>` +
+  // Rebuild so empty option text tracks locale; keep stage ids as-is (catalog language).
+  sel.innerHTML = `<option value="">${t("chipds.opt.allStages")}</option>` +
     stages.map((st) => `<option value="${chipdsEsc(st)}">${chipdsEsc(st)}</option>`).join("");
   sel.dataset.filled = "1";
+  if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
 }
 
 function bindChipDownstreamFilters() {
@@ -5064,7 +5075,7 @@ function fillChipPeakSelectEl(sel, peakFiles, activeId) {
   if (!files.length) {
     const opt = document.createElement("option");
     opt.value = "";
-    opt.textContent = "（尚未注册峰文件）";
+    opt.textContent = t("chip.opt.noPeaks");
     sel.appendChild(opt);
     return;
   }
@@ -5100,7 +5111,7 @@ function renderChipdsLastPeaksBadge(peaks) {
   if (!badge) return;
   const path = peaks?.peak_file || "";
   if (!path) {
-    badge.textContent = "未加载 — 请先在 ChIPseq 页上传峰文件或运行 MACS";
+    badge.textContent = t("chipds.peaks.empty");
     badge.className = "chipds-last-peaks-badge chipds-last-peaks-badge--empty";
     badge.title = "";
     return;
@@ -5110,7 +5121,7 @@ function renderChipdsLastPeaksBadge(peaks) {
   const genome = gLabel ? ` · ${gLabel}` : "";
   const srcRaw = String(peaks?.source || "").toLowerCase();
   const src = srcRaw
-    ? ` · ${(srcRaw === "preimported" || srcRaw === "upload") ? "上传" : (srcRaw === "macs" ? "MACS" : srcRaw)}`
+    ? ` · ${(srcRaw === "preimported" || srcRaw === "upload") ? t("chipds.peaks.srcUpload") : (srcRaw === "macs" ? "MACS" : srcRaw)}`
     : "";
   const n = peaks?.n_peaks;
   const nTxt = (n == null || n === "") ? "" : ` · ${n} peaks`;
@@ -5118,7 +5129,7 @@ function renderChipdsLastPeaksBadge(peaks) {
   badge.title = path;
   if (Number(n) === 0) {
     badge.className = "chipds-last-peaks-badge chipds-last-peaks-badge--warn";
-    badge.textContent += " ⚠ 空文件";
+    badge.textContent += t("chipds.peaks.emptyFile");
   } else {
     badge.className = "chipds-last-peaks-badge chipds-last-peaks-badge--ok";
   }
@@ -5519,7 +5530,7 @@ function _chipExpOmics(exp) {
 
 function fillChipRecipeDepSelects(exps) {
   const list = exps || window._emp.experiments || [];
-  const none = `<option value="">— none —</option>`;
+  const none = `<option value="">${t("chip.opt.none")}</option>`;
   const opt = (e) => `<option value="${chipdsEsc(e.name)}">${chipdsEsc(e.name)}${e.omics ? ` (${chipdsEsc(e.omics)})` : ""}</option>`;
   const fill = (id, pred) => {
     const el = document.getElementById(id);
@@ -5528,7 +5539,7 @@ function fillChipRecipeDepSelects(exps) {
     const matched = list.filter(pred);
     el.innerHTML = none + matched.map(opt).join("") +
       (matched.length < list.length
-        ? `<optgroup label="all experiments">${list.map(opt).join("")}</optgroup>`
+        ? `<optgroup label="${t("chip.opt.allExps")}">${list.map(opt).join("")}</optgroup>`
         : "");
     if (prev && [...el.options].some((o) => o.value === prev)) el.value = prev;
   };
@@ -5540,7 +5551,7 @@ function fillChipRecipeDepSelects(exps) {
   const clin = document.getElementById("chip-deps-clinical");
   if (clin) {
     const prev = clin.value;
-    clin.innerHTML = `${none}<option value="standalone">standalone clinical_raw/meta</option>`;
+    clin.innerHTML = `${none}<option value="standalone">${t("chip.opt.standaloneClin")}</option>`;
     if (prev) clin.value = prev;
   }
 }
@@ -5578,26 +5589,27 @@ async function loadChipRecipePacks() {
     }
   }
   const packs = _chipRecipePacks.packs || [];
-  const zh = (getLocale?.() || localStorage.getItem("emp_locale") || "zh") === "zh";
+  const zh = getLocale() === "zh";
   const internal = packs.filter((p) => p.group === "chip_internal");
   const joint = packs.filter((p) => p.group === "joint");
   const card = (p) => {
     const title = zh ? (p.title_zh || p.title_en) : (p.title_en || p.title_zh);
     const desc = zh ? (p.description_zh || p.description_en) : (p.description_en || p.description_zh);
+    const badge = p.group === "joint" ? t("chip.recipe.badge.joint") : t("chip.recipe.badge.chip");
     return `<article class="chip-recipe-card" data-pack-id="${chipdsEsc(p.id)}">
       <div class="chip-recipe-card-head">
-        <span class="chip-badge ${p.group === "joint" ? "chip-badge--t" : "chip-badge--peak"}">${chipdsEsc(p.group === "chip_internal" ? "ChIP" : "联合")}</span>
+        <span class="chip-badge ${p.group === "joint" ? "chip-badge--t" : "chip-badge--peak"}">${chipdsEsc(badge)}</span>
         <h5>${chipdsEsc(title)}</h5>
       </div>
       <p class="hint">${chipdsEsc(desc || "")}</p>
-      <p class="chip-recipe-req"><strong>requires</strong> ${(p.requires || []).map(chipdsEsc).join(", ")}</p>
-      <button type="button" class="btn btn-primary btn-sm" data-run-pack="${chipdsEsc(p.id)}">运行</button>
+      <p class="chip-recipe-req"><strong>${t("chip.recipe.requires")}</strong> ${(p.requires || []).map(chipdsEsc).join(", ")}</p>
+      <button type="button" class="btn btn-primary btn-sm" data-run-pack="${chipdsEsc(p.id)}">${t("chip.recipe.run")}</button>
     </article>`;
   };
   root.innerHTML = `
-    <h4 class="chip-section-title">ChIP 内包</h4>
+    <h4 class="chip-section-title">${t("chip.recipe.internal")}</h4>
     <div class="chip-recipe-grid">${internal.map(card).join("")}</div>
-    <h4 class="chip-section-title">跨组学联合包</h4>
+    <h4 class="chip-section-title">${t("chip.recipe.joint")}</h4>
     <div class="chip-recipe-grid">${joint.map(card).join("")}</div>`;
   root.querySelectorAll("[data-run-pack]").forEach((btn) => {
     btn.addEventListener("click", () => runChipRecipePack(btn.dataset.runPack));
@@ -5613,7 +5625,7 @@ async function loadChipRecipePacks() {
       const p = packs.find((x) => x.id === id);
       const label = p ? (zh ? p.title_zh : p.title_en) : id;
       return `<label class="checkbox-label chip-recipe-combo-item">
-        <input type="checkbox" value="${chipdsEsc(id)}" ${id === "core" ? "" : ""}>
+        <input type="checkbox" value="${chipdsEsc(id)}">
         <span>${chipdsEsc(label || id)}</span>
       </label>`;
     }).join("");
@@ -5665,7 +5677,7 @@ async function runChipRecipePack(packId) {
   }
   const gate = chipRecipeGate(pack);
   if (!gate.ok) {
-    toast(`缺少依赖: ${gate.missing.join(", ")}`, "error");
+    toast(t("chip.recipe.missingDeps", null, { deps: gate.missing.join(", ") }), "error");
     chipRecipeLog(`[${packId}] blocked: ${gate.missing.join(", ")}`, "error");
     return;
   }
@@ -7460,10 +7472,24 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
     document.querySelectorAll(".ai-copilot-btn-label").forEach((el) => {
       el.textContent = t("copilot.btn");
     });
-    import("./github_sync.js?v=2026-07-22-multiomics-v1").then((m) => m.applyGithubSyncI18n?.());
+    import("./github_sync.js?v=i18n-locale-v1").then((m) => m.applyGithubSyncI18n?.());
     if (document.getElementById("page-clinical")?.classList.contains("active")) {
       updateClinicalPrecheck();
     }
+    // Dynamic ChIP / chipds panels
+    if (_chipdsCatalog) {
+      fillChipDownstreamStageSelect(_chipdsCatalog);
+      const filtered = filterChipDownstreamItems(_chipdsCatalog.items || []);
+      updateChipDownstreamSummary(_chipdsCatalog, filtered.length);
+      renderChipDownstreamCatalog(_chipdsCatalog);
+    }
+    renderChipPeakSelectors(
+      window._emp?.chipPeakFiles || [],
+      window._emp?.chipActivePeakId || "",
+      window._emp?.chipLastPeaks || null,
+    );
+    refreshChipRecipeDeps();
+    loadChipRecipePacks().catch(() => {});
   });
   await initCodeLab();
   initEvolution();
