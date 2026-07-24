@@ -5586,7 +5586,7 @@ async function loadChipRecipePacks() {
     const desc = zh ? (p.description_zh || p.description_en) : (p.description_en || p.description_zh);
     return `<article class="chip-recipe-card" data-pack-id="${chipdsEsc(p.id)}">
       <div class="chip-recipe-card-head">
-        <span class="chip-badge ${p.group === "joint" ? "chip-badge--t" : "chip-badge--peak"}">${chipdsEsc(p.group === chip_internal")}</span>
+        <span class="chip-badge ${p.group === "joint" ? "chip-badge--t" : "chip-badge--peak"}">${chipdsEsc(p.group === "chip_internal" ? "ChIP" : "联合")}</span>
         <h5>${chipdsEsc(title)}</h5>
       </div>
       <p class="hint">${chipdsEsc(desc || "")}</p>
