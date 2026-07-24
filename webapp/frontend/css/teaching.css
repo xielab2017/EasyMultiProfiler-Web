@@ -642,3 +642,13 @@
   min-width: 11rem;
 }
 
+.gh-path-preview {
+  margin: 4px 0 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+
+.gh-path-preview code {
+  font-size: 0.86em;
+}
+

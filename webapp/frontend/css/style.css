@@ -181,13 +181,26 @@ body {
   padding-top: 1px;
 }
 
-#exp-selector-wrap { display: flex; align-items: center; gap: 8px; }
+#exp-selector-wrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #exp-selector-wrap label { font-size: 0.929rem; color: var(--clr-muted); }
 #global-experiment {
   padding: 4px 10px; border-radius: 6px;
   border: 1px solid var(--clr-border); font-size: 0.929rem;
   background: var(--clr-bg);
 }
+#ui-snap-status,
+.ui-snap-status {
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--clr-border);
+  background: color-mix(in srgb, var(--clr-accent, #2563eb) 10%, var(--clr-surface, #fff));
+  color: var(--clr-muted);
+  font-size: 0.786rem;
+  white-space: nowrap;
+  cursor: default;
+}
+#ui-snap-status.hidden { display: none; }
 
 /* ─── PAGES ───────────────────────────────────── */
 .page {
@@ -515,6 +528,12 @@ tr:hover td { background: rgba(59,110,245,.04); }
   border-color: #c7d2fe;
 }
 
+.workflow-tag.is-active {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  box-shadow: inset 0 0 0 1px #60a5fa;
+}
+
 /* ─── EXPORT GRID ─────────────────────────────── */
 .export-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 16px; }
 .export-card {
@@ -662,11 +681,13 @@ tr:hover td { background: rgba(59,110,245,.04); }
 }
 
 /* ─── OMICS FILTERING (hide tabs not relevant to current omics) ─ */
+/* multiomics / customize intentionally omit filter classes (same as "all") */
 body.omics-transcriptomics [data-omics]:not([data-omics~="transcriptomics"]),
 body.omics-microbiome_16s  [data-omics]:not([data-omics~="microbiome_16s"]),
 body.omics-metagenomics    [data-omics]:not([data-omics~="metagenomics"]),
 body.omics-metabolomics    [data-omics]:not([data-omics~="metabolomics"]),
-body.omics-chipseq         [data-omics]:not([data-omics~="chipseq"]):not([data-omics~="transcriptomics"]) {
+body.omics-chipseq         [data-omics]:not([data-omics~="chipseq"]):not([data-omics~="transcriptomics"]),
+body.omics-clinical        [data-omics]:not([data-omics~="clinical"]) {
   display: none !important;
 }
 
@@ -721,11 +742,307 @@ body.omics-chipseq         [data-omics]:not([data-omics~="chipseq"]):not([data-o
 .chip-bam-summary { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
 .chip-advanced { margin: 12px 0; padding: 10px 12px; border: 1px dashed var(--clr-border); border-radius: 8px; }
 .chip-advanced summary { cursor: pointer; font-weight: 600; color: var(--clr-primary-d); }
-.input-row { display: flex; gap: 8px; align-items: center; }
-.input-row input { flex: 1; }
+.chip-badge--peak { background: #dcfce7; color: #166534; }
+.chip-peak-upload { margin-bottom: 8px; }
+.chip-peak-status {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  font-size: 0.857rem;
+  word-break: break-all;
+  line-height: 1.45;
+}
+.chip-tables {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--clr-border, #e5e7eb);
+  border-radius: 10px;
+  background: #fafafa;
+}
+.chip-tables h4 { margin: 0 0 8px; font-size: 0.95rem; }
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+.input-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.input-row input[type="text"] { flex: 1; min-width: 160px; }
 .checkbox-label { display: flex; align-items: center; gap: 6px; font-weight: 500; min-height: 38px; }
 tr.chip-row--t { background: rgba(59, 130, 246, 0.04); }
 tr.chip-row--c { background: rgba(100, 116, 139, 0.04); }
+
+/* ─── ChIPseq downstream checklist ───────────────── */
+.chipds-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.chipds-filters .chipds-search-wrap { grid-column: 1 / -1; }
+.chipds-marks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.chipds-mark-card {
+  border: 1px solid var(--clr-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--clr-bg);
+}
+.chipds-mark-title {
+  font-weight: 700;
+  color: var(--clr-primary-d);
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+}
+.chipds-mark-meta {
+  font-size: 0.786rem;
+  line-height: 1.45;
+  margin-bottom: 4px;
+  color: var(--clr-text);
+}
+.chipds-mark-meta span {
+  display: inline-block;
+  min-width: 2.5rem;
+  color: var(--clr-muted);
+  font-weight: 600;
+  margin-right: 6px;
+}
+.chipds-mark-note {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--clr-muted);
+  border-top: 1px dashed var(--clr-border);
+  padding-top: 6px;
+}
+.chipds-stage { margin-bottom: 18px; }
+.chipds-stage-title {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: var(--clr-primary-d);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chipds-stage-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #e2e8f0;
+  color: #334155;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.chipds-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.chipds-card {
+  border: 1px solid var(--clr-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chipds-card--planned { opacity: 0.92; }
+.chipds-card--run { border-left: 3px solid #2563eb; }
+.chipds-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.chipds-card-id {
+  font-size: 0.75rem;
+  color: var(--clr-muted);
+  font-weight: 600;
+}
+.chipds-pri, .chipds-status, .chipds-bam {
+  font-size: 0.679rem;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.chipds-pri--must { background: #fee2e2; color: #991b1b; }
+.chipds-pri--recommend { background: #ffedd5; color: #9a3412; }
+.chipds-pri--advanced { background: #ccfbf1; color: #0f766e; }
+.chipds-pri--optional { background: #f1f5f9; color: #475569; }
+.chipds-status--ok { background: #dcfce7; color: #166534; }
+.chipds-status--plan { background: #f1f5f9; color: #64748b; }
+.chipds-bam { background: #e2e8f0; color: #334155; }
+.chipds-card-name {
+  margin: 2px 0 0;
+  font-size: 0.929rem;
+  font-weight: 700;
+  color: var(--clr-text);
+}
+.chipds-card-purpose {
+  margin: 0;
+  font-size: 0.786rem;
+  color: var(--clr-muted);
+  line-height: 1.45;
+  flex: 1;
+}
+.chipds-card-sw {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--clr-text);
+}
+.chipds-card-actions { margin-top: 4px; }
+.chipds-qc-summary {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 0.857rem;
+  padding: 10px 12px;
+  border: 1px solid var(--clr-border);
+  border-radius: 8px;
+  background: var(--clr-bg);
+}
+.chipds-qc-table-wrap {
+  overflow: auto;
+  max-height: 320px;
+  margin: 10px 0;
+}
+.chipds-qc-json {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  background: #0f172a0a;
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 280px;
+}
+.chipds-tool-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.chipds-tool-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.786rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #475569;
+}
+.chipds-tool-badge--ok { background: #dcfce7; color: #166534; }
+.chipds-tool-badge--miss { background: #fee2e2; color: #991b1b; }
+.chipds-tool-badge--unk { background: #e2e8f0; color: #64748b; }
+.chipds-last-peaks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.chipds-last-peaks-label {
+  font-size: 0.786rem;
+  font-weight: 600;
+  color: #64748b;
+}
+.chipds-last-peaks-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(100%, 520px);
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 0.786rem;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chipds-last-peaks-badge--ok { background: #ecfdf5; color: #065f46; }
+.chipds-last-peaks-badge--empty { background: #f1f5f9; color: #64748b; }
+.chipds-last-peaks-badge--warn { background: #fff7ed; color: #9a3412; }
+.chip-peak-select-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.chip-peak-select-row label {
+  font-size: 0.786rem;
+  font-weight: 600;
+  color: #64748b;
+}
+.chip-peak-select {
+  min-width: min(100%, 320px);
+  max-width: min(100%, 560px);
+  padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.857rem;
+  color: #0f172a;
+}
+.chipds-tool-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+.chipds-tool-panel {
+  border: 1px solid var(--clr-border, #e2e8f0);
+  border-radius: 8px;
+  padding: 8px 12px 12px;
+  background: #fafbfc;
+}
+.chipds-tool-panel summary {
+  cursor: pointer;
+  font-weight: 650;
+  font-size: 0.95rem;
+  color: #1e293b;
+  padding: 4px 0;
+}
+.chipds-tool-plots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin: 10px 0;
+}
+.chipds-tool-plots img {
+  max-width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+.chipds-tool-plots .chipds-plot-title {
+  font-size: 0.857rem;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: #334155;
+}
+.chip-section-flash {
+  animation: chipSectionFlash 1.4s ease;
+}
+@keyframes chipSectionFlash {
+  0%, 100% { background: transparent; }
+  30% { background: rgba(37, 99, 235, 0.12); }
+}
 
 /* ─── AI COPILOT (AI 解读) ─────────────────────── */
 .ai-copilot { margin: 12px 12px 4px; }
@@ -1041,6 +1358,60 @@ pre.guide-cmd,
 .guide-faq { margin: 8px 0 0; }
 .guide-faq dt { font-weight: 700; margin-top: 12px; }
 .guide-faq dd { margin: 4px 0 0; color: var(--clr-muted); line-height: 1.6; font-size: 0.929rem; }
+
+.guide-demo-table-wrap { margin-top: 10px; overflow-x: auto; }
+.guide-demo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.857rem;
+  line-height: 1.45;
+}
+.guide-demo-table th,
+.guide-demo-table td {
+  border: 1px solid var(--clr-border, #d8dde6);
+  padding: 6px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+.guide-demo-table thead th {
+  background: var(--clr-surface-2, #f3f5f8);
+  font-weight: 600;
+}
+.guide-demo-table tr.guide-demo-sig td { background: color-mix(in srgb, var(--clr-warn, #c47d1a) 12%, transparent); }
+#guide-clinical-demo h4 { margin: 1rem 0 0.4rem; font-size: 1rem; }
+
+.guide-fold { margin: 0; }
+.guide-fold > .guide-fold-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.071rem;
+  font-weight: 700;
+  color: var(--clr-text, #1e293b);
+  line-height: 1.4;
+  user-select: none;
+}
+.guide-fold > .guide-fold-summary::-webkit-details-marker { display: none; }
+.guide-fold > .guide-fold-summary::before {
+  content: "";
+  flex: 0 0 8px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid var(--clr-muted, #64748b);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+}
+.guide-fold[open] > .guide-fold-summary::before {
+  transform: rotate(90deg);
+}
+.guide-fold-body {
+  margin-top: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--clr-border, #e2e8f0);
+}
 .guide-course-banner { margin-bottom: 10px; background: linear-gradient(90deg, #eff6ff, #f0fdf4); border: 1px solid #bfdbfe; }
 
 /* ─── LOCALE SWITCH (sidebar) ─────────────────── */
@@ -1146,3 +1517,130 @@ pre.guide-cmd,
   background: none; border: none; padding: 0; color: #93c5fd; cursor: pointer; font: inherit; text-decoration: underline;
 }
 #main .btn-link { color: var(--clr-primary); }
+
+/* ── ChIP unified wizard + recipe packs ───────────────── */
+.chip-wizard-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.chip-wizard-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #334155;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.chip-wizard-tab.active {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #1e3a8a;
+  font-weight: 600;
+}
+.chip-wizard-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.chip-wizard-tab.active .chip-wizard-num {
+  background: #2563eb;
+  color: #fff;
+}
+.chip-recipe-deps {
+  margin: 12px 0 18px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.chip-deps-bam {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+.chip-recipe-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 8px 0 16px;
+}
+.chip-recipe-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+  border-left: 3px solid #2563eb;
+}
+.chip-recipe-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.chip-recipe-card-head h5 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.chip-recipe-req {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin: 6px 0 10px;
+}
+.chip-recipe-combo {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px dashed #94a3b8;
+  border-radius: 8px;
+}
+.chip-recipe-combo-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.chip-recipe-combo-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip-recipe-results {
+  margin-top: 14px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #0f172a0a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+.chip-recipe-log { margin: 2px 0; }
+.chip-recipe-log--ok { color: #166534; }
+.chip-recipe-log--error { color: #991b1b; }
+.chip-recipe-log--warn { color: #9a3412; }
+.chip-recipe-log--info { color: #334155; }
+.chipds-pack {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.nav-item--chipds-alias.hidden { display: none !important; }
+.upload-card--diff .upload-diff-only { display: block; }

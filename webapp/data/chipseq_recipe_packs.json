@@ -1,0 +1,162 @@
+{
+  "version": "2026-07-24-recipes-v1",
+  "title_zh": "ChIP-seq 一键分析配方",
+  "title_en": "ChIP-seq one-click recipe packs",
+  "combo_note_zh": "自定义组合：勾选下方联合包（可先跑核心），按依赖顺序串行执行。不调用 multiomics_joint 冒充峰×组学。",
+  "combo_note_en": "Custom combo: select joint packs (optionally run core first); execute in dependency order. Does not misuse multiomics_joint as peak×omics.",
+  "packs": [
+    {
+      "id": "core",
+      "group": "chip_internal",
+      "title_zh": "ChIP 核心流水线",
+      "title_en": "ChIP core pipeline",
+      "description_zh": "Peak QC → blacklist → merge → summit → overlap/IDR → DiffBind → annotate",
+      "description_en": "Peak QC → blacklist → merge → summit → overlap/IDR → DiffBind → annotate",
+      "requires": ["peaks"],
+      "prep_steps": ["select_active_peak"],
+      "steps": [
+        { "action": "chip_peak_qc", "params": {} },
+        { "action": "chip_peaks_blacklist", "params": {} },
+        { "action": "chip_peaks_merge", "params": {} },
+        { "action": "chip_peaks_summit", "params": {} },
+        { "action": "chip_peaks_overlap", "params": {} },
+        { "action": "chip_idr_approx", "params": {} },
+        { "action": "chip_diffbind", "params": {}, "requires_extra": ["bam_2t2c"] },
+        { "action": "chip_annotate", "params": {} }
+      ],
+      "planned_steps": []
+    },
+    {
+      "id": "motif",
+      "group": "chip_internal",
+      "title_zh": "Motif 发现与挖掘",
+      "title_en": "Motif discovery",
+      "description_zh": "HOMER findMotifsGenome；FIMO/CentriMo 等规划中",
+      "description_en": "HOMER findMotifsGenome; FIMO/CentriMo planned",
+      "requires": ["peaks", "genome"],
+      "prep_steps": ["select_active_peak"],
+      "steps": [
+        { "action": "chip_homer", "params": {} }
+      ],
+      "planned_steps": [
+        { "id": "fimo", "title": "FIMO motif scan", "status": "planned" },
+        { "id": "centrimo", "title": "CentriMo central enrichment", "status": "planned" }
+      ]
+    },
+    {
+      "id": "histone_enhancer",
+      "group": "chip_internal",
+      "title_zh": "组蛋白 / 增强子 / 启动子",
+      "title_en": "Histone / enhancer / promoter",
+      "description_zh": "promoter / enhancer / SE / bivalent / broad / chromatin_proxy",
+      "description_en": "promoter / enhancer / SE / bivalent / broad / chromatin_proxy",
+      "requires": ["peaks"],
+      "prep_steps": ["select_active_peak"],
+      "steps": [
+        { "action": "chip_promoter_call", "params": {} },
+        { "action": "chip_enhancer_call", "params": {} },
+        { "action": "chip_super_enhancer", "params": {} },
+        { "action": "chip_bivalent", "params": {}, "requires_extra": ["peak_b"] },
+        { "action": "chip_broad_domains", "params": {} },
+        { "action": "chip_chromatin_proxy", "params": {}, "requires_extra": ["peak_b"] }
+      ],
+      "planned_steps": []
+    },
+    {
+      "id": "visualization",
+      "group": "chip_internal",
+      "title_zh": "可视化与集合",
+      "title_en": "Visualization & signal",
+      "description_zh": "deepTools heatmap / coverage / correlation",
+      "description_en": "deepTools heatmap / coverage / correlation",
+      "requires": ["bam_or_peaks"],
+      "prep_steps": ["select_active_peak"],
+      "steps": [
+        { "action": "chip_deeptools_heatmap", "params": {} },
+        { "action": "chip_deeptools_coverage", "params": {} },
+        { "action": "chip_deeptools_corr", "params": {} }
+      ],
+      "planned_steps": []
+    },
+    {
+      "id": "rna_protein",
+      "group": "joint",
+      "title_zh": "Peak × RNA / 蛋白",
+      "title_en": "Peak × RNA / proteomics",
+      "description_zh": "annotate → rnaseq_coanalysis；蛋白 cross_omics 基因重叠",
+      "description_en": "annotate → rnaseq_coanalysis; proteomics cross_omics gene overlap",
+      "requires": ["peaks", "rna_or_proteomics"],
+      "prep_steps": ["ensure_annotation"],
+      "steps": [
+        { "action": "chip_annotate", "params": {} },
+        { "action": "chip_rna_co", "params": {}, "requires_extra": ["rna"] },
+        { "action": "chip_cross", "params": {}, "requires_extra": ["rna_or_proteomics"] }
+      ],
+      "planned_steps": []
+    },
+    {
+      "id": "microbiome_16s_mgx",
+      "group": "joint",
+      "title_zh": "Peak × 16S + 宏基因组",
+      "title_en": "Peak × 16S + metagenomics",
+      "description_zh": "峰基因/通路 × 16S DE taxa；可选 MGX KO/pathway 重叠；样本交集≥5 时相关",
+      "description_en": "Peak genes/pathways × 16S DE taxa; optional MGX KO/pathway overlap; correlation if ≥5 shared samples",
+      "requires": ["peaks", "m16s_or_mgx"],
+      "prep_steps": ["ensure_annotation"],
+      "steps": [
+        { "action": "chip_annotate", "params": {} },
+        { "action": "chip_microbiome_coanalysis", "params": {} }
+      ],
+      "planned_steps": []
+    },
+    {
+      "id": "metabolomics",
+      "group": "joint",
+      "title_zh": "Peak × 代谢组",
+      "title_en": "Peak × metabolomics",
+      "description_zh": "峰注释基因/通路 × 代谢物 DE；样本可对齐时相关",
+      "description_en": "Peak annotation genes/pathways × metabolite DE; correlation when samples align",
+      "requires": ["peaks", "mbx"],
+      "prep_steps": ["ensure_annotation"],
+      "steps": [
+        { "action": "chip_annotate", "params": {} },
+        { "action": "chip_metabolomics_coanalysis", "params": {} }
+      ],
+      "planned_steps": []
+    },
+    {
+      "id": "clinical",
+      "group": "joint",
+      "title_zh": "Peak × 临床",
+      "title_en": "Peak × clinical",
+      "description_zh": "峰基因集与临床变量在共有样本上关联；无共有样本则峰摘要+临床变量字典",
+      "description_en": "Peak gene set vs clinical variables on shared samples; else peak summary + clinical dictionary",
+      "requires": ["peaks", "clinical"],
+      "prep_steps": ["ensure_annotation"],
+      "steps": [
+        { "action": "chip_annotate", "params": {} },
+        { "action": "chip_clinical_coanalysis", "params": {} }
+      ],
+      "planned_steps": []
+    }
+  ],
+  "combo": {
+    "id": "custom_combo",
+    "title_zh": "自定义组合一键",
+    "title_en": "Custom combo one-click",
+    "selectable_pack_ids": [
+      "core",
+      "rna_protein",
+      "microbiome_16s_mgx",
+      "metabolomics",
+      "clinical"
+    ],
+    "default_order": [
+      "core",
+      "rna_protein",
+      "microbiome_16s_mgx",
+      "metabolomics",
+      "clinical"
+    ]
+  }
+}

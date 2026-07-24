@@ -26,7 +26,8 @@ _on_exit() {
   else
     echo ""
     echo "服务已在后台运行。关闭本窗口不会停止服务。"
-    echo "停止: bash webapp/scripts/stop_local.sh"
+    echo "停止: 双击 Stop-EMP-Web-Mac.command"
+    echo "  或: bash webapp/scripts/stop_local.sh"
   fi
   echo ""
   read -r -p "按回车键关闭此窗口… " _ || sleep 8

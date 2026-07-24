@@ -1,8 +1,6 @@
 #!/usr/bin/env Rscript
 # Entry point: start the Plumber REST API
 
-library(plumber)
-
 # Path to plumber.R (same directory as this script)
 args <- commandArgs(trailingOnly = FALSE)
 file_arg <- grep("^--file=", args, value = TRUE)
@@ -23,6 +21,36 @@ if (is.na(script_path) || !nzchar(script_path)) {
 if (length(script_dir) == 0 || !nzchar(script_dir)) {
   script_dir <- getwd()
 }
+
+# Prepend project-local R libs (.local_run/R_libs) before package loads so
+# DiffBind / dplyr etc. resolve even when the launcher forgot R_LIBS.
+repo_root <- normalizePath(file.path(script_dir, "..", ".."), winslash = "/", mustWork = FALSE)
+local_r_libs <- file.path(repo_root, ".local_run", "R_libs")
+if (dir.exists(local_r_libs)) {
+  local_r_libs <- normalizePath(local_r_libs, winslash = "/", mustWork = FALSE)
+  .libPaths(c(local_r_libs, .libPaths()))
+  cur_r_libs <- Sys.getenv("R_LIBS", unset = "")
+  if (!nzchar(cur_r_libs) || !grepl(local_r_libs, cur_r_libs, fixed = TRUE)) {
+    Sys.setenv(R_LIBS = if (nzchar(cur_r_libs)) paste(local_r_libs, cur_r_libs, sep = ":") else local_r_libs)
+  }
+  cur_user <- Sys.getenv("R_LIBS_USER", unset = "")
+  if (!nzchar(cur_user) || !grepl(local_r_libs, cur_user, fixed = TRUE)) {
+    Sys.setenv(R_LIBS_USER = if (nzchar(cur_user)) paste(local_r_libs, cur_user, sep = ":") else local_r_libs)
+  }
+  if (!nzchar(Sys.getenv("EMP_ROOT", unset = ""))) Sys.setenv(EMP_ROOT = repo_root)
+}
+
+library(plumber)
+
+# Plumber is single-process: BiocParallel forks/sockets can kill the API
+# (DiffBind / DESeq2 / GenomicAlignments). Force serial backends at boot.
+if (requireNamespace("BiocParallel", quietly = TRUE)) {
+  tryCatch({
+    BiocParallel::register(BiocParallel::SerialParam(), default = TRUE)
+    options(BiocParallel.ForcedSerial = TRUE)
+  }, error = function(e) invisible(NULL))
+}
+Sys.setenv(OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1")
 
 plumber_file <- file.path(script_dir, "plumber.R")
 cat("Starting EasyMultiProfiler API from:", plumber_file, "\n")

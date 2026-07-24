@@ -515,7 +515,138 @@ github_status <- function(identity) {
 }
 
 .github_run_id <- function() {
-  format(Sys.time(), "%Y-%m-%dT%H-%M-%SZ", tz = "UTC")
+  # Second-precision alone can collide when two syncs share a wall-clock second;
+  # append ms + short random suffix so concurrent syncs always get unique run dirs.
+  ts <- format(Sys.time(), "%Y-%m-%dT%H-%M-%OS3Z", tz = "UTC")
+  ts <- gsub("\\.", "-", ts) # keep path-friendly (no dots in the fractional part)
+  suffix <- paste0(sample(c(letters, 0:9), 6L, replace = TRUE), collapse = "")
+  paste0(ts, "-", suffix)
+}
+
+# Copy a session artifact into staging with retry (handles mid-write / file-busy races).
+.github_copy_with_retry <- function(src, dest, retries = 3L, sleep_sec = 0.25) {
+  retries <- max(1L, as.integer(retries))
+  last_err <- NULL
+  for (i in seq_len(retries)) {
+    ok <- tryCatch({
+      if (!file.exists(src)) return(FALSE)
+      dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+      # Atomic-ish: copy to temp then rename into place
+      tmp <- paste0(dest, ".partial")
+      if (file.exists(tmp)) unlink(tmp, force = TRUE)
+      copied <- file.copy(src, tmp, overwrite = TRUE)
+      if (!isTRUE(copied) || !file.exists(tmp)) stop("file.copy failed")
+      if (isTRUE(file.info(tmp)$size <= 0)) stop("copied file is empty")
+      if (grepl("\\.rds$", src, ignore.case = TRUE)) {
+        # Validate RDS is readable (reject half-written objects)
+        tryCatch(readRDS(tmp), error = function(e) stop(e$message))
+      }
+      if (file.exists(dest)) unlink(dest, force = TRUE)
+      if (!isTRUE(file.rename(tmp, dest))) {
+        file.copy(tmp, dest, overwrite = TRUE)
+        unlink(tmp, force = TRUE)
+      }
+      TRUE
+    }, error = function(e) {
+      last_err <<- conditionMessage(e)
+      FALSE
+    })
+    if (isTRUE(ok) && file.exists(dest)) return(TRUE)
+    Sys.sleep(sleep_sec * i)
+  }
+  if (!is.null(last_err)) {
+    stop(sprintf(
+      "Could not snapshot session file `%s` (busy or incomplete write). Wait for analysis to finish, then sync again. Detail: %s",
+      basename(src), last_err
+    ))
+  }
+  FALSE
+}
+
+# Consistent snapshot of session MAE / empt / plots into staging (never mutate session).
+.github_snapshot_session_artifacts <- function(session_id, staging, include_rds = FALSE, retries = 3L) {
+  snap_dir <- file.path(staging, "_session_snap")
+  dir.create(snap_dir, recursive = TRUE, showWarnings = FALSE)
+  sess <- session_path(session_id)
+  result <- list(
+    snap_dir = snap_dir,
+    mae = NULL,
+    empt = list(), # named by experiment
+    plots = character()
+  )
+  if (!dir.exists(sess)) return(result)
+
+  mae_src <- mae_path(session_id)
+  if (file.exists(mae_src)) {
+    mae_dest <- file.path(snap_dir, "mae.rds")
+    if (.github_copy_with_retry(mae_src, mae_dest, retries = retries)) {
+      result$mae <- mae_dest
+    }
+  }
+
+  empt_files <- list.files(sess, pattern = "^empt_.*\\.rds$", full.names = TRUE)
+  for (ep in empt_files) {
+    dest <- file.path(snap_dir, basename(ep))
+    if (.github_copy_with_retry(ep, dest, retries = retries)) {
+      # empt_<make.names(exp)>.rds → recover experiment key as best-effort from filename
+      key <- sub("^empt_", "", sub("\\.rds$", "", basename(ep)))
+      result$empt[[key]] <- dest
+    }
+  }
+
+  plots_dir <- file.path(sess, "plots")
+  if (dir.exists(plots_dir)) {
+    plot_snap <- file.path(snap_dir, "plots")
+    dir.create(plot_snap, recursive = TRUE, showWarnings = FALSE)
+    pdfs <- list.files(plots_dir, pattern = "\\.pdf$", full.names = TRUE)
+    for (pdf in pdfs) {
+      dest <- file.path(plot_snap, basename(pdf))
+      if (.github_copy_with_retry(pdf, dest, retries = retries)) {
+        result$plots <- c(result$plots, dest)
+      }
+    }
+  }
+
+  invisible(result)
+}
+
+.github_load_empt_from_snap <- function(snap, session_id, experiment) {
+  key <- make.names(experiment)
+  path <- snap$empt[[key]] %||% snap$empt[[experiment]] %||% NULL
+  if (is.null(path) || !file.exists(path)) {
+    # Fall back to live load with retry (e.g. experiment name mismatch)
+    last_err <- NULL
+    for (i in 1:3) {
+      out <- tryCatch(load_empt(session_id, experiment), error = function(e) {
+        last_err <<- conditionMessage(e)
+        NULL
+      })
+      if (!is.null(out)) return(out)
+      Sys.sleep(0.2 * i)
+    }
+    stop(last_err %||% sprintf("EMPT missing for experiment `%s` (may still be writing).", experiment))
+  }
+  obj <- tryCatch(readRDS(path), error = function(e) {
+    stop(sprintf("Failed reading snapped EMPT for `%s`: %s", experiment, conditionMessage(e)))
+  })
+  if (exists(".is_proper_empt", mode = "function") && isTRUE(.is_proper_empt(obj))) {
+    return(obj)
+  }
+  # Non-EMPT snapshot: try live promote path
+  tryCatch(load_empt(session_id, experiment), error = function(e) obj)
+}
+
+.github_session_active_jobs <- function(session_id, owner_id = NULL) {
+  if (!nzchar(session_id %||% "")) return(list())
+  if (!exists("list_jobs_for_session", mode = "function")) return(list())
+  jobs <- tryCatch(
+    list_jobs_for_session(session_id, owner_id %||% "local"),
+    error = function(e) list()
+  )
+  Filter(function(st) {
+    status <- as.character(st$status %||% "")
+    status %in% c("queued", "running", "cancel_requested")
+  }, jobs)
 }
 
 .github_safe_write_csv <- function(df, path) {
@@ -551,7 +682,7 @@ github_status <- function(identity) {
     "EMP_WEB_VERSION",
     unset = tryCatch(
       as.character(utils::packageVersion("EasyMultiProfiler")),
-      error = function(e) "8.0.0-Education"
+      error = function(e) "9.0.0-Education"
     )
   )
 }
@@ -670,18 +801,30 @@ github_status <- function(identity) {
     add_file(file.path(base_rel, "manifest.json"), man_path)
   }
 
-  # analysis exports
+  # analysis exports — snapshot session artifacts first so packaging never races
+  # with async jobs writing mae.rds / empt_*.rds / plots.
   if (nzchar(session_id %||% "") && session_exists(session_id)) {
+    snap <- .github_snapshot_session_artifacts(
+      session_id, staging,
+      include_rds = isTRUE(include_rds) || ("rds" %in% include),
+      retries = 3L
+    )
     exps <- tryCatch(list_experiments(session_id), error = function(e) character())
     if (nzchar(experiment %||% "")) {
       if (!(experiment %in% exps)) exps <- c(experiment, exps)
+    }
+    # Also include experiments discovered from snapped empt files
+    snap_exps <- names(snap$empt %||% list())
+    if (length(snap_exps)) {
+      # Map make.names keys back when possible; keep raw keys as fallbacks
+      exps <- unique(c(as.character(exps), snap_exps))
     }
     exps <- unique(as.character(exps))
     for (exp in exps) {
       if (!nzchar(exp)) next
       if ("assay" %in% include) {
         tryCatch({
-          empt <- load_empt(session_id, exp)
+          empt <- .github_load_empt_from_snap(snap, session_id, exp)
           ad <- SummarizedExperiment::assays(empt)[[1]]
           df <- as.data.frame(ad)
           df <- cbind(feature = rownames(df), df)
@@ -692,7 +835,7 @@ github_status <- function(identity) {
       }
       if ("coldata" %in% include) {
         tryCatch({
-          empt <- load_empt(session_id, exp)
+          empt <- .github_load_empt_from_snap(snap, session_id, exp)
           cd <- as.data.frame(SummarizedExperiment::colData(empt))
           cd <- cbind(sample = rownames(cd), cd)
           p <- file.path(staging, paste0(make.names(exp), "_coldata.csv"))
@@ -703,7 +846,28 @@ github_status <- function(identity) {
       if ("results" %in% include) {
         for (an in c("diff_analysis", "alpha", "enrichment", "dimension")) {
           p <- file.path(staging, paste0(make.names(exp), "_", an, ".csv"))
-          if (.github_try_export_result(session_id, exp, an, p)) {
+          # Prefer snapped EMPT; fall back to live export helper with retry
+          exported <- FALSE
+          tryCatch({
+            empt <- .github_load_empt_from_snap(snap, session_id, exp)
+            result_info_map <- c(
+              alpha = "EMP_alpha_analysis",
+              diff_analysis = "EMP_diff_analysis",
+              enrichment = "EMP_enrich_analysis",
+              dimension = "EMP_dimension_analysis"
+            )
+            result_info <- unname(result_info_map[[an]])
+            if (!is.null(result_info) && nzchar(result_info)) {
+              result <- EasyMultiProfiler::EMP_result(empt, info = result_info)
+              df <- as.data.frame(result)
+              .github_safe_write_csv(df, p)
+              exported <- TRUE
+            }
+          }, error = function(e) NULL)
+          if (!exported) {
+            exported <- isTRUE(.github_try_export_result(session_id, exp, an, p))
+          }
+          if (exported) {
             add_file(file.path(base_rel, "results", paste0(exp, "_", an, ".csv")), p)
           }
         }
@@ -726,18 +890,13 @@ github_status <- function(identity) {
       }
     }
     if ("plots" %in% include) {
-      plots_dir <- file.path(session_path(session_id), "plots")
-      if (dir.exists(plots_dir)) {
-        pdfs <- list.files(plots_dir, pattern = "\\.pdf$", full.names = TRUE)
-        for (pdf in pdfs) {
-          add_file(file.path(base_rel, "plots", basename(pdf)), pdf)
-        }
+      for (pdf in snap$plots %||% character()) {
+        add_file(file.path(base_rel, "plots", basename(pdf)), pdf)
       }
     }
     if (isTRUE(include_rds) || ("rds" %in% include)) {
-      mae_p <- mae_path(session_id)
-      if (file.exists(mae_p)) {
-        add_file(file.path(base_rel, "session", "EMP_session.rds"), mae_p)
+      if (!is.null(snap$mae) && file.exists(snap$mae)) {
+        add_file(file.path(base_rel, "session", "EMP_session.rds"), snap$mae)
       }
     }
   }
@@ -830,6 +989,9 @@ github_status <- function(identity) {
     "",
     "## Layout",
     "",
+    "Week folders use `Week_01` … `Week_16` (sortable; UI labels show Week 1–16).",
+    "Under each week: analysis track → assignment type (`weekly` / `project`) → `runs/<timestamp>/`.",
+    "",
     "```text",
     "EMP2026/",
     "  Week_01/<track>/weekly/runs/...",
@@ -837,6 +999,7 @@ github_status <- function(identity) {
     "  Project_Major/<track>/project/runs/...",
     "  profile.json",
     "  _ledger/<run_id>.json",
+    "  README.md",
     "```",
     "",
     "Sync is additive: new runs are created; existing files are not deleted.",
@@ -995,7 +1158,8 @@ github_list_syncs <- function(identity, limit = 30L) {
 github_sync_assignment <- function(identity, track_id, assignment_id, session_id = NULL,
                                    experiment = NULL, include_rds = FALSE, commit_message = NULL,
                                    owner_id = NULL, custom_track_name = NULL,
-                                   custom_assignment_title = NULL) {
+                                   custom_assignment_title = NULL,
+                                   allow_partial = FALSE) {
   assignment <- github_get_assignment(
     track_id, assignment_id,
     custom_track_name = custom_track_name,
@@ -1012,6 +1176,19 @@ github_sync_assignment <- function(identity, track_id, assignment_id, session_id
   if (nzchar(session_id %||% "") && exists("emp_assert_session_owner", mode = "function")) {
     principal <- owner_id %||% "local"
     emp_assert_session_owner(session_id, principal)
+  }
+
+  active_jobs <- .github_session_active_jobs(session_id, owner_id %||% "local")
+  partial <- FALSE
+  if (length(active_jobs) > 0L) {
+    if (!isTRUE(allow_partial)) {
+      kinds <- unique(vapply(active_jobs, function(j) as.character(j$kind %||% j$status %||% "job"), character(1)))
+      stop(sprintf(
+        "Homework sync blocked: analysis job is still running (%s). Wait for it to finish, then sync again.",
+        paste(kinds, collapse = ", ")
+      ))
+    }
+    partial <- TRUE
   }
 
   bundle <- .github_build_run_files(
@@ -1053,22 +1230,29 @@ github_sync_assignment <- function(identity, track_id, assignment_id, session_id
     repo = sprintf("%s/%s", owner, repo),
     github_login = gh$github_login %||% NULL
   )
+  entry$partial <- isTRUE(partial)
   .github_append_sync_log(identity$student_id, entry)
+
+  msg <- sprintf(
+    "已同步到 %s/%s → `%s`（%d 个文件，%s，v%s）",
+    owner, repo,
+    bundle$git_path %||% bundle$base_rel,
+    bundle$n_files,
+    if (identical(push$merge_mode, "create")) "新建" else "增量写入",
+    bundle$emp_version %||% .github_emp_version()
+  )
+  if (isTRUE(partial)) {
+    msg <- paste0(msg, "（部分同步：仍有分析任务在运行，仅包含已完成的结果）")
+  }
 
   list(
     success = TRUE,
     sync = entry,
+    partial = isTRUE(partial),
     path = bundle$base_rel,
     git_path = bundle$git_path %||% bundle$base_rel,
     merge_mode = push$merge_mode %||% "additive",
-    message = sprintf(
-      "已同步到 %s/%s → `%s`（%d 个文件，%s，v%s）",
-      owner, repo,
-      bundle$git_path %||% bundle$base_rel,
-      bundle$n_files,
-      if (identical(push$merge_mode, "create")) "新建" else "增量写入",
-      bundle$emp_version %||% .github_emp_version()
-    )
+    message = msg
   )
 }
 
@@ -1151,7 +1335,8 @@ plumber_github_sync_post <- function(req, res) {
       commit_message = b$commit_message,
       owner_id = emp_request_principal(req),
       custom_track_name = b$custom_track_name,
-      custom_assignment_title = b$custom_assignment_title
+      custom_assignment_title = b$custom_assignment_title,
+      allow_partial = isTRUE(b$allow_partial)
     )
   }, res)
 }

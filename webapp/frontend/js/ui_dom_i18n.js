@@ -2,7 +2,7 @@
  * Maps static DOM nodes in index.html to i18n keys (bulk labeling without tagging every node).
  * attr: text | html | title | placeholder | aria | value
  */
-import { t } from "./locale.js?v=2026-07-16-multi-demo";
+import { t } from "./locale.js?v=2026-07-22-chipseq-downstream-v1";
 import { applyPagesI18n } from "./i18n_pages.js?v=2026-07-16-multi-demo";
 
 export const DOM_I18N = [
@@ -10,9 +10,16 @@ export const DOM_I18N = [
   { sel: ".omics-switch-label", key: "omics.label" },
   { sel: "#omics-pipeline option[value='all']", key: "omics.all" },
   { sel: "#omics-pipeline option[value='transcriptomics']", key: "omics.transcriptomics" },
+  { sel: "#omics-pipeline option[value='chipseq']", key: "omics.chipseq" },
   { sel: "#omics-pipeline option[value='microbiome_16s']", key: "omics.microbiome_16s" },
   { sel: "#omics-pipeline option[value='metagenomics']", key: "omics.metagenomics" },
   { sel: "#omics-pipeline option[value='metabolomics']", key: "omics.metabolomics" },
+  { sel: "#omics-pipeline option[value='clinical']", key: "omics.clinical" },
+  { sel: "#omics-pipeline option[value='multiomics']", key: "omics.multiomics" },
+  { sel: "#omics-pipeline option[value='customize']", key: "omics.customize" },
+  { sel: '.nav-item[data-page="chipseq"] span', key: "nav.chipseq" },
+  { sel: '.nav-item[data-page="chipseq_downstream"] span', key: "nav.chipseq_downstream" },
+  { sel: "#chip-btn-browse-folder span", key: "chip.browseFolder" },
   { sel: "#session-label", key: "common.sessionActive" },
   { sel: ".perf-title", key: "common.lastRun" },
   { sel: "label[for='global-experiment']", key: "topbar.experiment" },

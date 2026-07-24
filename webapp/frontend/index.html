@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EasyMultiProfiler Web V8.0.0 Education</title>
-    <link rel="stylesheet" href="css/style.css?v=2026-07-21-gh-sync-v3">
+  <title>EasyMultiProfiler Web V9.0.0 Education</title>
+    <link rel="stylesheet" href="css/style.css?v=omics-demo-fold-v1">
     <link rel="stylesheet" href="css/code_lab.css?v=2026-07-16-multi-demo-v2">
-    <link rel="stylesheet" href="css/teaching.css?v=2026-07-21-gh-sync-v3">
+    <link rel="stylesheet" href="css/teaching.css?v=2026-07-22-gh-week-first">
   <script>
     (function () {
       var s = parseFloat(localStorage.getItem("emp_font_scale"));
@@ -51,6 +51,9 @@
       <option value="microbiome_16s">Microbiome 16S</option>
       <option value="metagenomics">Metagenomics</option>
       <option value="metabolomics">Metabolomics</option>
+      <option value="clinical">Clinical &amp; Phenotype</option>
+      <option value="multiomics">Multi-omics analysis</option>
+      <option value="customize">Customize</option>
     </select>
   </div>
 
@@ -100,6 +103,12 @@
     </li>
     <li class="nav-item" data-page="analysis" title="Analyze · 分析">
       <i data-lucide="activity"></i><span data-i18n="nav.analyze">分析</span>
+    </li>
+    <li class="nav-item" data-page="chipseq" title="ChIP-seq · 上传 + 一键配方">
+      <i data-lucide="mountain"></i><span data-i18n="nav.chipseq">ChIPseq</span>
+    </li>
+    <li class="nav-item nav-item--chipds-alias hidden" data-page="chipseq_downstream" title="ChIPseq 下游（已合并到 ChIP Step2）" aria-hidden="true">
+      <i data-lucide="list-checks"></i><span data-i18n="nav.chipseq_downstream">ChIPseq-下游分析</span>
     </li>
     <li class="nav-item" data-page="clinical" title="Clinical">
       <i data-lucide="stethoscope"></i><span data-i18n="nav.clinical">临床</span>
@@ -244,13 +253,20 @@
 
       <div class="multi-upload-grid">
         <section class="upload-card" data-upload-type="transcriptomics">
-          <header><span class="upload-icon">🧬</span><h3>RNA-seq / Metabolomics / Proteomics</h3></header>
+          <header><span class="upload-icon">🧬</span><h3>RNA-seq / Transcriptomics</h3></header>
           <div class="form-grid">
+            <div class="form-group">
+              <label>Import mode</label>
+              <select class="upload-import-mode" data-upload-type="transcriptomics">
+                <option value="matrix" selected>Count matrix + meta</option>
+                <option value="diff_raw">Analysis results (DE CSV)</option>
+              </select>
+            </div>
             <div class="form-group">
               <label>Experiment Name</label>
               <input type="text" class="upload-exp-name" data-upload-type="transcriptomics" value="rnaseq_upload" placeholder="e.g. RNAseq_1">
             </div>
-            <div class="form-group">
+            <div class="form-group upload-matrix-only">
               <label>Assay Name</label>
               <input type="text" class="upload-assay-name" value="counts" placeholder="counts">
             </div>
@@ -259,21 +275,64 @@
             <div class="upload-zone drop-data" data-upload-type="transcriptomics">
               <i data-lucide="file-spreadsheet"></i>
               <p><strong class="upload-data-label">Count Matrix</strong> (CSV / TSV)</p>
-              <p class="hint">Rows = features, Columns = samples</p>
-              <input type="file" class="upload-data-file" data-upload-type="transcriptomics" accept=".csv,.tsv,.txt,.biom">
+              <p class="hint upload-matrix-only">Rows = features, Columns = samples</p>
+              <p class="hint upload-diff-only hidden">DE table: feature id + padj/p + log2FC or score</p>
+              <input type="file" id="upload-data-file-transcriptomics" class="upload-data-file" data-upload-type="transcriptomics" accept=".csv,.tsv,.txt,.biom">
               <label class="btn btn-outline" for="upload-data-file-transcriptomics">Choose File</label>
               <span class="data-filename filename-label"></span>
             </div>
-            <div class="upload-zone drop-meta" data-upload-type="transcriptomics">
+            <div class="upload-zone drop-meta upload-matrix-only" data-upload-type="transcriptomics">
               <i data-lucide="table-2"></i>
               <p><strong>Metadata</strong> (optional)</p>
-              <input type="file" class="upload-meta-file" data-upload-type="transcriptomics" accept=".csv,.tsv,.txt">
+              <input type="file" id="upload-meta-file-transcriptomics" class="upload-meta-file" data-upload-type="transcriptomics" accept=".csv,.tsv,.txt">
               <label class="btn btn-outline" for="upload-meta-file-transcriptomics">Choose File</label>
               <span class="meta-filename filename-label"></span>
             </div>
           </div>
           <button type="button" class="btn btn-primary upload-btn" data-upload-type="transcriptomics">
-            <i data-lucide="upload"></i> Upload RNA-seq / Metabolomics
+            <i data-lucide="upload"></i> Upload RNA-seq
+          </button>
+        </section>
+
+        <section class="upload-card" data-upload-type="proteomics">
+          <header><span class="upload-icon">🧩</span><h3>Proteomics</h3></header>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Import mode</label>
+              <select class="upload-import-mode" data-upload-type="proteomics">
+                <option value="matrix" selected>Intensity matrix + meta</option>
+                <option value="diff_raw">Analysis results (DE CSV)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Experiment Name</label>
+              <input type="text" class="upload-exp-name" data-upload-type="proteomics" value="proteomics_upload" placeholder="e.g. protein_1">
+            </div>
+            <div class="form-group upload-matrix-only">
+              <label>Assay Name</label>
+              <input type="text" class="upload-assay-name" value="intensity" placeholder="intensity">
+            </div>
+          </div>
+          <div class="upload-row">
+            <div class="upload-zone drop-data" data-upload-type="proteomics">
+              <i data-lucide="file-spreadsheet"></i>
+              <p><strong class="upload-data-label">Protein Matrix</strong> (CSV / TSV)</p>
+              <p class="hint upload-matrix-only">Rows = proteins, Columns = samples</p>
+              <p class="hint upload-diff-only hidden">DE table: protein id + padj/p + log2FC or score</p>
+              <input type="file" id="upload-data-file-proteomics" class="upload-data-file" data-upload-type="proteomics" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-data-file-proteomics">Choose File</label>
+              <span class="data-filename filename-label"></span>
+            </div>
+            <div class="upload-zone drop-meta upload-matrix-only" data-upload-type="proteomics">
+              <i data-lucide="table-2"></i>
+              <p><strong>Metadata</strong> (optional)</p>
+              <input type="file" id="upload-meta-file-proteomics" class="upload-meta-file" data-upload-type="proteomics" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-meta-file-proteomics">Choose File</label>
+              <span class="meta-filename filename-label"></span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary upload-btn" data-upload-type="proteomics">
+            <i data-lucide="upload"></i> Upload Proteomics
           </button>
         </section>
 
@@ -281,10 +340,17 @@
           <header><span class="upload-icon">🧫</span><h3>Microbiome / Taxonomy (16S)</h3></header>
           <div class="form-grid">
             <div class="form-group">
+              <label>Import mode</label>
+              <select class="upload-import-mode" data-upload-type="microbiome_16s">
+                <option value="matrix" selected>Abundance matrix + meta</option>
+                <option value="diff_raw">Marker / DE results (CSV)</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label>Experiment Name</label>
               <input type="text" class="upload-exp-name" data-upload-type="microbiome_16s" value="m16s_upload">
             </div>
-            <div class="form-group">
+            <div class="form-group upload-matrix-only">
               <label>Taxonomy Level</label>
               <select class="upload-start-level" data-upload-type="microbiome_16s">
                 <option value="Species">Species</option>
@@ -295,7 +361,7 @@
                 <option value="Phylum">Phylum</option>
               </select>
             </div>
-            <div class="form-group">
+            <div class="form-group upload-matrix-only">
               <label>Taxonomy Separator</label>
               <input type="text" class="upload-tax-sep" data-upload-type="microbiome_16s" value=";" style="max-width:80px">
             </div>
@@ -303,15 +369,16 @@
           <div class="upload-row">
             <div class="upload-zone drop-data" data-upload-type="microbiome_16s">
               <i data-lucide="file-spreadsheet"></i>
-              <p><strong>Abundance Table</strong> (CSV / TSV)</p>
-              <input type="file" class="upload-data-file" data-upload-type="microbiome_16s" accept=".csv,.tsv,.txt,.biom">
+              <p><strong class="upload-data-label">Abundance Table</strong> (CSV / TSV)</p>
+              <p class="hint upload-diff-only hidden">DE/marker table: taxon id + padj/p + effect</p>
+              <input type="file" id="upload-data-file-microbiome_16s" class="upload-data-file" data-upload-type="microbiome_16s" accept=".csv,.tsv,.txt,.biom">
               <label class="btn btn-outline" for="upload-data-file-microbiome_16s">Choose File</label>
               <span class="data-filename filename-label"></span>
             </div>
-            <div class="upload-zone drop-meta" data-upload-type="microbiome_16s">
+            <div class="upload-zone drop-meta upload-matrix-only" data-upload-type="microbiome_16s">
               <i data-lucide="table-2"></i>
               <p><strong>Sample Metadata</strong> (optional)</p>
-              <input type="file" class="upload-meta-file" data-upload-type="microbiome_16s" accept=".csv,.tsv,.txt">
+              <input type="file" id="upload-meta-file-microbiome_16s" class="upload-meta-file" data-upload-type="microbiome_16s" accept=".csv,.tsv,.txt">
               <label class="btn btn-outline" for="upload-meta-file-microbiome_16s">Choose File</label>
               <span class="meta-filename filename-label"></span>
             </div>
@@ -321,23 +388,110 @@
           </button>
         </section>
 
+        <section class="upload-card" data-upload-type="metagenomics">
+          <header><span class="upload-icon">🦠</span><h3>Metagenomics (MGX)</h3></header>
+          <p class="hint">KO / EC / pathway feature matrix for ChIP × microbiome joint packs.</p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Import mode</label>
+              <select class="upload-import-mode" data-upload-type="metagenomics">
+                <option value="matrix" selected>Feature matrix + meta</option>
+                <option value="diff_raw">Function / DE results (CSV)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Experiment Name</label>
+              <input type="text" class="upload-exp-name" data-upload-type="metagenomics" value="mgx_upload" placeholder="e.g. mgx_ko">
+            </div>
+            <div class="form-group upload-matrix-only">
+              <label>Assay Name</label>
+              <input type="text" class="upload-assay-name" value="counts" placeholder="counts / relative_abundance">
+            </div>
+          </div>
+          <div class="upload-row">
+            <div class="upload-zone drop-data" data-upload-type="metagenomics">
+              <i data-lucide="file-spreadsheet"></i>
+              <p><strong class="upload-data-label">KO / Pathway Matrix</strong> (CSV / TSV)</p>
+              <p class="hint upload-matrix-only">Rows = KO/EC/pathway, Columns = samples</p>
+              <p class="hint upload-diff-only hidden">DE table: feature id + padj/p + effect</p>
+              <input type="file" id="upload-data-file-metagenomics" class="upload-data-file" data-upload-type="metagenomics" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-data-file-metagenomics">Choose File</label>
+              <span class="data-filename filename-label"></span>
+            </div>
+            <div class="upload-zone drop-meta upload-matrix-only" data-upload-type="metagenomics">
+              <i data-lucide="table-2"></i>
+              <p><strong>Metadata</strong> (optional)</p>
+              <input type="file" id="upload-meta-file-metagenomics" class="upload-meta-file" data-upload-type="metagenomics" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-meta-file-metagenomics">Choose File</label>
+              <span class="meta-filename filename-label"></span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary upload-btn" data-upload-type="metagenomics">
+            <i data-lucide="upload"></i> Upload Metagenomics
+          </button>
+        </section>
+
+        <section class="upload-card" data-upload-type="metabolomics">
+          <header><span class="upload-icon">🧪</span><h3>Metabolomics (MBX)</h3></header>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Import mode</label>
+              <select class="upload-import-mode" data-upload-type="metabolomics">
+                <option value="matrix" selected>Metabolite matrix + meta</option>
+                <option value="diff_raw">Analysis results (DE CSV)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Experiment Name</label>
+              <input type="text" class="upload-exp-name" data-upload-type="metabolomics" value="mbx_upload" placeholder="e.g. metabolomics_1">
+            </div>
+            <div class="form-group upload-matrix-only">
+              <label>Assay Name</label>
+              <input type="text" class="upload-assay-name" value="intensity" placeholder="intensity">
+            </div>
+          </div>
+          <div class="upload-row">
+            <div class="upload-zone drop-data" data-upload-type="metabolomics">
+              <i data-lucide="file-spreadsheet"></i>
+              <p><strong class="upload-data-label">Metabolite Matrix</strong> (CSV / TSV)</p>
+              <p class="hint upload-matrix-only">Rows = metabolites, Columns = samples</p>
+              <p class="hint upload-diff-only hidden">DE table: metabolite id + padj/p + log2FC or score</p>
+              <input type="file" id="upload-data-file-metabolomics" class="upload-data-file" data-upload-type="metabolomics" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-data-file-metabolomics">Choose File</label>
+              <span class="data-filename filename-label"></span>
+            </div>
+            <div class="upload-zone drop-meta upload-matrix-only" data-upload-type="metabolomics">
+              <i data-lucide="table-2"></i>
+              <p><strong>Metadata</strong> (optional)</p>
+              <input type="file" id="upload-meta-file-metabolomics" class="upload-meta-file" data-upload-type="metabolomics" accept=".csv,.tsv,.txt">
+              <label class="btn btn-outline" for="upload-meta-file-metabolomics">Choose File</label>
+              <span class="meta-filename filename-label"></span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary upload-btn" data-upload-type="metabolomics">
+            <i data-lucide="upload"></i> Upload Metabolomics
+          </button>
+        </section>
+
         <section class="upload-card" data-upload-type="chipseq">
           <header><span class="upload-icon">🧶</span><h3>ChIP-seq</h3></header>
-          <p class="hint">Drop a pre-called peak file (<code>.bed / .narrowPeak / .broadPeak / .gff</code>). We register it and jump to the ChIP-seq tab so you can run annotation + cross-omics right away. Raw BAM/SAM stays on the Analysis page (MACS pipeline).</p>
+          <p class="hint">推荐上传本地 MACS 产物（narrowPeak / summits / xls）。BAM 仅在 deepTools / DiffBind / 网页 callpeak 时需要。</p>
           <div class="form-grid">
             <div class="form-group">
               <label>Genome</label>
               <select class="upload-genome" data-upload-type="chipseq">
-                <option value="hs" selected>Human (hg19 / hg38)</option>
-                <option value="mm">Mouse (mm10)</option>
+                <option value="mm" selected>Mouse (mm10)</option>
+                <option value="hs">Human (hg19 / hg38)</option>
               </select>
             </div>
             <div class="form-group">
-              <label>Preset (for downstream annotation)</label>
+              <label>Assay (metadata)</label>
               <select class="upload-preset" data-upload-type="chipseq">
-                <option value="chipseq_tf">ChIP-seq TF</option>
-                <option value="chipseq_histone_broad">Histone / broad</option>
-                <option value="atac_paired">ATAC-seq paired</option>
+                <option value="cutrun_tf_p05" selected>TF Cut&amp;Run (p=0.05)</option>
+                <option value="cutrun_histone_p05">Histone Cut&amp;Run (p=0.05)</option>
+                <option value="atac_bampe_p05">ATAC-seq (p=0.05)</option>
+                <option value="atac_bampe_q05">ATAC-seq (q=0.05)</option>
+                <option value="histone_broad">Histone broad</option>
               </select>
             </div>
           </div>
@@ -345,7 +499,7 @@
             <div class="upload-zone drop-data" data-upload-type="chipseq">
               <i data-lucide="mountain"></i>
               <p><strong>Peak File</strong> (BED / narrowPeak / broadPeak / GFF)</p>
-              <input type="file" class="upload-data-file" data-upload-type="chipseq" accept=".bed,.narrowPeak,.broadPeak,.gff,.gff3,.txt,.csv,.tsv">
+              <input type="file" id="upload-data-file-chipseq" class="upload-data-file" data-upload-type="chipseq" accept=".bed,.narrowPeak,.broadPeak,.gff,.gff3,.txt,.csv,.tsv">
               <label class="btn btn-outline" for="upload-data-file-chipseq">Choose Peak File</label>
               <span class="data-filename filename-label"></span>
             </div>
@@ -362,6 +516,7 @@
 
         <section class="upload-card" data-upload-type="clinical">
           <header><span class="upload-icon">🩺</span><h3>Clinical Data</h3></header>
+          <p class="hint">Upload <strong>clinical_raw</strong> and/or <strong>clinical_meta</strong>. Both are usable in ChIP Step2 joint packs (Peak × Clinical) and sample-aligned multi-omics.</p>
           <div class="form-grid">
             <div class="form-group">
               <label>Upload Type</label>
@@ -379,14 +534,14 @@
             <div class="upload-zone drop-data" data-upload-type="clinical">
               <i data-lucide="heart-pulse"></i>
               <p><strong>Clinical Raw / Meta Table</strong> (CSV / TSV)</p>
-              <input type="file" class="upload-data-file" data-upload-type="clinical" accept=".csv,.tsv,.txt">
+              <input type="file" id="upload-data-file-clinical" class="upload-data-file" data-upload-type="clinical" accept=".csv,.tsv,.txt">
               <label class="btn btn-outline" for="upload-data-file-clinical">Choose File</label>
               <span class="data-filename filename-label"></span>
             </div>
             <div class="upload-zone drop-meta" data-upload-type="clinical">
               <i data-lucide="table-2"></i>
               <p><strong>Optional Companion Meta</strong></p>
-              <input type="file" class="upload-meta-file" data-upload-type="clinical" accept=".csv,.tsv,.txt">
+              <input type="file" id="upload-meta-file-clinical" class="upload-meta-file" data-upload-type="clinical" accept=".csv,.tsv,.txt">
               <label class="btn btn-outline" for="upload-meta-file-clinical">Choose File</label>
               <span class="meta-filename filename-label"></span>
             </div>
@@ -403,10 +558,14 @@
           <div class="form-group">
             <label>Data Type</label>
             <select id="import-data-type">
-              <option value="normal">Normal (RNAseq / Metabolomics / Proteomics)</option>
-              <option value="chipseq">ChIP-seq (BAM/SAM → MACS → ChIPseeker)</option>
+              <option value="normal">Normal (RNAseq / Proteomics matrix)</option>
               <option value="tax">Microbiome / Taxonomy (16S)</option>
+              <option value="metagenomics">Metagenomics (MGX feature matrix)</option>
+              <option value="metabolomics">Metabolomics (MBX matrix)</option>
+              <option value="proteomics">Proteomics</option>
+              <option value="chipseq">ChIP-seq (BAM/SAM → MACS → ChIPseeker)</option>
               <option value="clinical">Clinical Data</option>
+              <option value="diff_raw">DE / marker results → diff_raw cache</option>
             </select>
           </div>
         <div class="form-group hidden" id="import-clinical-kind-wrap">
@@ -465,7 +624,7 @@
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" id="btn-import">
+        <button type="button" class="btn btn-primary" id="btn-import">
           <i data-lucide="upload"></i> Import Data
         </button>
       </div>
@@ -1316,12 +1475,128 @@
       <div id="mbx-volcano-out" class="plot-area hidden"></div>
     </div>
 
-    <!-- ChIP-seq Workflow (BAM/SAM → MACS → ChIPseeker → RNA co-analysis) -->
+    <!-- ChIP-seq: pointer to dedicated workspace pages -->
     <div id="ana-chipseq" class="tab-panel card hidden">
       <h3>ChIP-seq Workflow</h3>
-      <p class="hint">Upload Treatment (IP/ChIP) and Control (Input/IgG) BAM/SAM separately, then run MACS2/3 peak calling, ChIPseeker annotation, and RNA-seq co-analysis.</p>
+      <p class="hint">
+        完整的 ChIP-seq 工作区（Peak 上传 → MACS → ChIPseeker → RNA 联合 / 跨组学）与下游分析
+        （HOMER / DiffBind / deepTools）已放到独立侧栏页面，避免只嵌在「分析」页里找不到。
+      </p>
+      <div class="btn-row" style="margin-top:12px">
+        <button type="button" class="btn btn-primary" id="btn-ana-open-chipseq">
+          <i data-lucide="mountain"></i> 打开 ChIPseq 工作区
+        </button>
+        <button type="button" class="btn btn-outline" id="btn-ana-open-chipseq-downstream">
+          <i data-lucide="list-checks"></i> 打开下游分析（HOMER/DiffBind/deepTools）
+        </button>
+      </div>
+    </div>
 
-      <h4 class="chip-section-title">1. Sample assignment (Treatment vs Control)</h4>
+    </div>
+
+    <!-- Cross-omics -->
+    <div id="ana-cross" class="tab-panel card hidden">
+      <h3>Cross-Omics Integration (inter-omics)</h3>
+      <p class="hint">
+        Integrates two experiments to quantify feature-feature associations across omics layers
+        (for example: taxa vs genes, taxa vs metabolites, genes vs metabolites).
+        Current version provides a guided entry and recommended workflow; full automated model block
+        (CCA/DIABLO/MOFA) will be added next.
+      </p>
+      <ol class="hint" style="margin-top:6px">
+        <li>Load at least two experiments in the same session.</li>
+        <li>Complete per-omics preprocessing first (filter/normalize/impute/taxonomy).</li>
+        <li>Use shared sample IDs and run pairwise correlation in Clinical/Correlation modules.</li>
+      </ol>
+      <div id="cross-omics-status" class="alert alert-info">
+        Tip: for publication-grade inter-omics, ensure confounders are adjusted and report FDR.
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Omics A experiment</label>
+          <select id="cross-exp-a"></select>
+        </div>
+        <div class="form-group">
+          <label>Omics B experiment</label>
+          <select id="cross-exp-b"></select>
+        </div>
+        <div class="form-group">
+          <label>Clinical experiment (optional)</label>
+          <select id="cross-exp-c">
+            <option value="">none</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-cross-omics-cor"><i data-lucide="git-compare-arrows"></i> Cross-omics correlation</button>
+        <button class="btn btn-outline" id="btn-cross-omics-clin"><i data-lucide="stethoscope"></i> Omics + Clinical association</button>
+      </div>
+      <div id="cross-omics-result" class="result-area hidden"></div>
+    </div>
+  </section>
+
+  <!-- ── PAGE: ChIPseq WORKSPACE ─────────────────── -->
+  <section id="page-chipseq" class="page">
+    <div class="card">
+      <h2 data-i18n="page.chipseq">ChIP-seq 分析</h2>
+      <p class="hint" data-i18n="chip.hint.unified">
+        同页两步：① 上传峰 / BAM / MACS；② 一键配方（ChIP 内 + 跨组学联合）。其他组学请先在 Import / 分析页准备好矩阵或 DE 结果。
+      </p>
+      <div class="chip-wizard-tabs" id="chip-wizard-tabs" role="tablist">
+        <button type="button" class="chip-wizard-tab active" data-chip-step="1" role="tab" aria-selected="true">
+          <span class="chip-wizard-num">1</span>
+          <span data-i18n="chip.wizard.step1">上传与调峰</span>
+        </button>
+        <button type="button" class="chip-wizard-tab" data-chip-step="2" role="tab" aria-selected="false">
+          <span class="chip-wizard-num">2</span>
+          <span data-i18n="chip.wizard.step2">一键配方</span>
+        </button>
+        <button type="button" class="chip-wizard-tab" data-chip-step="advanced" role="tab" aria-selected="false">
+          <span class="chip-wizard-num">⋯</span>
+          <span data-i18n="chip.wizard.advanced">高级单步</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="card chip-step-panel" id="chip-step-1" data-chip-step-panel="1">
+      <h3 data-i18n="chip.wizard.step1Title">Step 1 — Peak / BAM / MACS</h3>
+      <p class="hint" data-i18n="chip.hint.workflow">
+        <strong>BED / narrowPeak / broadPeak</strong> are MACS2/3 peak products — upload them and run <strong>ChIPseeker directly</strong> (no BAM, no re-calling peaks).
+        Only use sections 2–3 when you still have raw BAM/SAM and need MACS first; MACS output then feeds the same ChIPseeker step.
+      </p>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button type="button" class="btn btn-outline btn-sm" id="btn-chipseq-goto-downstream">
+          <i data-lucide="sparkles"></i> <span data-i18n="chip.btn.gotoStep2">前往 Step 2 一键配方</span>
+        </button>
+      </div>
+      <h4 class="chip-section-title" data-i18n="chip.section.peaksDirect">1. Peak file (MACS product) — direct ChIPseeker</h4>
+      <p class="hint" data-i18n="chip.hint.peaksDirect">
+        Upload existing <code>.bed / .narrowPeak / .broadPeak / .gff</code> (from MACS or elsewhere). Prefer <strong>Upload &amp; Annotate</strong> to run ChIPseeker in one step.
+      </p>
+      <div class="chip-sample-col chip-peak-upload">
+        <div class="chip-sample-head">
+          <span class="chip-badge chip-badge--peak">Peaks</span>
+          <span class="chip-sample-sub">BED / narrowPeak / broadPeak / GFF</span>
+        </div>
+        <input type="file" id="chip-peak-file" accept=".bed,.narrowPeak,.broadPeak,.gff,.gff3,.txt,.csv,.tsv">
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn btn-primary btn-sm" id="chip-btn-upload-annotate" type="button">
+            <i data-lucide="play"></i> <span data-i18n="chip.btn.uploadAnnotate">Upload &amp; Annotate (ChIPseeker)</span>
+          </button>
+          <button class="btn btn-outline btn-sm" id="chip-btn-upload-peaks" type="button">
+            <i data-lucide="upload"></i> <span data-i18n="chip.btn.uploadPeaksOnly">Upload peaks only</span>
+          </button>
+        </div>
+        <div id="chip-peak-status" class="chip-peak-status hidden"></div>
+        <div class="chip-peak-select-row" id="chip-peak-select-row">
+          <label for="chip-peak-select">当前峰文件</label>
+          <select id="chip-peak-select" class="chip-peak-select">
+            <option value="">（尚未注册峰文件）</option>
+          </select>
+        </div>
+      </div>
+
+      <h4 class="chip-section-title">2. Sample assignment (Treatment vs Control BAM) — optional</h4>
       <div class="chip-sample-grid">
         <div class="chip-sample-col chip-sample-col--treatment">
           <div class="chip-sample-head">
@@ -1346,11 +1621,21 @@
       </div>
       <div class="form-grid" style="margin-top:12px">
         <div class="form-group form-group--full">
-          <label>Or server folder path (register all as Treatment first, then reassign Control in table)</label>
+          <label>Folder source — browse local BAMs, or Scan a server path</label>
           <div class="input-row">
-            <input type="text" id="chip-folder-path" placeholder="/path/to/alignments">
-            <button class="btn btn-outline btn-sm" id="chip-btn-scan-folder" type="button"><i data-lucide="folder-open"></i> Scan</button>
+            <input type="text" id="chip-folder-path" placeholder="/path/to/alignments (server path for Scan)">
+            <input type="file" id="chip-folder-picker" class="visually-hidden" webkitdirectory directory multiple>
+            <button class="btn btn-outline btn-sm" id="chip-btn-browse-folder" type="button" title="Open a local folder and upload BAM/SAM files">
+              <i data-lucide="folder"></i> <span data-i18n="chip.browseFolder">打开文件夹</span>
+            </button>
+            <button class="btn btn-outline btn-sm" id="chip-btn-scan-folder" type="button" title="Register BAM/SAM files already on the API server">
+              <i data-lucide="folder-search"></i> Scan
+            </button>
           </div>
+          <p class="hint" style="margin-top:6px">
+            <strong>打开文件夹 / Browse</strong>：选择本机文件夹，自动上传其中的 BAM/SAM（默认 Treatment，可在表格改 Control）。
+            <strong>Scan</strong>：扫描 API 服务器上的路径（需服务端可读）。
+          </p>
         </div>
       </div>
       <div id="chip-bam-summary" class="chip-bam-summary hidden">
@@ -1364,28 +1649,45 @@
         </table>
       </div>
 
-      <h4 class="chip-section-title">2. MACS2/3 parameters</h4>
+      <h4 class="chip-section-title">3. MACS2/3 peak calling — optional (BAM → peaks)</h4>
+      <p class="hint" data-i18n="chip.hint.macsOptional">
+        推荐：本地按 lab 脚本 callpeak 后上传 narrowPeak / summits / xls。仅在需要网页调峰或 deepTools/DiffBind 时再注册 BAM。
+      </p>
       <div class="form-grid">
         <div class="form-group form-group--full">
           <label>Assay preset</label>
           <select id="chip-macs-preset">
-            <option value="chipseq_tf" selected>ChIP-seq TF (default model)</option>
-            <option value="chipseq_histone_broad">Histone / broad marks</option>
-            <option value="atac_paired">ATAC-seq (BAMPE)</option>
-            <option value="atac_cutting_site">ATAC/CUT&amp;Tag cutting site</option>
-            <option value="cuttag_tn5">CUT&amp;Tag insertion (shift -50 / ext 100)</option>
-            <option value="dnase_smoothed">DNase-seq (shift -100 / ext 200)</option>
-            <option value="no_control">No control (treatment only)</option>
-            <option value="custom">Custom (manual)</option>
+            <optgroup label="Lab primary (Cut&amp;Run / ATAC)">
+              <option value="cutrun_tf_p05" selected>TF Cut&amp;Run (BAMPE, p=0.05) ★</option>
+              <option value="cutrun_tf_p01">TF Cut&amp;Run (BAMPE, p=0.01)</option>
+              <option value="cutrun_histone_p05">Histone Cut&amp;Run (BAMPE, p=0.05) ★</option>
+              <option value="cutrun_histone_p01">Histone Cut&amp;Run (BAMPE, p=0.01)</option>
+              <option value="atac_bampe_p05">ATAC-seq (BAMPE, p=0.05) ★</option>
+              <option value="atac_bampe_q05">ATAC-seq (BAMPE, q=0.05)</option>
+            </optgroup>
+            <optgroup label="Advanced / legacy">
+              <option value="histone_broad">Histone broad domains (--broad)</option>
+              <option value="chipseq_tf">ChIP-seq TF SE (BAM, q=0.01)</option>
+              <option value="atac_cutting_site">ATAC cutting site (SE nomodel)</option>
+              <option value="cuttag_tn5">CUT&amp;Tag insertion</option>
+              <option value="dnase_smoothed">DNase-seq smoothed</option>
+              <option value="no_control">No control (treatment only)</option>
+              <option value="custom">Custom (manual)</option>
+            </optgroup>
           </select>
-          <p class="hint" id="chip-macs-preset-hint">Standard TF ChIP-seq: MACS builds shifting model automatically.</p>
+          <p class="hint" id="chip-macs-preset-hint">Lab TF Cut&amp;Run: -f BAMPE -p 0.05 -g 1.87e9 -B（对齐本地 macs2.sh）。</p>
         </div>
         <div class="form-group">
           <label>Genome (-g)</label>
           <select id="chip-genome">
-            <option value="hs" selected>Human (hs)</option>
-            <option value="mm">Mouse (mm)</option>
+            <option value="mm" selected>Mouse (mm)</option>
+            <option value="hs">Human (hs)</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label>Effective genome size override</label>
+          <input type="text" id="chip-gsize" value="1.87e9" placeholder="e.g. 1.87e9 (classic MACS2 mm)" autocomplete="off">
+          <p class="hint">Lab mm 用 1.87e9（MACS2 经典值）。MACS3 短码 mm≈2.65e9，勿直接混用。</p>
         </div>
         <div class="form-group">
           <label>MACS version</label>
@@ -1506,75 +1808,500 @@
         </div>
       </details>
 
-      <h4 class="chip-section-title">3. Annotation &amp; RNA-seq co-analysis</h4>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-outline" id="chip-btn-profile"><i data-lucide="scan-search"></i> <span data-i18n="chip.btn.profile">Profile</span></button>
+        <button class="btn btn-primary" id="chip-btn-peaks"><i data-lucide="play"></i> <span data-i18n="chip.btn.peaks">Call peaks (MACS)</span></button>
+        <button type="button" class="btn btn-outline" id="chip-btn-goto-step2-b">
+          <i data-lucide="arrow-right"></i> Step 2 一键配方
+        </button>
+      </div>
+    </div><!-- /chip-step-1 -->
+
+    <div class="card chip-step-panel hidden" id="chip-step-2" data-chip-step-panel="2">
+      <h3 data-i18n="chip.wizard.step2Title">Step 2 — 一键配方与跨组学联合</h3>
+      <p class="hint" data-i18n="chip.recipe.intro">
+        选择 ChIP 内包或跨组学联合包。依赖面板需指向已导入的 RNA / 蛋白 / 16S / MGX / MBX / 临床实验（或 DE 缓存）。
+      </p>
+
+      <div class="chip-recipe-deps" id="chip-recipe-deps">
+        <h4 class="chip-section-title" data-i18n="chip.deps.title">依赖面板</h4>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="chip-deps-peak">Active peak</label>
+            <select id="chip-deps-peak" class="chip-peak-select">
+              <option value="">（尚未注册峰文件）</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>BAM counts</label>
+            <div id="chip-deps-bam" class="chip-deps-bam">T: 0 · C: 0</div>
+          </div>
+          <div class="form-group">
+            <label for="chip-deps-assay">Assay strategy</label>
+            <select id="chip-deps-assay">
+              <option value="tf_narrow" selected>TF narrow</option>
+              <option value="histone_broad">Histone broad</option>
+              <option value="atac_tss">ATAC TSS±1kb + FRiP</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="chip-deps-rna">RNA-seq</label>
+            <select id="chip-deps-rna"><option value="">— none —</option></select>
+          </div>
+          <div class="form-group">
+            <label for="chip-deps-proteomics">Proteomics</label>
+            <select id="chip-deps-proteomics"><option value="">— none —</option></select>
+          </div>
+          <div class="form-group">
+            <label for="chip-deps-m16s">16S</label>
+            <select id="chip-deps-m16s"><option value="">— none —</option></select>
+          </div>
+          <div class="form-group">
+            <label for="chip-deps-mgx">Metagenomics (MGX)</label>
+            <select id="chip-deps-mgx"><option value="">— none —</option></select>
+          </div>
+          <div class="form-group">
+            <label for="chip-deps-mbx">Metabolomics (MBX)</label>
+            <select id="chip-deps-mbx"><option value="">— none —</option></select>
+          </div>
+          <div class="form-group">
+            <label for="chip-deps-clinical">Clinical</label>
+            <select id="chip-deps-clinical">
+              <option value="">— none —</option>
+              <option value="standalone">standalone clinical_raw/meta</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <button type="button" class="btn btn-outline btn-sm" id="chip-deps-refresh">刷新依赖</button>
+        </div>
+      </div>
+
+      <div id="chip-recipe-packs" class="chip-recipe-packs"></div>
+
+      <div class="chip-recipe-combo" id="chip-recipe-combo">
+        <h4 class="chip-section-title" data-i18n="chip.recipe.combo">自定义组合一键</h4>
+        <p class="hint" id="chip-recipe-combo-note"></p>
+        <div id="chip-recipe-combo-checks" class="chip-recipe-combo-checks"></div>
+        <div class="btn-row" style="margin-top:8px">
+          <button type="button" class="btn btn-primary" id="chip-recipe-combo-run">
+            <i data-lucide="play"></i> 运行勾选组合
+          </button>
+        </div>
+      </div>
+
+      <div id="chip-recipe-results" class="chip-recipe-results result-area">
+        <p class="hint">配方运行进度与结果将显示在这里。</p>
+      </div>
+    </div><!-- /chip-step-2 -->
+
+    <div class="card chip-step-panel hidden" id="chip-step-advanced" data-chip-step-panel="advanced">
+      <h3 data-i18n="chip.wizard.advancedTitle">高级单步（注释 / RNA / 跨组学 / 下游清单）</h3>
+      <p class="hint">单步工具与 #1–72 清单。同 action 已去重；优先使用 Step 2 一键包。</p>
+
+      <h4 id="chip-section-annotate" class="chip-section-title" data-i18n="chip.section.chipseeker">4. ChIPseeker — annotate peak files directly</h4>
+      <p class="hint" data-i18n="chip.hint.chipseeker">
+        Analyzes the current peak file (section 1 upload or MACS output). Set TxDb / OrgDb, TSS window, and level, then click <strong>Annotate (ChIPseeker)</strong>.
+      </p>
+      <div id="chip-peak-status-anno" class="chip-peak-status hidden" style="margin-bottom:10px"></div>
+      <ol class="hint chip-seeker-steps" style="margin:8px 0 12px 1.2em">
+        <li data-i18n="chip.step.peaks">Peak file ready (MACS product uploaded in §1, or produced by §3).</li>
+        <li data-i18n="chip.step.params">Choose genome / TxDb / OrgDb and TSS region.</li>
+        <li data-i18n="chip.step.run">Run Annotate (ChIPseeker); review pie chart and gene tables.</li>
+      </ol>
       <div class="form-grid">
         <div class="form-group">
-          <label>Peak score cutoff (annotation)</label>
+          <label data-i18n="chip.label.genomeMap">Genome mapping</label>
+          <select id="chip-anno-genome">
+            <option value="hs" selected>Human (auto hg38→hg19)</option>
+            <option value="hg19">Human hg19</option>
+            <option value="mm">Mouse mm10 (mm)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>TxDb</label>
+          <select id="chip-txdb">
+            <option value="">Auto (from genome)</option>
+            <option value="TxDb.Hsapiens.UCSC.hg19.knownGene" selected>Hsapiens hg19 knownGene</option>
+            <option value="TxDb.Hsapiens.UCSC.hg38.knownGene">Hsapiens hg38 knownGene</option>
+            <option value="TxDb.Mmusculus.UCSC.mm10.knownGene">Mmusculus mm10 knownGene</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>annoDb (OrgDb)</label>
+          <select id="chip-annodb">
+            <option value="org.Hs.eg.db" selected>org.Hs.eg.db</option>
+            <option value="org.Mm.eg.db">org.Mm.eg.db</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label data-i18n="chip.label.level">Level</label>
+          <select id="chip-anno-level">
+            <option value="transcript" selected>transcript</option>
+            <option value="gene">gene</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>tssRegion upstream (bp)</label>
+          <input type="number" id="chip-tss-up" value="-3000" step="100">
+        </div>
+        <div class="form-group">
+          <label>tssRegion downstream (bp)</label>
+          <input type="number" id="chip-tss-dn" value="3000" step="100">
+        </div>
+        <div class="form-group">
+          <label data-i18n="chip.label.overlap">Overlap mode</label>
+          <select id="chip-overlap">
+            <option value="TSS" selected>TSS</option>
+            <option value="all">all</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>flankDistance (bp)</label>
+          <input type="number" id="chip-flank-distance" value="5000" min="0" step="100">
+        </div>
+        <div class="form-group">
+          <label data-i18n="chip.label.scoreCutoff">Peak score cutoff</label>
           <input type="number" id="chip-score-cutoff" value="5" min="1" step="1">
         </div>
         <div class="form-group">
-          <label>RNA-seq experiment</label>
+          <label class="checkbox-label"><input type="checkbox" id="chip-add-flank"> addFlankGeneInfo</label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label"><input type="checkbox" id="chip-same-strand"> sameStrand</label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label"><input type="checkbox" id="chip-ignore-overlap"> ignoreOverlap</label>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-primary" id="chip-btn-annotate"><i data-lucide="tags"></i> <span data-i18n="chip.btn.annotate">Annotate (ChIPseeker)</span></button>
+      </div>
+      <p class="hint" style="margin-top:8px" data-i18n="chip.hint.downstreamBuiltIn">
+        Annotate runs the full downstream suite: genomic annotation + pie/bar/TSS plots, promoter filters, and GO/KEGG enrichment (all peaks + promoter genes).
+      </p>
+      <div id="chip-peak-source-hint" class="hint" style="margin-top:8px" data-i18n="chip.hint.peakSource">
+        Tip: peak files are MACS products — upload in §1 or call in §3, then annotate here. BAM is not required for the peak path.
+      </div>
+
+      <h4 id="chip-section-rna" class="chip-section-title" data-i18n="chip.section.rna">5. RNA-seq co-analysis</h4>
+      <p class="hint" data-i18n="chip.hint.rna">
+        Uses ChIPseeker peak-linked genes + an RNA-seq experiment: expression heatmap, differential overlap, volcano, and GO/KEGG on the ChIP gene set.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label data-i18n="chip.label.rnaseq">RNA-seq experiment</label>
           <select id="chip-rnaseq-exp"></select>
         </div>
         <div class="form-group">
-          <label>Co-analysis score cutoff</label>
+          <label data-i18n="chip.label.coScore">Co-analysis score cutoff</label>
           <input type="number" id="chip-co-score-cutoff" value="10" min="1" step="1">
         </div>
         <div class="form-group">
-          <label>Min total RNA counts</label>
+          <label data-i18n="chip.label.minCounts">Min total RNA counts</label>
           <input type="number" id="chip-min-counts" value="100" min="0" step="10">
         </div>
+        <div class="form-group">
+          <label data-i18n="chip.label.rnaPcut">RNA differential p-cutoff</label>
+          <input type="number" id="chip-rna-p-cutoff" value="0.05" min="0" max="1" step="0.01">
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="chip-promoter-filter" checked>
+            <span data-i18n="chip.label.promoterFilter">Promoter peaks only</span>
+          </label>
+        </div>
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-outline" id="chip-btn-profile"><i data-lucide="scan-search"></i> Profile</button>
-        <button class="btn btn-primary" id="chip-btn-peaks"><i data-lucide="play"></i> Call peaks (MACS)</button>
-        <button class="btn btn-outline" id="chip-btn-annotate"><i data-lucide="tags"></i> Annotate (ChIPseeker)</button>
-        <button class="btn btn-outline" id="chip-btn-coanalysis"><i data-lucide="git-merge"></i> RNA-seq co-analysis</button>
+        <button class="btn btn-outline" id="chip-btn-coanalysis"><i data-lucide="git-merge"></i> <span data-i18n="chip.btn.coanalysis">RNA-seq co-analysis</span></button>
       </div>
-      <div id="chip-profile-result" class="alert hidden"></div>
-      <div id="chip-analysis-result" class="result-area hidden"></div>
-      <div id="chip-plots" class="plot-grid hidden"></div>
-    </div>
 
-    <!-- Cross-omics -->
-    <div id="ana-cross" class="tab-panel card hidden">
-      <h3>Cross-Omics Integration (inter-omics)</h3>
-      <p class="hint">
-        Integrates two experiments to quantify feature-feature associations across omics layers
-        (for example: taxa vs genes, taxa vs metabolites, genes vs metabolites).
-        Current version provides a guided entry and recommended workflow; full automated model block
-        (CCA/DIABLO/MOFA) will be added next.
+      <h4 id="chip-section-cross" class="chip-section-title" data-i18n="chip.section.cross">6. Cross-omics overlap (ChIP × RNA × Proteomics)</h4>
+      <p class="hint" data-i18n="chip.hint.cross">
+        Intersect ChIP peak-linked genes with significant RNA-seq and/or proteomics differential results (requires prior DE in those experiments).
       </p>
-      <ol class="hint" style="margin-top:6px">
-        <li>Load at least two experiments in the same session.</li>
-        <li>Complete per-omics preprocessing first (filter/normalize/impute/taxonomy).</li>
-        <li>Use shared sample IDs and run pairwise correlation in Clinical/Correlation modules.</li>
-      </ol>
-      <div id="cross-omics-status" class="alert alert-info">
-        Tip: for publication-grade inter-omics, ensure confounders are adjusted and report FDR.
-      </div>
       <div class="form-grid">
         <div class="form-group">
-          <label>Omics A experiment</label>
-          <select id="cross-exp-a"></select>
-        </div>
-        <div class="form-group">
-          <label>Omics B experiment</label>
-          <select id="cross-exp-b"></select>
-        </div>
-        <div class="form-group">
-          <label>Clinical experiment (optional)</label>
-          <select id="cross-exp-c">
-            <option value="">none</option>
+          <label data-i18n="chip.label.rnaseqCross">RNA-seq experiment (optional)</label>
+          <select id="chip-cross-rnaseq">
+            <option value="">— none —</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label data-i18n="chip.label.proteomics">Proteomics experiment (optional)</label>
+          <select id="chip-cross-proteomics">
+            <option value="">— none —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label data-i18n="chip.label.rnaPcut">RNA p-cutoff</label>
+          <input type="number" id="chip-cross-rna-p" value="0.05" min="0" max="1" step="0.01">
+        </div>
+        <div class="form-group">
+          <label data-i18n="chip.label.rnaFc">RNA |log2FC| cutoff</label>
+          <input type="number" id="chip-cross-rna-fc" value="1" min="0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label data-i18n="chip.label.proPcut">Proteomics p-cutoff</label>
+          <input type="number" id="chip-cross-pro-p" value="0.05" min="0" max="1" step="0.01">
+        </div>
+        <div class="form-group">
+          <label data-i18n="chip.label.proFc">Proteomics |FC| cutoff</label>
+          <input type="number" id="chip-cross-pro-fc" value="0.5" min="0" step="0.1">
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-primary" id="btn-cross-omics-cor"><i data-lucide="git-compare-arrows"></i> Cross-omics correlation</button>
-        <button class="btn btn-outline" id="btn-cross-omics-clin"><i data-lucide="stethoscope"></i> Omics + Clinical association</button>
+        <button class="btn btn-outline" id="chip-btn-cross"><i data-lucide="git-compare-arrows"></i> <span data-i18n="chip.btn.cross">Run cross-omics overlap</span></button>
       </div>
-      <div id="cross-omics-result" class="result-area hidden"></div>
+
+      <div id="chip-profile-result" class="alert hidden"></div>
+      <div id="chip-analysis-result" class="result-area hidden"></div>
+      <div id="chip-tables" class="chip-tables hidden"></div>
+      <div id="chip-plots" class="plot-grid hidden"></div>
+      <div id="chip-advanced-downstream-host" class="chip-advanced-downstream-host"></div>
+    </div><!-- /chip-step-advanced -->
+  </section>
+
+  <!-- ── PAGE: ChIPseq DOWNSTREAM (merged into ChIP Advanced; kept for redirect) ─────────── -->
+  <section id="page-chipseq_downstream" class="page">
+    <div class="card">
+      <h2 data-i18n="page.chipseq_downstream">ChIPseq-下游分析</h2>
+      <p class="hint" data-i18n="chipds.intro">
+        Peak 下游分析清单（来自 Excel）：在 ChIPseeker 注释之后或并行推进的 QC、注释、motif、差异结合、多组学整合等模块。
+        可运行项会跳转到现有 ChIP-seq 工作区（§4–§6），或在本页执行 Peak QC / HOMER / DiffBind / deepTools。
+      </p>
+      <div class="chipds-summary" id="chipds-summary">
+        <span class="chip-badge" id="chipds-badge-modules">模块: —</span>
+        <span class="chip-badge chip-badge--t" id="chipds-badge-must">必做: —</span>
+        <span class="chip-badge chip-badge--peak" id="chipds-badge-available">可运行: —</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="chip-section-title" data-i18n="chipds.filters">筛选</h3>
+      <div class="form-grid chipds-filters">
+        <div class="form-group">
+          <label for="chipds-filter-stage" data-i18n="chipds.filter.stage">阶段</label>
+          <select id="chipds-filter-stage">
+            <option value="">全部阶段</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="chipds-filter-priority" data-i18n="chipds.filter.priority">优先级</label>
+          <select id="chipds-filter-priority">
+            <option value="">全部</option>
+            <option value="must">必做</option>
+            <option value="recommend">推荐</option>
+            <option value="advanced">高级</option>
+            <option value="optional">可选</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="chipds-filter-bam" data-i18n="chipds.filter.bam">BAM 需求</label>
+          <select id="chipds-filter-bam">
+            <option value="">全部</option>
+            <option value="no">不需 BAM</option>
+            <option value="yes">需 BAM</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="chipds-filter-status" data-i18n="chipds.filter.status">状态</label>
+          <select id="chipds-filter-status">
+            <option value="">全部</option>
+            <option value="available">可运行</option>
+            <option value="planned">规划中</option>
+          </select>
+        </div>
+        <div class="form-group chipds-search-wrap">
+          <label for="chipds-search" data-i18n="chipds.filter.search">搜索</label>
+          <input type="search" id="chipds-search" placeholder="名称 / 软件 / 目的…" autocomplete="off">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="chip-section-title" data-i18n="chipds.tools">下游工具面板</h3>
+      <div class="chipds-last-peaks" id="chipds-last-peaks">
+        <span class="chipds-last-peaks-label">当前峰文件</span>
+        <select id="chipds-peak-select" class="chip-peak-select" title="上传与 MACS 结果均保留，可切换">
+          <option value="">（尚未注册峰文件）</option>
+        </select>
+        <span class="chipds-last-peaks-badge chipds-last-peaks-badge--empty" id="chipds-last-peaks-badge">未加载</span>
+        <button type="button" class="btn btn-outline btn-sm" id="chipds-btn-use-uploaded-peaks">使用已上传峰文件</button>
+        <button type="button" class="btn btn-outline btn-sm" id="chipds-btn-refresh-peaks">刷新列表</button>
+      </div>
+      <div class="chipds-tool-status" id="chipds-tool-status">
+        <span class="chipds-tool-badge chipds-tool-badge--unk" id="chipds-tool-homer">HOMER: …</span>
+        <span class="chipds-tool-badge chipds-tool-badge--unk" id="chipds-tool-diffbind">DiffBind: …</span>
+        <span class="chipds-tool-badge chipds-tool-badge--unk" id="chipds-tool-deeptools">deepTools: …</span>
+        <span class="chipds-tool-badge chipds-tool-badge--unk" id="chipds-tool-genomicranges">GenomicRanges: …</span>
+        <button type="button" class="btn btn-outline btn-sm" id="chipds-btn-refresh-tools">刷新检测</button>
+      </div>
+      <p class="hint" id="chipds-tool-hints"></p>
+
+      <div class="chipds-tool-panels">
+        <details class="chipds-tool-panel" id="chipds-panel-homer" open>
+          <summary>HOMER motif（findMotifsGenome.pl）</summary>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="chipds-homer-genome">Genome</label>
+              <select id="chipds-homer-genome">
+                <option value="hg38">hg38 (hs)</option>
+                <option value="hg19">hg19</option>
+                <option value="mm10">mm10 (mm)</option>
+                <option value="mm39">mm39</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="chipds-homer-size">Motif size (−size)</label>
+              <input type="number" id="chipds-homer-size" value="200" min="50" max="2000" step="10">
+            </div>
+            <div class="form-group">
+              <label for="chipds-homer-len">Motif lengths (−len)</label>
+              <input type="text" id="chipds-homer-len" value="8,10,12">
+            </div>
+            <div class="form-group">
+              <label for="chipds-homer-annotate">annotatePeaks.pl</label>
+              <select id="chipds-homer-annotate">
+                <option value="0">否</option>
+                <option value="1">是（若已安装）</option>
+              </select>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:8px">
+            <button type="button" class="btn btn-primary btn-sm" id="chipds-btn-homer">运行 HOMER</button>
+          </div>
+        </details>
+
+        <details class="chipds-tool-panel" id="chipds-panel-diffbind">
+          <summary>DiffBind 差异结合</summary>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="chipds-db-method">方法</label>
+              <select id="chipds-db-method">
+                <option value="DESeq2">DESeq2</option>
+                <option value="edgeR">edgeR</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="chipds-db-fdr">FDR</label>
+              <input type="number" id="chipds-db-fdr" value="0.05" min="0.001" max="1" step="0.01">
+            </div>
+            <div class="form-group">
+              <label for="chipds-db-topn">Top N</label>
+              <input type="number" id="chipds-db-topn" value="50" min="10" max="500" step="10">
+            </div>
+          </div>
+          <p class="hint">需要会话中 ≥2 treatment + ≥2 control BAM，并已有 peak 文件。</p>
+          <div class="btn-row" style="margin-top:8px">
+            <button type="button" class="btn btn-primary btn-sm" id="chipds-btn-diffbind">运行 DiffBind</button>
+          </div>
+        </details>
+
+        <details class="chipds-tool-panel" id="chipds-panel-peaksops" open>
+          <summary>Peak 集合操作（GenomicRanges）</summary>
+          <p class="hint">用于 blacklist / merge / summit / overlap / IDR近似 / promoter·enhancer / SE / bivalent / chromatin proxy。第二峰集请填会话内峰文件绝对路径。</p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="chipds-ops-peak-b">peak_b（第二峰集路径）</label>
+              <input type="text" id="chipds-ops-peak-b" placeholder="/path/to/rep2_or_markB.bed" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="chipds-ops-peak-c">peak_c（可选第三 mark）</label>
+              <input type="text" id="chipds-ops-peak-c" placeholder="/path/to/markC.bed" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="chipds-ops-merge-gap">merge_gap (bp)</label>
+              <input type="number" id="chipds-ops-merge-gap" value="0" min="0" max="100000" step="100">
+            </div>
+            <div class="form-group">
+              <label for="chipds-ops-summit">summit_size ±bp</label>
+              <input type="number" id="chipds-ops-summit" value="250" min="50" max="5000" step="50">
+            </div>
+            <div class="form-group">
+              <label for="chipds-ops-promoter">promoter_window ±bp</label>
+              <input type="number" id="chipds-ops-promoter" value="2000" min="200" max="10000" step="100">
+            </div>
+            <div class="form-group">
+              <label for="chipds-ops-stitch">SE stitch_gap (bp)</label>
+              <input type="number" id="chipds-ops-stitch" value="12500" min="0" max="100000" step="500">
+            </div>
+            <div class="form-group">
+              <label for="chipds-ops-genome">Genome</label>
+              <select id="chipds-ops-genome">
+                <option value="hg38">hg38</option>
+                <option value="hg19">hg19</option>
+                <option value="mm10">mm10</option>
+              </select>
+            </div>
+          </div>
+          <p class="hint">从下方清单卡片点「运行」时，参数取自本面板。</p>
+        </details>
+
+        <details class="chipds-tool-panel" id="chipds-panel-deeptools">
+          <summary>deepTools（coverage / heatmap / corr）</summary>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="chipds-dt-mode">模式</label>
+              <select id="chipds-dt-mode">
+                <option value="heatmap">heatmap（computeMatrix + plotHeatmap）</option>
+                <option value="corr">corr（multiBamSummary + plotCorrelation）</option>
+                <option value="coverage">coverage（bamCoverage → bigWig）</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="chipds-dt-binsize">binSize</label>
+              <input type="number" id="chipds-dt-binsize" value="50" min="10" max="100000" step="10">
+            </div>
+            <div class="form-group">
+              <label for="chipds-dt-before">上游 bp (−b)</label>
+              <input type="number" id="chipds-dt-before" value="1000" min="100" max="10000" step="100">
+            </div>
+            <div class="form-group">
+              <label for="chipds-dt-after">下游 bp (−a)</label>
+              <input type="number" id="chipds-dt-after" value="1000" min="100" max="10000" step="100">
+            </div>
+            <div class="form-group">
+              <label for="chipds-dt-norm">normalizeUsing</label>
+              <select id="chipds-dt-norm">
+                <option value="RPKM">RPKM</option>
+                <option value="CPM">CPM</option>
+                <option value="BPM">BPM</option>
+                <option value="RPGC">RPGC</option>
+                <option value="None">None</option>
+              </select>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:8px">
+            <button type="button" class="btn btn-primary btn-sm" id="chipds-btn-deeptools">运行 deepTools</button>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="chip-section-title" data-i18n="chipds.marks">Mark 策略速查</h3>
+      <div id="chipds-mark-strategies" class="chipds-marks"></div>
+    </div>
+
+    <div class="card">
+      <h3 class="chip-section-title" data-i18n="chipds.catalog">下游模块目录</h3>
+      <div id="chipds-catalog" class="chipds-catalog"></div>
+    </div>
+
+    <div class="card">
+      <h3 class="chip-section-title" data-i18n="chipds.results">运行结果</h3>
+      <div id="chipds-qc-status" class="alert hidden"></div>
+      <div id="chipds-qc-summary" class="chipds-qc-summary hidden"></div>
+      <div id="chipds-tool-plots" class="chipds-tool-plots hidden"></div>
+      <div id="chipds-qc-table-wrap" class="chipds-qc-table-wrap hidden">
+        <table class="data-table" id="chipds-qc-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <pre id="chipds-qc-json" class="chipds-qc-json hidden"></pre>
     </div>
   </section>
 
@@ -2640,6 +3367,7 @@
           <label class="gh-check"><input type="checkbox" id="gh-include-rds"> 同时同步完整 RDS（体积大，默认关闭）</label>
         </div>
         <p class="hint" id="gh-assignment-hint">固定选项：Week 1–Week 16，以及「项目大作业」。可另填备注标题。</p>
+        <p class="hint gh-path-preview" id="gh-path-preview" aria-live="polite">将写入：<code>EMP2026/Week_01/…/weekly/runs/&lt;timestamp&gt;/</code></p>
         <div class="gh-actions">
           <button type="button" class="btn btn-primary" id="btn-gh-sync"><i data-lucide="upload-cloud"></i> 同步到 GitHub</button>
           <a class="btn btn-outline hidden" id="gh-last-commit" href="#" target="_blank" rel="noopener noreferrer">查看提交</a>
@@ -2723,7 +3451,7 @@
     else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
   }
 </script>
-<script type="module" src="js/app.js?v=2026-07-21-gh-sync-v3"></script>
+<script type="module" src="js/app.js?v=rnaseq-demo-final-v1"></script>
 <script>
   // Initialise Lucide icons after all content is ready
   document.addEventListener("DOMContentLoaded", () => lucide.createIcons());

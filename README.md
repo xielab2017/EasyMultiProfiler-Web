@@ -1,13 +1,13 @@
-# EasyMultiProfiler Web · V8.0.0_Education
+# EasyMultiProfiler Web · V9.0.0_Education
 
 **教育预览版（Preview）** — 在 V7 一键安装与多组学分析能力之上，新增 **课程按周作业 + 学号登录 + GitHub 仓库同步**。
 
-![](https://img.shields.io/badge/version-V8.0.0__Education-1f6feb)
+![](https://img.shields.io/badge/version-V9.0.0__Education-1f6feb)
 ![](https://img.shields.io/badge/preview-branch-orange)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
-> **分支**：[`V8.0.0_Education`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/V8.0.0_Education)  
+> **分支**：[`V9.0.0_Education`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/V9.0.0_Education)  
 > **定位**：课堂试用 / 课程作业提交预览，**非**替代正式 `main` / `v7.0.0` 生产分支。
 
 ![EasyMultiProfiler Web Education banner](docs/images/emp-web-v8-education-banner.png)
@@ -18,7 +18,7 @@
 
 EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API + 静态前端 + EasyMultiProfiler 核心）。
 
-**V8.0.0_Education** 面向教学场景，让学生可以：
+**V9.0.0_Education** 面向教学场景，让学生可以：
 
 1. 在 **Course** 里按 case / 周次完成微课、测验与实操  
 2. 用 **学号 + 自设口令** 登录课程身份  
@@ -32,9 +32,9 @@ EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API
 
 ## 架构一览
 
-![V8 Education architecture](docs/images/emp-web-v8-architecture.png)
+![V9 Education architecture](docs/images/emp-web-v8-architecture.png)
 
-> 矢量源文件：[docs/TECHNICAL_MODE_V8_EDUCATION.svg](docs/TECHNICAL_MODE_V8_EDUCATION.svg)（与上图同内容）
+> 矢量源文件：[docs/TECHNICAL_MODE_V9_EDUCATION.svg](docs/TECHNICAL_MODE_V9_EDUCATION.svg)（与上图同内容）
 
 | 层 | 能力 |
 |----|------|
@@ -51,15 +51,15 @@ EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API
 
 | Shell | 命令 |
 |------|------|
-| **macOS / Linux（bash / zsh）** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V8.0.0_Education/webapp/scripts/install_from_github.sh)"` |
-| **Windows PowerShell** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V8.0.0_Education/webapp/scripts/install_from_github.ps1 \| iex` |
+| **macOS / Linux（bash / zsh）** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.0_Education/webapp/scripts/install_from_github.sh)"` |
+| **Windows PowerShell** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.0_Education/webapp/scripts/install_from_github.ps1 \| iex` |
 
 > 若安装脚本仍默认拉 `v7.0.0`，请先手动 clone 本预览分支再本地启动（见下）。
 
 ### 已 clone 仓库
 
 ```bash
-git clone -b V8.0.0_Education https://github.com/xielab2017/EasyMultiProfiler-Web.git
+git clone -b V9.0.0_Education https://github.com/xielab2017/EasyMultiProfiler-Web.git
 cd EasyMultiProfiler-Web
 bash install.sh                  # macOS / Linux
 # 或 Windows：install.cmd / Start-EMP-Web.bat
@@ -73,6 +73,17 @@ bash webapp/scripts/start_local.sh
 
 - 网页：http://127.0.0.1:8080  
 - API：http://127.0.0.1:8000/api/health  
+
+### 终止运行 / Stop
+
+关闭浏览器不会停止后台服务。请用对应平台的停止入口（与启动脚本同目录）：
+
+| 平台 | 双击 / 命令 |
+|------|-------------|
+| **macOS** | `Stop-EMP-Web-Mac.command`，或 `bash webapp/scripts/stop_local.sh` |
+| **Windows** | `Stop-EMP-Web-Windows.bat`，或 `Restart-EMP-Web.bat`（先停再启） |
+
+停止脚本会结束 `.local_run` 中记录的 API / Web / Gateway PID，并释放默认端口 `8000` / `8080` / `8090`。
 
 ---
 
@@ -118,7 +129,9 @@ EMP2026/
 ```
 
 路径规则：`EMP2026 / Week_XX / <课程轨道> / <作业类型> / runs / ...`  
-作业类型：`weekly`（周作业）或 `project`（项目大作业）。
+- 周次文件夹：`Week_01` … `Week_16`（便于排序；界面下拉显示为 Week 1–16）  
+- 轨道在周次之下（如 `transcriptomics`、`microbiome_16s`、`clinical`）  
+- 作业类型：`weekly`（周作业）或 `project`（项目大作业，在 `Project_Major/` 下）
 
 同步策略：**增量写入**；每次新建 `runs/<时间戳>/`，不删除仓库已有文件。
 
@@ -170,7 +183,7 @@ EMP2026/
 | [docs/INSTALL_MAC.md](docs/INSTALL_MAC.md) | macOS / Linux 安装 |
 | [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Windows 安装 |
 | [docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md) | 用户操作指南 |
-| [docs/RELEASE_NOTES_v8.0.0_Education.md](docs/RELEASE_NOTES_v8.0.0_Education.md) | 本预览版说明 |
+| [docs/RELEASE_NOTES_v9.0.0_Education.md](docs/RELEASE_NOTES_v9.0.0_Education.md) | 本预览版说明 |
 | [CHANGELOG_V7.md](CHANGELOG_V7.md) | V7 变更 |
 
 网页内左侧 **Guide** / **Course** 也有交互说明。
@@ -185,8 +198,8 @@ EasyMultiProfiler-Web/
 ├── R/                          # EMP R 包
 ├── docs/
 │   ├── images/                 # README 配图（banner / sync / architecture PNG）
-│   ├── TECHNICAL_MODE_V8_EDUCATION.svg
-│   └── RELEASE_NOTES_v8.0.0_Education.md
+│   ├── TECHNICAL_MODE_V9_EDUCATION.svg
+│   └── RELEASE_NOTES_v9.0.0_Education.md
 └── webapp/
     ├── backend/helpers/github_sync.R
     ├── data/course_assignments.json

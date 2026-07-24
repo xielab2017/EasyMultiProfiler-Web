@@ -1,31 +1,53 @@
-# Stop local API (Plumber) and static web (python http.server) started by start_local_windows.ps1.
+# Stop local API (Plumber), static web, and optional gateway started by start_local_windows.ps1 / launch_emp_web.ps1.
 $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot\windows_r_utils.ps1"
 Initialize-EMPPaths $PSScriptRoot
 $Root = Get-EMPRepoRoot
+
+$RuntimeConfig = Join-Path $Root "webapp\config\runtime.env"
+if (Test-Path $RuntimeConfig) {
+  Get-Content $RuntimeConfig | ForEach-Object {
+    $line = $_.Trim()
+    if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) { return }
+    $parts = $line.Split("=", 2)
+    $name = $parts[0].Trim()
+    if ($name -and -not [Environment]::GetEnvironmentVariable($name, "Process")) {
+      [Environment]::SetEnvironmentVariable($name, $parts[1].Trim(), "Process")
+    }
+  }
+}
+
 $RunDir = Join-Path $Root ".local_run"
 $ApiPid = Join-Path $RunDir "api.pid"
 $WebPid = Join-Path $RunDir "web.pid"
+$GwPid = Join-Path $RunDir "gateway.pid"
 
-function Stop-PidFile($pidFile) {
+function Stop-PidFile($pidFile, $label) {
   if (Test-Path $pidFile) {
     $pidValue = Get-Content $pidFile -ErrorAction SilentlyContinue
     if ($pidValue) {
       try {
-        Stop-Process -Id ([int]$pidValue) -Force -ErrorAction SilentlyContinue
-        Write-Host "Stopped process $pidValue ($pidFile)"
+        $proc = Get-Process -Id ([int]$pidValue) -ErrorAction SilentlyContinue
+        if ($proc) {
+          Stop-Process -Id ([int]$pidValue) -Force -ErrorAction SilentlyContinue
+          Write-Host "Stopped $label process $pidValue"
+        } else {
+          Write-Host "No live $label for $pidFile"
+        }
       } catch {}
     }
     Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
   }
 }
 
-Stop-PidFile $ApiPid
-Stop-PidFile $WebPid
+Stop-PidFile $ApiPid "API"
+Stop-PidFile $WebPid "Web"
+Stop-PidFile $GwPid "Gateway"
 
 $apiP = if ($env:API_PORT) { [int]$env:API_PORT } else { 8000 }
 $webP = if ($env:WEB_PORT) { [int]$env:WEB_PORT } else { 8080 }
-Stop-EMPListenersOnPorts -Ports @($apiP, $webP)
+$gwP = if ($env:GATEWAY_PORT) { [int]$env:GATEWAY_PORT } else { 8090 }
+Stop-EMPListenersOnPorts -Ports @($apiP, $webP, $gwP)
 
 Write-Host "Local EMP web services stopped (or were not running)."

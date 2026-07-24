@@ -24,7 +24,8 @@ _pause_on_exit() {
     echo "════════════════════════════════════════════════════════"
     echo "  EasyMultiProfiler Web 已在后台运行。"
     echo "  打开: http://127.0.0.1:8080"
-    echo "  停止: bash webapp/scripts/stop_local.sh"
+    echo "  停止: 双击 Stop-EMP-Web-Mac.command"
+    echo "    或: bash webapp/scripts/stop_local.sh"
     echo "════════════════════════════════════════════════════════"
   fi
   # Keep the window open when we *look* like a double-clicked Terminal

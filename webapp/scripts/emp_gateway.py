@@ -59,7 +59,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
         headers["X-Forwarded-Host"] = self.headers.get("Host", "")
         headers["X-Forwarded-Proto"] = self.headers.get("X-Forwarded-Proto", "https")
         try:
-            conn = HTTPConnection(host, port, timeout=300)
+            # Large BAM uploads can exceed 5 min; keep gateway waiting for upstream.
+            conn = HTTPConnection(host, port, timeout=7200)
             conn.request(self.command, self.path, body=body, headers=headers)
             resp = conn.getresponse()
             payload = resp.read()

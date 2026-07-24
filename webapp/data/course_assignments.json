@@ -44,6 +44,18 @@
       "week_titles": {}
     },
     {
+      "id": "clinical",
+      "case_id": "course_clinical",
+      "title": "临床 / Clinical",
+      "week_titles": {}
+    },
+    {
+      "id": "multiomics",
+      "case_id": "course_multiomics",
+      "title": "多组学数据分析",
+      "week_titles": {}
+    },
+    {
       "id": "customize",
       "title": "自定义 (Customize)",
       "custom": true,

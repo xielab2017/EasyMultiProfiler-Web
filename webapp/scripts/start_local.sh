@@ -131,11 +131,10 @@ start_detached() {
   local pid_file="$1"
   local log_file="$2"
   shift 2
-  if command -v setsid >/dev/null 2>&1; then
-    setsid "$@" >"${log_file}" 2>&1 < /dev/null &
-  else
-    nohup "$@" >"${log_file}" 2>&1 < /dev/null &
-  fi
+  # Always detach via nohup+bash so the recorded PID is the long-lived child
+  # (macOS has no setsid; bare `env ... &` can leave a short-lived wrapper PID
+  # and the API later gets reaped when the launcher shell exits).
+  nohup bash -c 'exec "$@"' _ "$@" >"${log_file}" 2>&1 < /dev/null &
   echo $! > "${pid_file}"
 }
 
@@ -276,10 +275,45 @@ print(f"https://{name}/" if name else "")' 2>/dev/null || true)"
 
 echo "Starting API on ${API_HOST}:${API_PORT} ..."
 cd "${ROOT_DIR}"
+# Prefer project-local R libs (e.g. dplyr 1.1.4) so EMP/bootnet still load if
+# system dplyr≥1.2 dropped exports like dplyr::id.
+LOCAL_R_LIBS="${PIDS_DIR}/R_libs"
+if [[ -d "${LOCAL_R_LIBS}" ]]; then
+  export R_LIBS="${LOCAL_R_LIBS}${R_LIBS:+:${R_LIBS}}"
+  export R_LIBS_USER="${LOCAL_R_LIBS}${R_LIBS_USER:+:${R_LIBS_USER}}"
+fi
+# deepTools / MACS3 (and other CLI tools) installed under .local_run for EMP ChIP-seq.
+LOCAL_BIN="${PIDS_DIR}/bin"
+LOCAL_DT_BIN="${PIDS_DIR}/deeptools_venv/bin"
+LOCAL_MACS_BIN="${PIDS_DIR}/macs_venv/bin"
+PATH_PREFIX=""
+if [[ -d "${LOCAL_BIN}" ]]; then PATH_PREFIX="${LOCAL_BIN}"; fi
+if [[ -d "${LOCAL_DT_BIN}" ]]; then
+  PATH_PREFIX="${PATH_PREFIX:+${PATH_PREFIX}:}${LOCAL_DT_BIN}"
+fi
+if [[ -d "${LOCAL_MACS_BIN}" ]]; then
+  PATH_PREFIX="${PATH_PREFIX:+${PATH_PREFIX}:}${LOCAL_MACS_BIN}"
+fi
+if [[ -n "${PATH_PREFIX}" ]]; then
+  export PATH="${PATH_PREFIX}:${PATH}"
+fi
+export EMP_ROOT="${ROOT_DIR}"
+if [[ -z "${EMP_DEEPTOOLS_BIN:-}" && -d "${LOCAL_DT_BIN}" ]]; then
+  export EMP_DEEPTOOLS_BIN="${LOCAL_DT_BIN}"
+fi
+if [[ -z "${EMP_MACS_BIN:-}" && -d "${LOCAL_BIN}" && -x "${LOCAL_BIN}/macs3" ]]; then
+  export EMP_MACS_BIN="${LOCAL_BIN}"
+elif [[ -z "${EMP_MACS_BIN:-}" && -d "${LOCAL_MACS_BIN}" ]]; then
+  export EMP_MACS_BIN="${LOCAL_MACS_BIN}"
+fi
 start_detached "${API_PID_FILE}" "${API_LOG}" \
   env API_HOST="${API_HOST}" API_PORT="${API_PORT}" \
     EMP_ALLOWED_ROOTS="${EMP_ALLOWED_ROOTS}" EMP_ENABLE_USER_R="${EMP_ENABLE_USER_R}" \
     EMP_API_TOKEN="${EMP_API_TOKEN}" EMP_CORS_ORIGIN="${EMP_CORS_ORIGIN}" \
+    EMP_ROOT="${EMP_ROOT}" EMP_DEEPTOOLS_BIN="${EMP_DEEPTOOLS_BIN:-}" \
+    EMP_MACS_BIN="${EMP_MACS_BIN:-}" \
+    PATH="${PATH}" \
+    R_LIBS="${R_LIBS:-}" R_LIBS_USER="${R_LIBS_USER:-}" \
     NO_PROXY='*' no_proxy='*' Rscript "webapp/backend/run_api.R"
 
 echo "Starting frontend on ${WEB_HOST}:${WEB_PORT} ..."

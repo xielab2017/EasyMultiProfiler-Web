@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
-  <title id="title">EasyMultiProfiler Web V8.0.0 Education architecture</title>
+  <title id="title">EasyMultiProfiler Web V9.0.0 Education architecture</title>
   <desc id="desc">Education edition flow: course weeks, student login, EMP analysis, GitHub sync with run history.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
@@ -58,7 +58,7 @@
   </g>
 
   <!-- Header -->
-  <text x="60" y="52" class="label" font-size="32">EasyMultiProfiler Web V8.0.0_Education</text>
+  <text x="60" y="52" class="label" font-size="32">EasyMultiProfiler Web V9.0.0_Education</text>
   <text x="60" y="82" class="small" font-size="15">Course weeks -&gt; student login -&gt; EMP analysis -&gt; GitHub sync (new run each time, history kept)</text>
   <rect x="1048" y="28" width="172" height="42" rx="21" fill="rgba(255,224,138,.12)" stroke="#ffe08a" stroke-width="1.4"/>
   <text x="1134" y="56" class="label" font-size="16" text-anchor="middle" fill="#ffe8b0">PREVIEW</text>
@@ -121,8 +121,8 @@
   <text x="984" y="390" class="small" font-size="14">LATEST pointer update</text>
   <rect class="item" x="968" y="420" width="232" height="48" rx="10"/>
   <text x="984" y="450" class="small" font-size="14">Commit link in UI</text>
-  <text x="968" y="505" class="tiny" font-size="12">EMP2026/assignments/</text>
-  <text x="968" y="528" class="tiny" font-size="12">{track}/week_0N/runs/...</text>
+  <text x="968" y="505" class="tiny" font-size="12">EMP2026/Week_01/</text>
+  <text x="968" y="528" class="tiny" font-size="12">{track}/weekly/runs/...</text>
   <text x="968" y="560" class="tiny" font-size="13">API: /api/github/sync</text>
 
   <!-- Arrows -->
@@ -130,5 +130,5 @@
   <path class="arrow" d="M626 400 H644" marker-end="url(#arrowCyan)"/>
   <path class="arrow" d="M922 400 H940" marker-end="url(#arrowCyan)"/>
 
-  <text x="640" y="670" text-anchor="middle" class="tiny" font-size="13">Preview branch V8.0.0_Education  |  https://github.com/xielab2017/EasyMultiProfiler-Web</text>
+  <text x="640" y="670" text-anchor="middle" class="tiny" font-size="13">Preview branch V9.0.0_Education  |  https://github.com/xielab2017/EasyMultiProfiler-Web</text>
 </svg>

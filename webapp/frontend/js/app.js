@@ -3,7 +3,7 @@
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
 // this value in lock-step with the one used in index.html (app.js ?v=).
-import * as API from "./api.js?v=2026-07-21-gh-sync-v3";
+import * as API from "./api.js?v=chipseq-peak-registry-v1";
 import {
   initCodeLab,
   notifyCodeLabNavigate,
@@ -12,30 +12,36 @@ import {
   refreshCodeLabContext,
   openCodeLabPanel,
   applyCopilotAction,
-} from "./code_lab.js?v=2026-07-16-multi-demo-v2";
+} from "./code_lab.js?v=2026-07-22-chipseq-downstream-v1";
 import {
   initTeaching,
   onTeachingPage,
   setupTeachingTraceHooks,
 } from "./teaching.js?v=2026-07-16-multi-demo-v2";
-import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=2026-07-16-multi-demo-v2";
-import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-07-16-multi-demo-v2";
-import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=2026-07-16-multi-demo-v2";
+import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=2026-07-22-multiomics-v1";
+import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-07-23-rnaseq-final";
+import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=chipseq-peaks-fix-v1";
 import { initFontScale } from "./font_scale.js?v=2026-07-16-multi-demo-v2";
 import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
-import { initGithubSync } from "./github_sync.js?v=2026-07-21-gh-sync-v3";
+import { initGithubSync } from "./github_sync.js?v=2026-07-22-multiomics-v1";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
   experiments: [],      // [{name, samples, features, assay}]
   currentExp: null,     // string – currently selected experiment
   standaloneClinical: null, // {columns:[], orientation:"..."} for clinical-only uploads
+  chipLastPeaks: null,  // session-level ChIP peaks (BED/MACS) — not an MAE experiment
+  activeDataKind: "experiment", // "experiment" | "clinical" | "chipseq"
   clinicalResolvedSource: "experiment",
   coldataCols: [],      // [{name, n_unique, values}]
   features: [],         // string[] (dropdown subset; may be truncated)
   featuresN: 0,         // total feature count from server
   expCache: {},         // per-experiment {coldataCols, features, featuresN, fetchedAt}
+  uiSnapshots: {},      // per-experiment UI result HTML (analysis/viz/prep/summary)
+  uiSnapshotActiveKey: null, // key currently shown in the UI result panes
   _groupRefreshInflight: null,
+  analysisBusy: 0,      // >0 while withBusy / withGlobalProgress is active
+  syncInflight: false,  // GitHub homework sync mutex (also set by github_sync.js)
   workflows: [],        // [{id,label,description,n_stages}]
   inspector: {
     assayOffset: 1,
@@ -103,6 +109,7 @@ export function hideGlobalProgress() {
 // completion while driving the global progress bar.  The caller receives
 // the final result object from `/api/jobs/<id>/result`.
 export async function withGlobalProgress(label, jobPromiseOrId, opts = {}) {
+  window._emp.analysisBusy = (window._emp.analysisBusy || 0) + 1;
   showGlobalProgress(label);
   // Drive an "indeterminate drift" between server-side bumps so the bar
   // *always* feels alive even during the long KEGG REST call.  The drift
@@ -134,22 +141,61 @@ export async function withGlobalProgress(label, jobPromiseOrId, opts = {}) {
     updateGlobalProgress(100, `Failed: ${e.message}`);
     setTimeout(hideGlobalProgress, 2500);
     throw e;
+  } finally {
+    window._emp.analysisBusy = Math.max(0, (window._emp.analysisBusy || 1) - 1);
   }
+}
+
+function _busyElapsedLabel(t0) {
+  const s = Math.max(0, Math.floor((Date.now() - t0) / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m > 0 ? `${m}m ${r}s` : `${r}s`;
 }
 
 // Generic "show the top strip while this promise is pending".
 // Use for synchronous backend endpoints that do NOT return a job_id so the
 // user still sees visual feedback.  The strip moves with indeterminate
 // drift (no real % from the server).
+//
+// opts.mode:
+//   - "asymptote" (default): climbs toward 92% until the promise settles
+//     (fine for short calls; looks "stuck at 92%" on long jobs).
+//   - "hold": 0–5% start, then pulse in holdMin–holdMax (default 50–85)
+//     with phase text + elapsed time — use for MACS / long ChIP analyze.
 export async function withBusy(label, workPromiseOrFn, opts = {}) {
+  window._emp.analysisBusy = (window._emp.analysisBusy || 0) + 1;
   showGlobalProgress(label);
+  const mode = opts.mode === "hold" ? "hold" : "asymptote";
+  const holdLo = Math.max(5, Math.min(90, Number(opts.holdMin) || 50));
+  const holdHi = Math.max(holdLo + 1, Math.min(95, Number(opts.holdMax) || 85));
+  const baseMsg = opts.message || "";
+  const t0 = Date.now();
   let drift = 0, driftTimer = null;
   const driftLoop = () => {
-    // Climb asymptotically toward 92% – never reach 100 until we actually finish.
-    drift = Math.min(drift + (92 - drift) * 0.08, 92);
-    updateGlobalProgress(drift, opts.message || "");
+    const elapsed = _busyElapsedLabel(t0);
+    const msg = baseMsg
+      ? `${baseMsg}（已用时 ${elapsed}）`
+      : (mode === "hold" ? `已用时 ${elapsed}` : "");
+    if (mode === "hold") {
+      const sec = (Date.now() - t0) / 1000;
+      if (sec < 1.2) {
+        drift = Math.min(5, (sec / 1.2) * 5);
+      } else {
+        const mid = (holdLo + holdHi) / 2;
+        const amp = (holdHi - holdLo) / 2;
+        // Gentle pulse so the bar stays alive without implying near-done.
+        drift = mid + amp * Math.sin((sec - 1.2) / 9);
+      }
+      updateGlobalProgress(drift, msg);
+    } else {
+      // Climb asymptotically toward 92% – never reach 100 until we actually finish.
+      drift = Math.min(drift + (92 - drift) * 0.08, 92);
+      updateGlobalProgress(drift, msg || opts.message || "");
+    }
   };
-  driftTimer = setInterval(driftLoop, 300);
+  driftTimer = setInterval(driftLoop, mode === "hold" ? 400 : 300);
+  driftLoop();
   const work = typeof workPromiseOrFn === "function" ? workPromiseOrFn() : workPromiseOrFn;
   try {
     const result = await work;
@@ -162,6 +208,8 @@ export async function withBusy(label, workPromiseOrFn, opts = {}) {
     updateGlobalProgress(100, `Failed: ${e.message}`);
     setTimeout(hideGlobalProgress, 2500);
     throw e;
+  } finally {
+    window._emp.analysisBusy = Math.max(0, (window._emp.analysisBusy || 1) - 1);
   }
 }
 
@@ -334,6 +382,7 @@ export function showResultTable(containerId, jsonStr, maxRows = 500, options = {
     if (options.aiCopilot !== false) {
       attachAiCopilot(container, { ...inferAiContext(containerId), kind: "table", ...(options.aiContext || {}) });
     }
+    noteUiResultChanged();
   } catch(e) {
     container.innerHTML = `<p style='padding:12px;color:#991b1b'>Could not parse results: ${e.message}</p>`;
     container.classList.remove("hidden");
@@ -406,6 +455,7 @@ export function showPlot(containerId, base64png, options = {}) {
   addDownloadHandler(`${containerId}-dl-tiff`, "image/tiff", `${downloadStem}.tiff`);
   if (window.lucide) lucide.createIcons({ nodes: [container] });
   attachAiCopilot(container, { ...inferAiContext(containerId), kind: "plot" });
+  noteUiResultChanged();
 }
 
 function buildPlotPanelHtml(panelId, base64png, downloadStem, pdfName = null) {
@@ -490,6 +540,7 @@ export function showOrdinationResult(containerId, res) {
   for (const p of panels) wirePlotPanelDownloads(p.id, p.stem);
   if (window.lucide) lucide.createIcons({ nodes: [container] });
   attachAiCopilot(container, { ...inferAiContext(containerId), kind: "plot" });
+  noteUiResultChanged();
 }
 
 // ── AI 分析助手 (Copilot) ───────────────────────────
@@ -831,6 +882,8 @@ const pageTitles = {
   inspector: "EMPT Inspector",
   preparation: "Data Preparation",
   analysis: "Analysis",
+  chipseq: "ChIP-seq Analysis",
+  chipseq_downstream: "ChIPseq Downstream",
   clinical: "Clinical & Phenotype",
   runall: "One-click Run All",
   visualization: "Visualization",
@@ -855,13 +908,23 @@ function updateWorkflowStepper(page) {
 }
 
 function navigateTo(page) {
+  // Unified ChIP page: downstream checklist lives under Step2 / Advanced.
+  let chipStep = null;
+  if (page === "chipseq_downstream") {
+    page = "chipseq";
+    chipStep = "2";
+  }
+  // Dedicated pages: chipseq (never fold into analysis-only).
   document.querySelectorAll(".nav-item").forEach(el => {
-    el.classList.toggle("active", el.dataset.page === page);
+    const match = el.dataset.page === page ||
+      (page === "chipseq" && el.dataset.page === "chipseq_downstream");
+    el.classList.toggle("active", match && el.dataset.page === "chipseq");
   });
   document.querySelectorAll(".page").forEach(el => el.classList.remove("active"));
   const target = document.getElementById(`page-${page}`);
   if (target) target.classList.add("active");
-  document.getElementById("page-title").textContent = t(pageTitleKey(page), getLocale()) || page;
+  document.getElementById("page-title").textContent =
+    t(pageTitleKey(page), getLocale()) || pageTitles[page] || page;
   updateWorkflowStepper(page);
   try { localStorage.setItem("emp_last_page", page); } catch { /* quota */ }
   window.dispatchEvent(new CustomEvent("emp:page-view", { detail: { page, locale: getLocale() } }));
@@ -876,7 +939,39 @@ function navigateTo(page) {
   if (page === "clinical") refreshClinicalVars();
   if (page === "course" || page === "prompts") onTeachingPage(page);
   if (page === "guide") initGuide();
-  notifyCodeLabNavigate(page);
+  if (page === "chipseq") {
+    ensureChipUnifiedLayout();
+    refreshChipBamTable();
+    refreshChipPeakStatus();
+    if (chipStep) setChipWizardStep(chipStep);
+    else setChipWizardStep(window._emp.chipWizardStep || "1");
+    refreshChipRecipeDeps();
+    loadChipRecipePacks().catch(() => {});
+    if (window.lucide) lucide.createIcons();
+  }
+  // Code Lab still keys off analysis for ChIP form snippets.
+  notifyCodeLabNavigate(page === "chipseq" ? "analysis" : page);
+}
+
+/** Jump to dedicated ChIPseq workspace (sidebar / Import helpers). */
+function openChipseqWorkspace({ skipNavigate = false } = {}) {
+  window._emp.currentOmics = "chipseq";
+  window._emp.activeDataKind = "chipseq";
+  try {
+    const sel = document.getElementById("omics-pipeline");
+    if (sel) sel.value = "chipseq";
+  } catch (_) { /* no-op */ }
+  try {
+    window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: "chipseq" } }));
+  } catch (_) { /* no-op */ }
+  if (!skipNavigate) navigateTo("chipseq");
+  setTimeout(() => {
+    // Keep analysis-tab pointer in sync if user later opens 分析 → ChIP-seq.
+    document.querySelector('[data-tab="ana-chipseq"]')?.classList.add("active");
+    refreshChipBamTable();
+    refreshChipPeakStatus();
+    if (window.lucide) lucide.createIcons();
+  }, 120);
 }
 
 window.__empNavigate = navigateTo;
@@ -961,6 +1056,8 @@ function demoIcon(omics) {
     case "metabolomics":   return "⚗️";
     case "clinical":       return "🩺";
     case "chipseq":        return "🧶";
+    case "multiomics":     return "🔗";
+    case "customize":      return "✏️";
     default:               return "📊";
   }
 }
@@ -1105,6 +1202,37 @@ async function loadWorkflowBlueprint() {
     listEl.querySelectorAll(".workflow-tag").forEach(btn => {
       btn.addEventListener("click", async () => {
         const wid = btn.dataset.workflowId;
+        listEl.querySelectorAll(".workflow-tag").forEach((b) => b.classList.toggle("is-active", b === btn));
+        try {
+          window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: wid } }));
+        } catch (_) { /* no-op */ }
+
+        // Sync top experiment selector to a loaded dataset of this type.
+        if (wid === "clinical") {
+          const sc = await probeStandaloneClinical();
+          if (sc && globalExp && [...globalExp.options].some((o) => o.value === CLINICAL_STANDALONE_TOKEN)) {
+            globalExp.value = CLINICAL_STANDALONE_TOKEN;
+            await onGlobalExperimentChange(CLINICAL_STANDALONE_TOKEN);
+          } else {
+            navigateTo("clinical");
+          }
+        } else if (wid === "chipseq") {
+          const chip = await probeStandaloneChipPeaks();
+          if (chip && globalExp && [...globalExp.options].some((o) => o.value === CHIP_STANDALONE_TOKEN)) {
+            globalExp.value = CHIP_STANDALONE_TOKEN;
+            await onGlobalExperimentChange(CHIP_STANDALONE_TOKEN);
+          } else {
+            openChipseqWorkspace();
+          }
+        } else {
+          const match = (window._emp.experiments || []).find((e) => e.omics === wid)
+            || (window._emp.experiments || []).find((e) => inferOmicsForExperiment(e.name) === wid);
+          if (match && globalExp) {
+            globalExp.value = match.name;
+            await onGlobalExperimentChange(match.name);
+          }
+        }
+
         try {
           const wf = await API.getWorkflow(wid);
           const stageHtml = (wf.stages || []).map(s => `
@@ -1167,10 +1295,481 @@ document.querySelectorAll(".tab-bar").forEach(bar => {
 // ── Global experiment selector ─────────────────────
 const globalExp = document.getElementById("global-experiment");
 let _groupRefreshDebounce = null;
+const CLINICAL_STANDALONE_TOKEN = "__clinical_standalone__";
+const CHIP_STANDALONE_TOKEN = "__chipseq_peaks__";
+
+function isClinicalStandaloneToken(value) {
+  return String(value || "") === CLINICAL_STANDALONE_TOKEN;
+}
+
+function isChipStandaloneToken(value) {
+  return String(value || "") === CHIP_STANDALONE_TOKEN;
+}
+
+function clinicalStandaloneOptionHtml() {
+  return `<option value="${CLINICAL_STANDALONE_TOKEN}">Clinical / Phenotype (session)</option>`;
+}
+
+function chipStandaloneOptionHtml() {
+  return `<option value="${CHIP_STANDALONE_TOKEN}">ChIP-seq (peaks)</option>`;
+}
+
+function chipPeakDisplayName(peaks) {
+  if (!peaks) return "";
+  if (peaks.display_name) return String(peaks.display_name);
+  const path = peaks.peak_file || "";
+  return path.split(/[/\\]/).pop() || path || "";
+}
+
+function fillGlobalExperimentSelect(exps, sc, preferred = null, chip = null) {
+  if (!globalExp) return;
+  const list = Array.isArray(exps) ? exps : [];
+  let html = list.map((e) => `<option value="${escapeHtml(e.name)}">${escapeHtml(e.name)}</option>`).join("");
+  if (sc) html += clinicalStandaloneOptionHtml();
+  if (chip) html += chipStandaloneOptionHtml();
+  globalExp.innerHTML = html;
+  const wrap = document.getElementById("exp-selector-wrap");
+  if (!list.length && !sc && !chip) {
+    wrap?.classList.add("hidden");
+    return;
+  }
+  wrap?.classList.remove("hidden");
+
+  const prefer = preferred || window._emp.currentExp;
+  if (isClinicalStandaloneToken(prefer) && sc) {
+    globalExp.value = CLINICAL_STANDALONE_TOKEN;
+    window._emp.currentExp = null;
+    window._emp.activeDataKind = "clinical";
+  } else if (isChipStandaloneToken(prefer) && chip) {
+    globalExp.value = CHIP_STANDALONE_TOKEN;
+    window._emp.currentExp = null;
+    window._emp.activeDataKind = "chipseq";
+  } else if (prefer && list.some((e) => e.name === prefer)) {
+    globalExp.value = prefer;
+    window._emp.currentExp = prefer;
+    window._emp.activeDataKind = "experiment";
+  } else if (list.length) {
+    globalExp.value = list[0].name;
+    window._emp.currentExp = list[0].name;
+    window._emp.activeDataKind = "experiment";
+  } else if (sc) {
+    globalExp.value = CLINICAL_STANDALONE_TOKEN;
+    window._emp.currentExp = null;
+    window._emp.activeDataKind = "clinical";
+  } else if (chip) {
+    globalExp.value = CHIP_STANDALONE_TOKEN;
+    window._emp.currentExp = null;
+    window._emp.activeDataKind = "chipseq";
+  }
+  if (!window._emp.uiSnapshotActiveKey) {
+    const gv = globalExp?.value;
+    window._emp.uiSnapshotActiveKey = isClinicalStandaloneToken(gv)
+      ? CLINICAL_STANDALONE_TOKEN
+      : isChipStandaloneToken(gv)
+        ? CHIP_STANDALONE_TOKEN
+        : (window._emp.currentExp || null);
+  }
+  updateUiSnapshotBadges();
+}
+
+function activePageKey() {
+  return document.querySelector(".page.active")?.id?.replace(/^page-/, "") || "";
+}
+
+function inferOmicsForExperiment(expName) {
+  if (isClinicalStandaloneToken(expName) || window._emp.activeDataKind === "clinical") {
+    return "clinical";
+  }
+  if (isChipStandaloneToken(expName) || window._emp.activeDataKind === "chipseq") {
+    return "chipseq";
+  }
+  const hit = (window._emp.experiments || []).find((e) => e.name === expName);
+  if (hit?.omics) return hit.omics;
+  const n = String(expName || "").toLowerCase();
+  if (/16s|m16s|tax|microbiome/.test(n)) return "microbiome_16s";
+  if (/chip|atac|peak/.test(n)) return "chipseq";
+  if (/meta.?bol|mbx/.test(n)) return "metabolomics";
+  if (/metagen|mgx|ko_|pathway/.test(n)) return "metagenomics";
+  if (/prot|protein/.test(n)) return "proteomics";
+  if (/rna|tx|transcript|gene/.test(n)) return "transcriptomics";
+  return "";
+}
+
+async function reloadActivePageForExperiment() {
+  const page = activePageKey();
+  const clinicalMode = window._emp.activeDataKind === "clinical";
+  const chipMode = window._emp.activeDataKind === "chipseq";
+  if (page === "summary") await loadSummary();
+  if (page === "inspector") await loadInspector();
+  if (page === "preparation" && !clinicalMode && !chipMode) {
+    await ensureGroupSelectors({ force: true });
+    if (window._emp.currentExp) await refreshPrepareSnapshots();
+  }
+  if ((page === "analysis" || page === "visualization" || page === "runall") && !clinicalMode && !chipMode) {
+    await ensureGroupSelectors({ force: true });
+  }
+  if (page === "clinical" || clinicalMode) await refreshClinicalVars();
+  if ((page === "analysis" || page === "chipseq") && chipMode) {
+    refreshChipPeakStatus();
+  }
+  if (page === "export" && !clinicalMode && !chipMode) {
+    await ensureGroupSelectors({ force: true, background: true });
+  }
+  notifyCodeLabNavigate(page || "import");
+}
+
+// ── Per-experiment UI result snapshots ─────────────────────────────
+// When switching omics experiments, keep analysis/viz/prep plots & tables so
+// multi-omics homework is not wiped. Prepare-data snapshots (RDS) are separate.
+const UI_SNAP_RESULT_ROOTS = [
+  "#page-analysis",
+  "#page-chipseq",
+  "#page-chipseq_downstream",
+  "#page-visualization",
+  "#page-preparation",
+  "#page-clinical",
+  "#page-runall",
+  "#page-export",
+];
+const UI_SNAP_FIXED_IDS = [
+  "summary-stats", "summary-coldata", "summary-features",
+  "inspector-stats", "inspector-assay-table", "inspector-coldata-table",
+  "inspector-rowdata-table", "inspector-result-table",
+  "import-result",
+];
+
+function uiSnapshotStorageKey() {
+  const sid = localStorage.getItem("emp_session_id") || "nosession";
+  return `emp_ui_result_snaps_v1_${sid}`;
+}
+
+function uiSnapshotLabel(key) {
+  if (isClinicalStandaloneToken(key)) return "Clinical / Phenotype";
+  if (isChipStandaloneToken(key)) return "ChIP-seq (peaks)";
+  return key || "(unknown)";
+}
+
+function persistUiSnapshotsToStorage() {
+  try {
+    const payload = {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      byKey: window._emp.uiSnapshots || {},
+    };
+    sessionStorage.setItem(uiSnapshotStorageKey(), JSON.stringify(payload));
+  } catch (_) {
+    // quota / private mode — keep in-memory only
+  }
+}
+
+function loadUiSnapshotsFromStorage() {
+  try {
+    const raw = sessionStorage.getItem(uiSnapshotStorageKey());
+    if (!raw) return;
+    const payload = JSON.parse(raw);
+    if (payload?.byKey && typeof payload.byKey === "object") {
+      window._emp.uiSnapshots = { ...(window._emp.uiSnapshots || {}), ...payload.byKey };
+    }
+  } catch (_) { /* ignore */ }
+}
+
+function collectResultAreaSnapshot(rootSel) {
+  const root = document.querySelector(rootSel);
+  if (!root) return { areas: {}, activeTab: null };
+  const areas = {};
+  root.querySelectorAll(".result-area[id]").forEach((el) => {
+    const html = el.innerHTML || "";
+    if (!html.trim()) return;
+    areas[el.id] = {
+      html,
+      hidden: el.classList.contains("hidden"),
+    };
+  });
+  const activeTab = root.querySelector(".tab-bar .tab.active")?.dataset?.tab || null;
+  return { areas, activeTab };
+}
+
+function snapshotHasContent(snap) {
+  if (!snap?.pages) return false;
+  return Object.values(snap.pages).some((p) => p?.areas && Object.keys(p.areas).length > 0);
+}
+
+function currentUiSnapshotKey() {
+  if (window._emp.uiSnapshotActiveKey) return window._emp.uiSnapshotActiveKey;
+  if (window._emp.activeDataKind === "clinical" || isClinicalStandaloneToken(window._emp.currentExp)) {
+    return CLINICAL_STANDALONE_TOKEN;
+  }
+  if (window._emp.activeDataKind === "chipseq" || isChipStandaloneToken(window._emp.currentExp)) {
+    return CHIP_STANDALONE_TOKEN;
+  }
+  const ge = document.getElementById("global-experiment")?.value;
+  if (isClinicalStandaloneToken(ge)) return CLINICAL_STANDALONE_TOKEN;
+  if (isChipStandaloneToken(ge)) return CHIP_STANDALONE_TOKEN;
+  return window._emp.currentExp || ge || null;
+}
+
+let _uiSnapNoteTimer = null;
+/** Debounced capture after plots/tables land in the DOM. */
+function noteUiResultChanged() {
+  const key = currentUiSnapshotKey();
+  if (!key) return;
+  if (!window._emp.uiSnapshotActiveKey) window._emp.uiSnapshotActiveKey = key;
+  clearTimeout(_uiSnapNoteTimer);
+  _uiSnapNoteTimer = setTimeout(() => {
+    _uiSnapNoteTimer = null;
+    captureUiSnapshot(key);
+  }, 220);
+}
+
+function captureUiSnapshot(key) {
+  if (!key) return false;
+  const pages = {};
+  UI_SNAP_RESULT_ROOTS.forEach((sel) => {
+    const pageKey = sel.replace("#page-", "");
+    pages[pageKey] = collectResultAreaSnapshot(sel);
+  });
+  // Fixed containers outside generic result-area scans
+  const fixed = {};
+  UI_SNAP_FIXED_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const html = el.innerHTML || "";
+    if (!html.trim()) return;
+    fixed[id] = { html, hidden: el.classList.contains("hidden") };
+  });
+  pages._fixed = { areas: fixed };
+
+  const snap = {
+    key,
+    omics: inferOmicsForExperiment(key) || window._emp.activeDataKind || "",
+    updatedAt: new Date().toISOString(),
+    pages,
+  };
+  if (!snapshotHasContent(snap)) return false;
+  window._emp.uiSnapshots[key] = snap;
+  persistUiSnapshotsToStorage();
+  updateUiSnapshotBadges();
+  return true;
+}
+
+function clearUiResultPanes() {
+  UI_SNAP_RESULT_ROOTS.forEach((sel) => {
+    document.querySelectorAll(`${sel} .result-area`).forEach((el) => {
+      el.innerHTML = "";
+      el.classList.add("hidden");
+    });
+  });
+  UI_SNAP_FIXED_IDS.forEach((id) => {
+    if (id === "import-result") return; // keep last import status message
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = "";
+  });
+}
+
+function restoreUiSnapshot(key) {
+  if (!key) return false;
+  loadUiSnapshotsFromStorage();
+  const snap = window._emp.uiSnapshots?.[key];
+  if (!snapshotHasContent(snap)) return false;
+
+  Object.entries(snap.pages || {}).forEach(([pageKey, pageSnap]) => {
+    if (pageKey === "_fixed") {
+      Object.entries(pageSnap.areas || {}).forEach(([id, meta]) => {
+        const el = document.getElementById(id);
+        if (!el || id === "import-result") return;
+        el.innerHTML = meta.html || "";
+        el.classList.toggle("hidden", !!meta.hidden && !(meta.html || "").trim());
+      });
+      return;
+    }
+    const root = document.getElementById(`page-${pageKey}`);
+    if (!root) return;
+    Object.entries(pageSnap.areas || {}).forEach(([id, meta]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = meta.html || "";
+      if ((meta.html || "").trim()) el.classList.remove("hidden");
+      else el.classList.toggle("hidden", !!meta.hidden);
+    });
+    if (pageSnap.activeTab) {
+      const tabBtn = root.querySelector(`.tab-bar .tab[data-tab="${pageSnap.activeTab}"]`);
+      if (tabBtn) tabBtn.click();
+    }
+  });
+  updateUiSnapshotBadges();
+  return true;
+}
+
+function updateUiSnapshotBadges() {
+  const keys = Object.keys(window._emp.uiSnapshots || {}).filter((k) =>
+    snapshotHasContent(window._emp.uiSnapshots[k])
+  );
+  let host = document.getElementById("ui-snap-status");
+  if (!host) {
+    const wrap = document.getElementById("exp-selector-wrap");
+    if (!wrap) return;
+    host = document.createElement("span");
+    host.id = "ui-snap-status";
+    host.className = "hint ui-snap-status";
+    wrap.appendChild(host);
+  }
+  if (!keys.length) {
+    host.textContent = "";
+    host.classList.add("hidden");
+    return;
+  }
+  host.classList.remove("hidden");
+  host.title = keys.map(uiSnapshotLabel).join(", ");
+  host.textContent = `Snapshots: ${keys.length} experiment(s)`;
+}
+
+async function onGlobalExperimentChange(expName) {
+  const next = String(expName || "").trim();
+  const clinicalMode = isClinicalStandaloneToken(next);
+  const chipMode = isChipStandaloneToken(next);
+  const nextKey = clinicalMode
+    ? CLINICAL_STANDALONE_TOKEN
+    : chipMode
+      ? CHIP_STANDALONE_TOKEN
+      : next;
+  const prevKey = window._emp.uiSnapshotActiveKey
+    || (window._emp.activeDataKind === "clinical" ? CLINICAL_STANDALONE_TOKEN : null)
+    || (window._emp.activeDataKind === "chipseq" ? CHIP_STANDALONE_TOKEN : null)
+    || window._emp.currentExp
+    || null;
+
+  // Flush pending debounced capture so a just-rendered plot is not lost.
+  if (_uiSnapNoteTimer) {
+    clearTimeout(_uiSnapNoteTimer);
+    _uiSnapNoteTimer = null;
+  }
+
+  // Save previous experiment's plots/tables before wiping the panes.
+  if (prevKey && prevKey !== nextKey) {
+    if (captureUiSnapshot(prevKey)) {
+      toast(`Saved result snapshot · ${uiSnapshotLabel(prevKey)}`, "info");
+    }
+  }
+  clearUiResultPanes();
+
+  if (clinicalMode) {
+    window._emp.activeDataKind = "clinical";
+    if (window._emp.currentExp && isClinicalStandaloneToken(window._emp.currentExp)) {
+      window._emp.currentExp = null;
+    }
+    const sourceSel = document.getElementById("clin-data-source");
+    if (sourceSel) sourceSel.value = "standalone";
+    try {
+      window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: "clinical" } }));
+    } catch (_) { /* no-op */ }
+
+    setLoading(true);
+    try {
+      await probeStandaloneClinical();
+      window._emp.uiSnapshotActiveKey = CLINICAL_STANDALONE_TOKEN;
+      const restored = restoreUiSnapshot(CLINICAL_STANDALONE_TOKEN);
+      const page = activePageKey();
+      if (restored) {
+        toast(`Restored result snapshot · ${uiSnapshotLabel(CLINICAL_STANDALONE_TOKEN)}`, "success");
+        if (["analysis", "preparation", "visualization", "inspector", "runall"].includes(page)) {
+          navigateTo("clinical");
+        } else if (page === "clinical") {
+          await refreshClinicalVars();
+        } else if (page === "summary") {
+          // keep restored summary if present; otherwise load
+          if (!document.getElementById("summary-stats")?.innerHTML?.trim()) await loadSummary();
+        }
+      } else if (["analysis", "preparation", "visualization", "inspector", "runall"].includes(page)) {
+        navigateTo("clinical");
+      } else {
+        await reloadActivePageForExperiment();
+      }
+      try {
+        window.dispatchEvent(new CustomEvent("emp:experiment-change", {
+          detail: { experiment: CLINICAL_STANDALONE_TOKEN, omics: "clinical", page: activePageKey() },
+        }));
+      } catch (_) { /* no-op */ }
+    } finally {
+      setLoading(false);
+    }
+    return;
+  }
+
+  if (chipMode) {
+    window._emp.activeDataKind = "chipseq";
+    if (window._emp.currentExp && isChipStandaloneToken(window._emp.currentExp)) {
+      window._emp.currentExp = null;
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: "chipseq" } }));
+    } catch (_) { /* no-op */ }
+
+    setLoading(true);
+    try {
+      await probeStandaloneChipPeaks();
+      window._emp.uiSnapshotActiveKey = CHIP_STANDALONE_TOKEN;
+      const restored = restoreUiSnapshot(CHIP_STANDALONE_TOKEN);
+      if (restored) {
+        toast(`Restored result snapshot · ${uiSnapshotLabel(CHIP_STANDALONE_TOKEN)}`, "success");
+      }
+      openChipseqWorkspace();
+      try {
+        window.dispatchEvent(new CustomEvent("emp:experiment-change", {
+          detail: { experiment: CHIP_STANDALONE_TOKEN, omics: "chipseq", page: activePageKey() },
+        }));
+      } catch (_) { /* no-op */ }
+    } finally {
+      setLoading(false);
+    }
+    return;
+  }
+
+  window._emp.activeDataKind = "experiment";
+  window._emp.currentExp = next || null;
+  if (next) invalidateExperimentCache(next);
+
+  const omics = inferOmicsForExperiment(next);
+  if (omics) {
+    try {
+      window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics } }));
+    } catch (_) { /* no-op */ }
+  }
+
+  setLoading(true);
+  try {
+    await refreshGroupSelectors({ force: true });
+    window._emp.uiSnapshotActiveKey = nextKey;
+    const restored = restoreUiSnapshot(nextKey);
+    if (restored) {
+      toast(`Restored result snapshot · ${uiSnapshotLabel(nextKey)}`, "success");
+      await refreshPrepareSnapshots();
+      // If summary/inspector empty after restore, refill from API.
+      const page = activePageKey();
+      if (page === "summary" && !document.getElementById("summary-stats")?.innerHTML?.trim()) {
+        await loadSummary();
+      }
+      if (page === "inspector" && !document.getElementById("inspector-stats")?.innerHTML?.trim()) {
+        await loadInspector();
+      }
+      if (page === "clinical") await refreshClinicalVars();
+    } else {
+      await reloadActivePageForExperiment();
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("emp:experiment-change", {
+        detail: { experiment: next, omics: omics || null, page: activePageKey(), restored },
+      }));
+    } catch (_) { /* no-op */ }
+  } finally {
+    setLoading(false);
+  }
+}
+
 globalExp.addEventListener("change", () => {
-  window._emp.currentExp = globalExp.value;
   clearTimeout(_groupRefreshDebounce);
-  _groupRefreshDebounce = setTimeout(() => refreshGroupSelectors({ force: true }), 150);
+  _groupRefreshDebounce = setTimeout(() => {
+    onGlobalExperimentChange(globalExp.value);
+  }, 80);
 });
 
 const EXP_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -1335,6 +1934,99 @@ async function refreshGroupSelectors({ force = false, background = false } = {})
   }
 }
 
+async function probeStandaloneClinical() {
+  let sc = window._emp.standaloneClinical;
+  if (sc?.columns?.length) return sc;
+  try {
+    const sv = await API.clinicalVarsStandalone();
+    const rows = Array.isArray(sv?.data) ? sv.data : [];
+    if (rows.length) {
+      sc = {
+        columns: rows.map((r) => r.name),
+        orientation: "samples in rows",
+        n_variables: rows.length,
+      };
+      window._emp.standaloneClinical = sc;
+      return sc;
+    }
+  } catch (_) {
+    // no standalone clinical table in this session
+  }
+  return null;
+}
+
+function renderStandaloneClinicalCard(sc) {
+  const n = (sc.columns || []).length;
+  return `
+    <div class="exp-card exp-card-clinical" data-clinical-standalone="1">
+      <h4>🩺 Clinical / Phenotype (session)</h4>
+      <div class="meta">${n} variables · session-level table</div>
+      <div class="meta">Orientation: ${sc.orientation || "samples in rows"}</div>
+      <div class="meta hint">Not an omics assay — open Clinical &amp; Phenotype to analyze.</div>
+      <button type="button" class="btn btn-outline btn-sm" data-goto-clinical>Open Clinical page</button>
+    </div>
+  `;
+}
+
+function bindClinicalCardActions(root) {
+  root?.querySelectorAll("[data-goto-clinical]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (globalExp && [...globalExp.options].some((o) => o.value === CLINICAL_STANDALONE_TOKEN)) {
+        globalExp.value = CLINICAL_STANDALONE_TOKEN;
+      }
+      onGlobalExperimentChange(CLINICAL_STANDALONE_TOKEN);
+    });
+  });
+}
+
+/** Session-level ChIP peaks (BED upload / MACS) — mirror clinical standalone. */
+async function probeStandaloneChipPeaks() {
+  let peaks = window._emp.chipLastPeaks;
+  if (peaks?.peak_file) return peaks;
+  try {
+    const res = await API.chipListBams();
+    if (res?.last_peaks?.peak_file) {
+      window._emp.chipLastPeaks = {
+        ...(res.last_peaks || {}),
+        ...(window._emp.chipLastPeaks || {}),
+        peak_file: res.last_peaks.peak_file,
+      };
+      return window._emp.chipLastPeaks;
+    }
+  } catch (_) {
+    // no chip session / peaks yet
+  }
+  return null;
+}
+
+function renderStandaloneChipCard(peaks) {
+  const name = chipPeakDisplayName(peaks) || "peaks";
+  const src = peaks?.source === "preimported"
+    ? "pre-called BED"
+    : (peaks?.source || "peaks");
+  const genome = peaks?.genome ? ` · genome ${peaks.genome}` : "";
+  return `
+    <div class="exp-card exp-card-chipseq" data-chipseq-standalone="1">
+      <h4>🧶 ChIP-seq (peaks)</h4>
+      <div class="meta">${escapeHtml(name)} · session-level peaks</div>
+      <div class="meta">${escapeHtml(src)}${escapeHtml(genome)}</div>
+      <div class="meta hint">Not an MAE assay — open Analysis → ChIP-seq to annotate.</div>
+      <button type="button" class="btn btn-outline btn-sm" data-goto-chipseq>Open ChIP-seq</button>
+    </div>
+  `;
+}
+
+function bindChipCardActions(root) {
+  root?.querySelectorAll("[data-goto-chipseq]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (globalExp && [...globalExp.options].some((o) => o.value === CHIP_STANDALONE_TOKEN)) {
+        globalExp.value = CHIP_STANDALONE_TOKEN;
+      }
+      onGlobalExperimentChange(CHIP_STANDALONE_TOKEN);
+    });
+  });
+}
+
 async function refreshExperimentList() {
   try {
     const prevKey = (window._emp.experiments || []).map((e) => e.name).join("|");
@@ -1343,47 +2035,45 @@ async function refreshExperimentList() {
     if (prevKey !== nextKey) invalidateExperimentCache();
     window._emp.experiments = exps;
     const cards = document.getElementById("exp-cards");
+    const sc = await probeStandaloneClinical();
+    const chip = await probeStandaloneChipPeaks();
+
+    const keepClinical =
+      window._emp.activeDataKind === "clinical" ||
+      isClinicalStandaloneToken(globalExp?.value);
+    const keepChip =
+      window._emp.activeDataKind === "chipseq" ||
+      isChipStandaloneToken(globalExp?.value);
+    const preferred = keepClinical
+      ? CLINICAL_STANDALONE_TOKEN
+      : keepChip
+        ? CHIP_STANDALONE_TOKEN
+        : window._emp.currentExp;
+
     if (!exps.length) {
-      window._emp.currentExp = null;
-      globalExp.innerHTML = "";
-      document.getElementById("exp-selector-wrap").classList.add("hidden");
-      // Recover standalone clinical state even after page refresh.
-      let sc = window._emp.standaloneClinical;
-      if (!sc) {
-        try {
-          const sv = await API.clinicalVarsStandalone();
-          const rows = Array.isArray(sv?.data) ? sv.data : [];
-          if (rows.length) {
-            sc = { columns: rows.map(r => r.name), orientation: "samples in rows" };
-            window._emp.standaloneClinical = sc;
-          }
-        } catch (_) {
-          // no standalone clinical table in this session
+      if (sc || chip) {
+        fillGlobalExperimentSelect([], sc, preferred, chip);
+        if (cards) {
+          cards.innerHTML =
+            (chip ? renderStandaloneChipCard(chip) : "") +
+            (sc ? renderStandaloneClinicalCard(sc) : "");
+          bindClinicalCardActions(cards);
+          bindChipCardActions(cards);
         }
-      }
-      if (sc && cards) {
-        cards.innerHTML = `
-          <div class="exp-card">
-            <h4>Standalone Clinical Table</h4>
-            <div class="meta">${(sc.columns || []).length} variables</div>
-            <div class="meta">Orientation: ${sc.orientation || "samples in rows"}</div>
-          </div>
-        `;
         document.getElementById("import-experiments").classList.remove("hidden");
+        document.getElementById("session-badge")?.classList.remove("hidden");
       } else {
+        window._emp.currentExp = null;
+        window._emp.activeDataKind = "experiment";
+        if (globalExp) globalExp.innerHTML = "";
+        document.getElementById("exp-selector-wrap")?.classList.add("hidden");
         document.getElementById("import-experiments").classList.add("hidden");
       }
       return;
     }
 
-    // Global selector
-    const wrap = document.getElementById("exp-selector-wrap");
-    wrap.classList.remove("hidden");
-    globalExp.innerHTML = exps.map(e => `<option value="${e.name}">${e.name}</option>`).join("");
-    if (!window._emp.currentExp || !exps.some(e => e.name === window._emp.currentExp)) {
-      window._emp.currentExp = exps[0].name;
-    }
-    globalExp.value = window._emp.currentExp;
+    // Global selector: omics experiments + clinical / ChIP session entries when present
+    fillGlobalExperimentSelect(exps, sc, preferred, chip);
     const crossA = document.getElementById("cross-exp-a");
     const crossB = document.getElementById("cross-exp-b");
     const crossC = document.getElementById("cross-exp-c");
@@ -1399,49 +2089,74 @@ async function refreshExperimentList() {
       markerExp.innerHTML = exps.map(e => `<option value="${e.name}" selected>${e.name}</option>`).join("");
     }
     const chipRnaseq = document.getElementById("chip-rnaseq-exp");
+    const chipCrossRna = document.getElementById("chip-cross-rnaseq");
+    const chipCrossPro = document.getElementById("chip-cross-proteomics");
+    const expOpts = exps.map(e => `<option value="${e.name}">${e.name}${e.omics ? ` (${e.omics})` : ""}</option>`).join("");
     if (chipRnaseq) {
-      chipRnaseq.innerHTML = exps.map(e => `<option value="${e.name}">${e.name}</option>`).join("");
+      chipRnaseq.innerHTML = expOpts;
       if (window._emp.currentExp) chipRnaseq.value = window._emp.currentExp;
     }
+    if (chipCrossRna) {
+      chipCrossRna.innerHTML = `<option value="">— none —</option>${expOpts}`;
+      if (window._emp.currentExp) chipCrossRna.value = window._emp.currentExp;
+    }
+    if (chipCrossPro) {
+      chipCrossPro.innerHTML = `<option value="">— none —</option>${expOpts}`;
+    }
+    fillChipRecipeDepSelects(exps);
 
-    // Import page cards
-    cards.innerHTML = exps.map(e => `
+    // Import page cards: omics experiments + optional standalone clinical / ChIP
+    const omicsCards = exps.map(e => `
       <div class="exp-card">
         <h4>${e.name}</h4>
         <div class="meta">${e.samples} samples · ${e.features} features</div>
-        <div class="meta">Assay: ${e.assay}</div>
+        <div class="meta">Assay: ${e.assay}${e.omics ? ` · ${e.omics}` : ""}</div>
       </div>
     `).join("");
+    cards.innerHTML =
+      omicsCards +
+      (chip ? renderStandaloneChipCard(chip) : "") +
+      (sc ? renderStandaloneClinicalCard(sc) : "");
+    bindClinicalCardActions(cards);
+    bindChipCardActions(cards);
     document.getElementById("import-experiments").classList.remove("hidden");
 
     // Session badge
     document.getElementById("session-badge").classList.remove("hidden");
 
-    await refreshGroupSelectors();
-    await refreshPrepareSnapshots();
+    if (window._emp.activeDataKind !== "clinical" && window._emp.activeDataKind !== "chipseq") {
+      await refreshGroupSelectors();
+      await refreshPrepareSnapshots();
+    }
   } catch (e) {
-    // Common case: clinical-only session has no MAE experiments.
-    // Try standalone clinical fallback before showing failure state.
+    // Common case: clinical/chip-only session has no MAE experiments.
+    // Try standalone fallbacks before showing failure state.
     const cards = document.getElementById("exp-cards");
     try {
-      const sv = await API.clinicalVarsStandalone();
-      const rows = Array.isArray(sv?.data) ? sv.data : [];
-      if (rows.length) {
-        window._emp.currentExp = null;
-        window._emp.standaloneClinical = { columns: rows.map(r => r.name), orientation: "samples in rows" };
-        globalExp.innerHTML = "";
-        document.getElementById("exp-selector-wrap").classList.add("hidden");
+      const sc = await probeStandaloneClinical();
+      const chip = await probeStandaloneChipPeaks();
+      if (sc || chip) {
+        const keepClinical =
+          window._emp.activeDataKind === "clinical" ||
+          isClinicalStandaloneToken(globalExp?.value);
+        const keepChip =
+          window._emp.activeDataKind === "chipseq" ||
+          isChipStandaloneToken(globalExp?.value);
+        const preferred = keepClinical
+          ? CLINICAL_STANDALONE_TOKEN
+          : keepChip
+            ? CHIP_STANDALONE_TOKEN
+            : null;
+        fillGlobalExperimentSelect([], sc, preferred, chip);
         if (cards) {
-          cards.innerHTML = `
-            <div class="exp-card">
-              <h4>Standalone Clinical Table</h4>
-              <div class="meta">${rows.length} variables</div>
-              <div class="meta">Source: session clinical upload</div>
-            </div>
-          `;
+          cards.innerHTML =
+            (chip ? renderStandaloneChipCard(chip) : "") +
+            (sc ? renderStandaloneClinicalCard(sc) : "");
+          bindClinicalCardActions(cards);
+          bindChipCardActions(cards);
         }
         document.getElementById("import-experiments").classList.remove("hidden");
-        document.getElementById("session-badge").classList.remove("hidden");
+        document.getElementById("session-badge")?.classList.remove("hidden");
         return;
       }
     } catch (_) {
@@ -1612,9 +2327,29 @@ const UPLOAD_TYPE_MAP = {
   microbiome_16s:  "tax",
   metabolomics:    "normal",
   metagenomics:    "normal",
+  proteomics:      "normal",
   chipseq:         "chipseq",
   clinical:        "clinical",
 };
+
+function syncUploadCardMode(card) {
+  if (!card) return;
+  const mode = card.querySelector(".upload-import-mode")?.value || "matrix";
+  const isDiff = mode === "diff_raw";
+  card.classList.toggle("upload-card--diff", isDiff);
+  card.querySelectorAll(".upload-matrix-only").forEach((el) => el.classList.toggle("hidden", isDiff));
+  card.querySelectorAll(".upload-diff-only").forEach((el) => el.classList.toggle("hidden", !isDiff));
+  const label = card.querySelector(".upload-data-label");
+  if (label) {
+    if (!label.dataset.matrixLabel) label.dataset.matrixLabel = label.textContent;
+    label.textContent = isDiff ? "DE / marker results" : label.dataset.matrixLabel;
+  }
+  const btn = card.querySelector(".upload-btn");
+  if (btn && btn.dataset.labelMatrix) {
+    const icon = btn.querySelector("i")?.outerHTML || "";
+    btn.innerHTML = `${icon} ${isDiff ? (btn.dataset.labelDiff || "Upload DE results") : btn.dataset.labelMatrix}`;
+  }
+}
 
 function bindUploadCard(omicsType) {
   const card = document.querySelector(`.upload-card[data-upload-type="${omicsType}"]`);
@@ -1624,8 +2359,19 @@ function bindUploadCard(omicsType) {
   const dataName  = card.querySelector(".data-filename");
   const metaName  = card.querySelector(".meta-filename");
   const expName   = card.querySelector(".upload-exp-name");
+  const modeSel   = card.querySelector(".upload-import-mode");
   const btn       = card.querySelector(".upload-btn");
   if (!dataInput || !btn) return;
+
+  if (!btn.dataset.labelMatrix) {
+    btn.dataset.labelMatrix = btn.textContent.replace(/\s+/g, " ").trim();
+    btn.dataset.labelDiff = `Upload DE → ${omicsType}`;
+  }
+  card.querySelectorAll(".upload-data-label").forEach((lab) => {
+    if (!lab.dataset.matrixLabel) lab.dataset.matrixLabel = lab.textContent;
+  });
+  modeSel?.addEventListener("change", () => syncUploadCardMode(card));
+  syncUploadCardMode(card);
 
   dataInput.addEventListener("change", () => {
     const f = dataInput.files[0];
@@ -1651,44 +2397,58 @@ function bindUploadCard(omicsType) {
       toast(t("import.noDataFile"), "error");
       return;
     }
-    const dataType = UPLOAD_TYPE_MAP[omicsType] || "normal";
+    const importMode = modeSel?.value || "matrix";
     const fd = new FormData();
     fd.append("data_file", dataFile);
     fd.append("experiment_name", expName?.value || omicsType);
-    fd.append("data_type", omicsType === "clinical"
-      ? (card.querySelector(".upload-clinical-kind")?.value || "clinical_raw")
-      : dataType);
-    fd.append("assay_name", card.querySelector(".upload-assay-name")?.value || "counts");
-    fd.append("start_level", card.querySelector(".upload-start-level")?.value || "Species");
-    fd.append("tax_sep", card.querySelector(".upload-tax-sep")?.value || ";");
-    if (metaInput?.files[0]) fd.append("metadata_file", metaInput.files[0]);
 
     setLoading(true);
     try {
       if (!localStorage.getItem("emp_session_id")) await API.createSession();
-      const res = await withBusy(`Importing ${omicsType}`, () => API.importData(fd));
-      if (res.import_mode === "clinical_merge" || res.import_mode === "clinical_standalone") {
-        const modeMsg = res.import_mode === "clinical_standalone"
-          ? "No direct sample-ID overlap found; saved as session-level clinical table."
-          : `Merged into ${res.updated_experiments} experiment(s).`;
+      let res;
+      if (importMode === "diff_raw") {
+        res = await withBusy(`Importing DE (${omicsType})`, () => API.importDiffRaw(fd));
         showAlert("import-result",
-          `✓ Clinical/phenotype upload done. ${modeMsg} Columns: ${(res.columns || []).join(", ")}.`,
+          `✓ DE results cached for "${res.experiment_name}": ${res.features} features. ${res.message || "Ready for ChIP joint packs."}`,
           "success");
-        toast("Clinical metadata uploaded successfully.", "success");
-        if (res.import_mode === "clinical_standalone") {
-          window._emp.standaloneClinical = {
-            columns: res.columns || [],
-            orientation: res.orientation || "samples in rows",
-          };
+        toast(`${res.experiment_name}: diff_raw cached`, "success");
+        window._emp.standaloneClinical = null;
+      } else {
+        const dataType = UPLOAD_TYPE_MAP[omicsType] || "normal";
+        fd.append("data_type", omicsType === "clinical"
+          ? (card.querySelector(".upload-clinical-kind")?.value || "clinical_raw")
+          : dataType);
+        fd.append("assay_name", card.querySelector(".upload-assay-name")?.value || "counts");
+        fd.append("start_level", card.querySelector(".upload-start-level")?.value || "Species");
+        fd.append("tax_sep", card.querySelector(".upload-tax-sep")?.value || ";");
+        if (metaInput?.files[0]) fd.append("metadata_file", metaInput.files[0]);
+        res = await withBusy(`Importing ${omicsType}`, () => API.importData(fd));
+        if (res.import_mode === "clinical_merge" || res.import_mode === "clinical_standalone") {
+          const modeMsg = res.import_mode === "clinical_standalone"
+            ? "No direct sample-ID overlap found; saved as session-level clinical table. Select it in ChIP Step2 joint packs."
+            : `Merged into ${res.updated_experiments} experiment(s). Usable in ChIP Peak × Clinical packs.`;
+          showAlert("import-result",
+            `✓ Clinical/phenotype upload done. ${modeMsg} Columns: ${(res.columns || []).join(", ")}.`,
+            "success");
+          toast("Clinical metadata uploaded successfully.", "success");
+          if (res.import_mode === "clinical_standalone") {
+            window._emp.standaloneClinical = {
+              columns: res.columns || [],
+              orientation: res.orientation || "samples in rows",
+            };
+            try {
+              window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: "clinical" } }));
+            } catch (_) { /* no-op */ }
+          } else {
+            window._emp.standaloneClinical = null;
+          }
         } else {
+          showAlert("import-result",
+            `✓ Imported "${res.experiment_name}": ${res.samples} samples, ${res.features} features.`,
+            "success");
+          toast(`${res.experiment_name} imported successfully!`, "success");
           window._emp.standaloneClinical = null;
         }
-      } else {
-        showAlert("import-result",
-          `✓ Imported "${res.experiment_name}": ${res.samples} samples, ${res.features} features.`,
-          "success");
-        toast(`${res.experiment_name} imported successfully!`, "success");
-        window._emp.standaloneClinical = null;
       }
       await refreshExperimentList();
     } catch (e) {
@@ -1723,7 +2483,8 @@ function bindUploadDropZoneForCard(card) {
   });
 }
 
-["transcriptomics", "microbiome_16s", "clinical"].forEach(bindUploadCard);
+["transcriptomics", "proteomics", "microbiome_16s", "metagenomics", "metabolomics", "clinical"]
+  .forEach(bindUploadCard);
 
 function bindChipseqUploadCard() {
   const card = document.querySelector(`.upload-card[data-upload-type="chipseq"]`);
@@ -1753,24 +2514,30 @@ function bindChipseqUploadCard() {
     setLoading(true);
     try {
       if (!localStorage.getItem("emp_session_id")) await API.createSession();
-      const sid = localStorage.getItem("emp_session_id");
-      const fd = new FormData();
-      fd.append("session_id", sid || "");
-      fd.append("peak_file", file);
-      fd.append("genome", genomeSel?.value || "hs");
-      fd.append("preset", presetSel?.value || "chipseq_tf");
+      const genome = genomeSel?.value || "hs";
+      const preset = presetSel?.value || "cutrun_tf_p05";
       const res = await withBusy("Uploading pre-called peaks",
-        () => API.request("POST", "/workflows/chipseq/peaks/upload", fd, true));
+        () => API.chipUploadPeaks(file, genome, preset));
+      window._emp.chipLastPeaks = {
+        peak_file: res.peak_file,
+        run_dir: res.run_dir,
+        genome: res.genome || genome,
+        preset: res.preset || preset,
+        source: "preimported",
+        format_hint: res.format_hint,
+        display_name: file.name,
+      };
+      window._emp.activeDataKind = "chipseq";
       showAlert("import-result",
-        `✓ Pre-called peaks uploaded (${file.name}). Switched to ChIP-seq tab — click 「Annotate Peaks」 to continue.`,
+        `✓ Peak file uploaded (${file.name}). This is a MACS-style peak product — ChIPseeker can annotate it directly (no BAM / re-calling needed).`,
         "success");
-      toast("Peak file registered.", "success");
-      window._emp.currentOmics = "chipseq";
-      window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: "chipseq" } }));
-      navigateTo("analysis");
-      setTimeout(() => {
-        document.querySelector('[data-tab="ana-chipseq"]')?.click();
-      }, 200);
+      toast("Peaks ready — annotate with ChIPseeker.", "success");
+      await refreshExperimentList();
+      if (globalExp && [...globalExp.options].some((o) => o.value === CHIP_STANDALONE_TOKEN)) {
+        globalExp.value = CHIP_STANDALONE_TOKEN;
+      }
+      openChipseqWorkspace();
+      refreshChipPeakStatus(file.name);
     } catch (e) {
       showAlert("import-result", `Error: ${e.message}`, "error");
       toast(e.message, "error");
@@ -1782,22 +2549,24 @@ function bindChipseqUploadCard() {
 bindChipseqUploadCard();
 
 document.getElementById("btn-go-chipseq")?.addEventListener("click", () => {
-  window._emp.currentOmics = "chipseq";
-  window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: "chipseq" } }));
-  navigateTo("analysis");
-  setTimeout(() => {
-    document.querySelector('[data-tab="ana-chipseq"]')?.click();
-  }, 150);
+  openChipseqWorkspace();
+});
+document.getElementById("btn-ana-open-chipseq")?.addEventListener("click", () => {
+  openChipseqWorkspace();
+});
+document.getElementById("btn-ana-open-chipseq-downstream")?.addEventListener("click", () => {
+  navigateTo("chipseq_downstream");
+});
+document.getElementById("btn-chipseq-goto-downstream")?.addEventListener("click", () => {
+  navigateTo("chipseq_downstream");
+});
+document.getElementById("chip-btn-goto-step2-b")?.addEventListener("click", () => {
+  setChipWizardStep("2");
 });
 
 // Direct upload of pre-called peaks (skip MACS) – handled by the chip card below
-async function uploadChipseqPeaks(sid, file, genome = "hs", preset = "chipseq_tf") {
-  const fd = new FormData();
-  fd.append("session_id", sid || "");
-  fd.append("peak_file", file);
-  fd.append("genome", genome);
-  fd.append("preset", preset);
-  return API.request("POST", "/workflows/chipseq/peaks/upload", fd, true);
+async function uploadChipseqPeaks(sid, file, genome = "mm", preset = "cutrun_tf_p05") {
+  return API.chipUploadPeaks(file, genome, preset);
 }
 
 document.getElementById("btn-inspector-refresh")?.addEventListener("click", loadInspector);
@@ -1903,6 +2672,9 @@ document.getElementById("btn-import").addEventListener("click", async () => {
           columns: res.columns || [],
           orientation: res.orientation || "samples in rows",
         };
+        try {
+          window.dispatchEvent(new CustomEvent("emp:omics-change", { detail: { omics: "clinical" } }));
+        } catch (_) { /* no-op */ }
       } else {
         window._emp.standaloneClinical = null;
       }
@@ -2421,6 +3193,7 @@ async function runAnalysis(btnId, resultId, apiFn) {
       const res = await withBusy(label, () => apiFn(exp));
       showResultTable(resultId, res.data);
       toast("Analysis complete.", "success");
+      noteUiResultChanged();
     } catch(e) {
       resultEl.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${e.message}</p>`;
       toast(e.message, "error");
@@ -2647,6 +3420,7 @@ document.getElementById("btn-enrich").addEventListener("click", async () => {
     } else {
       plot.classList.add("hidden"); plot.innerHTML = "";
     }
+    noteUiResultChanged();
     reportLastRun(`Enrichment ${db}`, performance.now() - t0, r.backend_ms);
   } catch(e) {
     tbl.classList.remove("hidden");
@@ -2680,6 +3454,7 @@ document.getElementById("btn-network").addEventListener("click", async () => {
     el.innerHTML = '<p style="padding:12px;color:#166534">✓ Network analysis completed. Visualize in the Visualization page.</p>';
     el.classList.remove("hidden");
     toast("Network analysis complete.", "success");
+    noteUiResultChanged();
   } catch(e) {
     el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${e.message}</p>`;
     el.classList.remove("hidden");
@@ -2752,9 +3527,18 @@ runAnalysis("tx-btn-wgcna", "tx-analysis-result", exp =>
 
 // ── ChIP-seq WORKFLOW ─────────────────────────────
 const CHIP_MACS_PRESET_HINTS = {
-  chipseq_tf: "Standard TF ChIP-seq: MACS builds shifting model automatically. -f BAM, -q 0.01.",
-  chipseq_histone_broad: "Broad peak calling for histone marks: --broad --broad-cutoff 0.1.",
-  atac_paired: "Paired-end ATAC: -f BAMPE, uses fragment length from alignments.",
+  cutrun_tf_p05: "Lab TF Cut&Run (Nr4a1/HA vs IgG): pool all BAM -t vs -c, -f BAMPE -p 0.05 -g 1.87e9 -B.",
+  cutrun_tf_p01: "Stricter TF Cut&Run: BAMPE -p 0.01 -g 1.87e9 -B.",
+  cutrun_histone_p05: "Lab histone Cut&Run (same recipe as TF): BAMPE -p 0.05 -B — not --broad.",
+  cutrun_histone_p01: "Stricter histone Cut&Run: BAMPE -p 0.01 -g 1.87e9 -B.",
+  atac_bampe_p05: "ATAC PE lab-style: -f BAMPE -p 0.05 -g 1.87e9 -B; optional IgG/input as -c.",
+  atac_bampe_q05: "ATAC PE with FDR: -f BAMPE -q 0.05 -g 1.87e9 -B.",
+  cutrun_pe_p05: "Alias of TF Cut&Run p=0.05.",
+  cutrun_pe_p01: "Alias of TF Cut&Run p=0.01.",
+  histone_broad: "Optional broad domains (--broad). Lab histone Cut&Run default is cutrun_histone_p05.",
+  chipseq_tf: "Classic SE ChIP-seq TF: -f BAM -q 0.01. Not for Cut&Run.",
+  chipseq_histone_broad: "Legacy SE broad histone. Prefer cutrun_histone_p05 or histone_broad.",
+  atac_paired: "Alias of ATAC BAMPE q=0.05.",
   atac_cutting_site: "Cutting-site mode: --nomodel --shift -75 --extsize 150 --keep-dup all.",
   cuttag_tn5: "MACS3 CUT&Tag example: --nomodel --shift -50 --extsize 100.",
   dnase_smoothed: "DNase smoothing window: --nomodel --shift -100 --extsize 200.",
@@ -2763,13 +3547,22 @@ const CHIP_MACS_PRESET_HINTS = {
 };
 
 const CHIP_MACS_PRESET_VALUES = {
-  chipseq_tf: { format: "BAM", cutoff_type: "q", qvalue: 0.01, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false },
+  cutrun_tf_p05: { format: "BAMPE", cutoff_type: "p", pvalue: 0.05, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false, save_bdg: true, gsize: "1.87e9" },
+  cutrun_tf_p01: { format: "BAMPE", cutoff_type: "p", pvalue: 0.01, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false, save_bdg: true, gsize: "1.87e9" },
+  cutrun_histone_p05: { format: "BAMPE", cutoff_type: "p", pvalue: 0.05, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false, save_bdg: true, gsize: "1.87e9" },
+  cutrun_histone_p01: { format: "BAMPE", cutoff_type: "p", pvalue: 0.01, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false, save_bdg: true, gsize: "1.87e9" },
+  atac_bampe_p05: { format: "BAMPE", cutoff_type: "p", pvalue: 0.05, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false, save_bdg: true, gsize: "1.87e9" },
+  atac_bampe_q05: { format: "BAMPE", cutoff_type: "q", qvalue: 0.05, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false, save_bdg: true, gsize: "1.87e9" },
+  cutrun_pe_p05: { format: "BAMPE", cutoff_type: "p", pvalue: 0.05, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false, save_bdg: true, gsize: "1.87e9" },
+  cutrun_pe_p01: { format: "BAMPE", cutoff_type: "p", pvalue: 0.01, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false, save_bdg: true, gsize: "1.87e9" },
+  histone_broad: { format: "BAMPE", cutoff_type: "p", pvalue: 0.05, broad: true, broad_cutoff: 0.1, keep_dup: "auto", nomodel: false, save_bdg: true, gsize: "1.87e9" },
+  chipseq_tf: { format: "BAM", cutoff_type: "q", qvalue: 0.01, keep_dup: "auto", broad: false, nomodel: false, call_summits: false, nolambda: false, save_bdg: false },
   chipseq_histone_broad: { format: "BAM", cutoff_type: "q", qvalue: 0.01, broad: true, broad_cutoff: 0.1, keep_dup: "auto", nomodel: false },
-  atac_paired: { format: "BAMPE", cutoff_type: "q", qvalue: 0.05, keep_dup: "auto", broad: false, nomodel: false },
+  atac_paired: { format: "BAMPE", cutoff_type: "q", qvalue: 0.05, keep_dup: "auto", broad: false, nomodel: false, save_bdg: true, gsize: "1.87e9" },
   atac_cutting_site: { format: "BAM", cutoff_type: "q", qvalue: 0.05, keep_dup: "all", nomodel: true, shift: -75, extsize: 150, broad: false },
   cuttag_tn5: { format: "BAM", cutoff_type: "q", qvalue: 0.01, nomodel: true, shift: -50, extsize: 100, keep_dup: "auto" },
   dnase_smoothed: { format: "BAM", cutoff_type: "q", qvalue: 0.05, nomodel: true, shift: -100, extsize: 200, keep_dup: "auto" },
-  no_control: { format: "BAM", cutoff_type: "q", qvalue: 0.01, nolambda: true, keep_dup: "auto" },
+  no_control: { format: "BAMPE", cutoff_type: "p", pvalue: 0.05, nolambda: true, keep_dup: "auto", save_bdg: true, gsize: "1.87e9" },
 };
 
 function chipSetField(id, value) {
@@ -2797,7 +3590,13 @@ function applyChipMacsPreset(presetId) {
   chipSetField("chip-shift", p.shift ?? "");
   chipSetField("chip-extsize", p.extsize ?? "");
   chipSetField("chip-nolambda", p.nolambda);
+  chipSetField("chip-save-bdg", p.save_bdg);
+  chipSetField("chip-gsize", p.gsize ?? "");
   document.getElementById("chip-cutoff-type")?.dispatchEvent(new Event("change"));
+}
+
+function chipBool(id) {
+  return document.getElementById(id)?.checked === true;
 }
 
 function chipMacsParams() {
@@ -2811,29 +3610,33 @@ function chipMacsParams() {
   const llocal = document.getElementById("chip-llocal")?.value;
   const scaleTo = document.getElementById("chip-scale-to")?.value;
   const preset = document.getElementById("chip-macs-preset")?.value || "custom";
+  const broad = chipBool("chip-broad");
+  // Summits are for narrow peaks; ignore when --broad is on (backend also drops it).
+  const callSummits = broad ? false : chipBool("chip-call-summits");
   const params = {
     genome: document.getElementById("chip-genome")?.value || "hs",
     prefer_macs: document.getElementById("chip-prefer-macs")?.value || "auto",
     format: document.getElementById("chip-format")?.value || "BAM",
     preset: preset === "custom" ? null : preset,
     keep_dup: document.getElementById("chip-keep-dup")?.value || "auto",
-    broad: document.getElementById("chip-broad")?.checked || false,
+    broad,
     broad_cutoff: +document.getElementById("chip-broad-cutoff")?.value || 0.1,
-    call_summits: document.getElementById("chip-call-summits")?.checked || false,
-    save_bdg: document.getElementById("chip-save-bdg")?.checked || false,
-    nomodel: document.getElementById("chip-nomodel")?.checked || false,
-    fix_bimodal: document.getElementById("chip-fix-bimodal")?.checked || false,
-    nolambda: document.getElementById("chip-nolambda")?.checked || false,
-    cutoff_analysis: document.getElementById("chip-cutoff-analysis")?.checked || false,
+    call_summits: callSummits,
+    save_bdg: chipBool("chip-save-bdg"),
+    nomodel: chipBool("chip-nomodel"),
+    fix_bimodal: chipBool("chip-fix-bimodal"),
+    nolambda: chipBool("chip-nolambda"),
+    cutoff_analysis: chipBool("chip-cutoff-analysis"),
     fe_cutoff: +document.getElementById("chip-fe-cutoff")?.value || 1,
     extra_args: document.getElementById("chip-extra-args")?.value?.trim() || null,
-    score_cutoff: +document.getElementById("chip-score-cutoff")?.value || 5,
   };
   if (cutoffType === "p") {
     params.pvalue = +document.getElementById("chip-pvalue")?.value || 0.05;
   } else {
     params.qvalue = +document.getElementById("chip-qvalue")?.value || 0.01;
   }
+  const gsizeVal = document.getElementById("chip-gsize")?.value?.trim();
+  if (gsizeVal) params.gsize = gsizeVal;
   if (shiftVal !== "" && shiftVal != null) params.shift = +shiftVal;
   if (extVal !== "" && extVal != null) params.extsize = +extVal;
   if (tsizeVal !== "" && tsizeVal != null) params.tsize = +tsizeVal;
@@ -2845,9 +3648,49 @@ function chipMacsParams() {
   return params;
 }
 
+const CHIP_GENOME_TXDB = {
+  hs: { txdb: "TxDb.Hsapiens.UCSC.hg19.knownGene", anno_db: "org.Hs.eg.db" },
+  hg19: { txdb: "TxDb.Hsapiens.UCSC.hg19.knownGene", anno_db: "org.Hs.eg.db" },
+  mm: { txdb: "TxDb.Mmusculus.UCSC.mm10.knownGene", anno_db: "org.Mm.eg.db" },
+};
+
+function syncChipAnnoGenomeDefaults(genome) {
+  const map = CHIP_GENOME_TXDB[genome] || CHIP_GENOME_TXDB.hs;
+  const tx = document.getElementById("chip-txdb");
+  const ad = document.getElementById("chip-annodb");
+  if (tx && [...tx.options].some((o) => o.value === map.txdb)) tx.value = map.txdb;
+  if (ad && [...ad.options].some((o) => o.value === map.anno_db)) ad.value = map.anno_db;
+}
+
+function chipAnnotateParams() {
+  const annoGenome = document.getElementById("chip-anno-genome")?.value
+    || document.getElementById("chip-genome")?.value
+    || "hs";
+  const tssUp = document.getElementById("chip-tss-up")?.value;
+  const tssDn = document.getElementById("chip-tss-dn")?.value;
+  const txdb = document.getElementById("chip-txdb")?.value || "";
+  const annoDb = document.getElementById("chip-annodb")?.value || "";
+  const params = {
+    genome: annoGenome,
+    tss_upstream: tssUp !== "" && tssUp != null ? +tssUp : -3000,
+    tss_downstream: tssDn !== "" && tssDn != null ? +tssDn : 3000,
+    level: document.getElementById("chip-anno-level")?.value || "transcript",
+    overlap: document.getElementById("chip-overlap")?.value || "TSS",
+    flank_distance: +document.getElementById("chip-flank-distance")?.value || 5000,
+    add_flank_gene_info: document.getElementById("chip-add-flank")?.checked || false,
+    same_strand: document.getElementById("chip-same-strand")?.checked || false,
+    ignore_overlap: document.getElementById("chip-ignore-overlap")?.checked || false,
+    score_cutoff: +document.getElementById("chip-score-cutoff")?.value || 5,
+  };
+  if (txdb) params.txdb = txdb;
+  if (annoDb) params.anno_db = annoDb;
+  return params;
+}
+
 function chipParams() {
   const m = chipMacsParams();
-  return { genome: m.genome, prefer_macs: m.prefer_macs, qvalue: m.qvalue, score_cutoff: m.score_cutoff };
+  const a = chipAnnotateParams();
+  return { genome: a.genome || m.genome, prefer_macs: m.prefer_macs, qvalue: m.qvalue, score_cutoff: a.score_cutoff };
 }
 
 async function uploadChipBams(inputId, group, label) {
@@ -2855,18 +3698,393 @@ async function uploadChipBams(inputId, group, label) {
   const files = input?.files ? [...input.files] : [];
   if (!files.length) { toast(`Select ${label} BAM/SAM files.`, "error"); return; }
   setLoading(true);
+  window._emp.analysisBusy = (window._emp.analysisBusy || 0) + 1;
+  let hideTimer = null;
+  const clearHideTimer = () => { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } };
   try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
     for (const f of files) {
-      await withBusy(`Upload ${f.name}`, () => API.chipUploadBam(f, group));
+      clearHideTimer();
+      showGlobalProgress(`Upload ${f.name}`);
+      try {
+        await API.chipUploadBam(f, group, (p) => {
+          updateGlobalProgress(p?.pct ?? 0, p?.message || "");
+        });
+        updateGlobalProgress(100, "Done");
+      } catch (e) {
+        updateGlobalProgress(100, `Failed: ${e.message}`);
+        toast(e.message, "error");
+        throw e;
+      }
     }
+    hideTimer = setTimeout(hideGlobalProgress, 500);
     await refreshChipBamTable();
     showAlert("chip-profile-result", `✓ Uploaded ${files.length} ${label} file(s).`, "success");
     toast(`${label} upload complete.`, "success");
     input.value = "";
   } catch (e) {
     showAlert("chip-profile-result", `Error: ${e.message}`, "error");
+    clearHideTimer();
+    hideGlobalProgress();
+  } finally {
+    window._emp.analysisBusy = Math.max(0, (window._emp.analysisBusy || 1) - 1);
+    setLoading(false);
+  }
+}
+
+function refreshChipPeakStatus(displayName = null) {
+  const peaks = window._emp.chipLastPeaks;
+  const path = peaks?.peak_file || "";
+  const els = [
+    document.getElementById("chip-peak-status"),
+    document.getElementById("chip-peak-status-anno"),
+  ].filter(Boolean);
+  if (!els.length) return;
+  if (!path && !displayName) {
+    els.forEach((el) => {
+      el.classList.add("hidden");
+      el.textContent = "";
+    });
+    return;
+  }
+  const name = displayName || peaks?.display_name || path.split(/[/\\]/).pop() || path;
+  const srcRaw = peaks?.source || "peaks";
+  const src = (srcRaw === "preimported" || srcRaw === "upload")
+    ? "uploaded peak file"
+    : (srcRaw === "macs" || /narrowPeak|broadPeak|summits/i.test(name) ? "MACS output" : srcRaw);
+  const genome = peaks?.genome ? ` · genome ${peaks.genome}` : "";
+  const nPeaks = peaks?.n_peaks;
+  const nTxt = (nPeaks != null && nPeaks !== "")
+    ? ` · <strong>${escapeHtml(String(nPeaks))}</strong> peaks`
+    : "";
+  const lowWarn = (Number(nPeaks) >= 0 && Number(nPeaks) < 50)
+    ? `<br><span class="hint" style="color:#b45309">⚠ Only ${escapeHtml(String(nPeaks))} peak(s) — ChIPseeker will mirror this count. Re-run MACS (§3) with --nomodel/--extsize, looser -q, or Histone/broad if needed.</span>`
+    : "";
+  const html = `✓ Peak file ready for ChIPseeker: <strong>${escapeHtml(name)}</strong> (${escapeHtml(src)}${escapeHtml(genome)}${nTxt}).<br><span class="meta">${escapeHtml(path)}</span>${lowWarn}`;
+  els.forEach((el) => {
+    el.innerHTML = html;
+    el.classList.remove("hidden");
+  });
+  // Keep ChIPseeker genome / OrgDb aligned with peak genome (e.g. mm → mouse).
+  syncChipAnnoFromPeakGenome(peaks?.genome);
+}
+
+function syncChipAnnoFromPeakGenome(genome) {
+  if (!genome) return;
+  const g = String(genome).toLowerCase();
+  let key = "hs";
+  if (g === "mm" || g.startsWith("mm") || g.includes("mouse")) key = "mm";
+  else if (g === "hg19") key = "hg19";
+  else if (g === "hs" || g.startsWith("hg") || g.includes("human")) key = "hs";
+  const annoG = document.getElementById("chip-anno-genome");
+  const macsG = document.getElementById("chip-genome");
+  if (annoG && annoG.value !== key && [...annoG.options].some((o) => o.value === key)) {
+    annoG.value = key;
+    syncChipAnnoGenomeDefaults(key);
+  } else if (annoG) {
+    syncChipAnnoGenomeDefaults(annoG.value || key);
+  }
+  if (macsG && (key === "hs" || key === "mm") && macsG.value !== key) {
+    macsG.value = key;
+  }
+}
+
+function renderChipPlots(plots) {
+  const el = document.getElementById("chip-plots");
+  if (!el) return;
+  const entries = plots && typeof plots === "object" ? Object.entries(plots) : [];
+  if (!entries.length) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = entries.map(([title, b64]) => `
+    <div class="chip-plot-panel card">
+      <h4>${escapeHtml(String(title).replace(/_/g, " "))}</h4>
+      <img src="data:image/png;base64,${b64}" alt="${escapeHtml(title)}">
+    </div>
+  `).join("");
+  el.classList.remove("hidden");
+  if (window.lucide) lucide.createIcons({ nodes: [el] });
+  try { noteUiResultChanged(); } catch (_) { /* ignore */ }
+}
+
+function renderChipTables(tables) {
+  const el = document.getElementById("chip-tables");
+  if (!el) return;
+  const entries = tables && typeof tables === "object"
+    ? Object.entries(tables).filter(([, p]) => typeof p === "string" && p)
+    : [];
+  window._emp.chipLastTables = Object.fromEntries(entries);
+  if (!entries.length) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  const labels = {
+    annotation_all: "All peak annotations",
+    high_confidence: "High-confidence peaks (score filter)",
+    promoter: "Promoter peaks",
+    promoter_1kb: "Promoter ≤1kb",
+    GO_BP: "GO Biological Process",
+    GO_CC: "GO Cellular Component",
+    GO_MF: "GO Molecular Function",
+    KEGG: "KEGG",
+    promoter_GO_BP: "Promoter GO-BP",
+    promoter_GO_CC: "Promoter GO-CC",
+    promoter_GO_MF: "Promoter GO-MF",
+    promoter_KEGG: "Promoter KEGG",
+    expression: "ChIP-gene expression matrix",
+    diff: "ChIP-gene differential table",
+    diff_sig: "ChIP-gene significant DE",
+  };
+  el.innerHTML = `
+    <h4 style="margin:12px 0 8px">${escapeHtml(t("chip.tablesTitle") || "Result tables")}</h4>
+    <div class="btn-row" style="flex-wrap:wrap;gap:8px">
+      ${entries.map(([key, path]) => `
+        <button type="button" class="btn btn-outline btn-sm chip-table-dl"
+          data-path="${escapeHtml(path)}" data-key="${escapeHtml(key)}">
+          <i data-lucide="download"></i> ${escapeHtml(labels[key] || key)}
+        </button>`).join("")}
+    </div>`;
+  el.classList.remove("hidden");
+  el.querySelectorAll(".chip-table-dl").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        const res = await withBusy("Download table", () => API.chipDownloadTable(btn.dataset.path));
+        const blob = new Blob([res.content || ""], { type: "text/csv;charset=utf-8" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = res.filename || `${btn.dataset.key || "chip_table"}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast("Table downloaded.", "success");
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    });
+  });
+  if (window.lucide) lucide.createIcons({ nodes: [el] });
+}
+
+function renderChipCrossResult(res) {
+  const el = document.getElementById("chip-analysis-result");
+  if (!el) return;
+  const rec = Array.isArray(res.recommendation) ? res.recommendation : [];
+  const list = (arr, n = 40) => (arr || []).slice(0, n).map((g) => escapeHtml(g)).join(", ")
+    + ((arr || []).length > n ? "…" : "");
+  el.innerHTML = `
+    <div style="padding:12px">
+      <p style="color:#166534;margin:0 0 8px">✓ Cross-omics overlap</p>
+      <ul class="hint" style="margin:0 0 8px 1.2em">
+        <li>ChIP genes: <strong>${res.chip_genes_n ?? 0}</strong></li>
+        <li>RNA significant: <strong>${res.rnaseq_sig_n ?? 0}</strong> · overlap: <strong>${res.overlap_chip_rnaseq_n ?? 0}</strong></li>
+        <li>Proteomics significant: <strong>${res.proteomics_sig_n ?? 0}</strong> · overlap: <strong>${res.overlap_chip_proteomics_n ?? 0}</strong></li>
+        <li>Triplet overlap: <strong>${res.overlap_triplet_n ?? 0}</strong></li>
+      </ul>
+      ${res.overlap_chip_rnaseq_n ? `<p class="meta"><strong>ChIP ∩ RNA:</strong> ${list(res.overlap_chip_rnaseq)}</p>` : ""}
+      ${res.overlap_chip_proteomics_n ? `<p class="meta"><strong>ChIP ∩ Proteomics:</strong> ${list(res.overlap_chip_proteomics)}</p>` : ""}
+      ${res.overlap_triplet_n ? `<p class="meta"><strong>Triplet:</strong> ${list(res.overlap_triplet)}</p>` : ""}
+      ${rec.length ? `<p class="hint">${rec.map((r) => escapeHtml(r)).join("<br>")}</p>` : ""}
+    </div>`;
+  el.classList.remove("hidden");
+}
+
+/** Restore last peaks from session manifest when UI state was lost (reload / tab switch). */
+async function ensureChipPeaksFromSession() {
+  if (window._emp.chipLastPeaks?.peak_file) {
+    refreshChipPeakStatus();
+    return window._emp.chipLastPeaks;
+  }
+  try {
+    const res = await API.chipListBams();
+    if (res.last_peaks?.peak_file) {
+      window._emp.chipLastPeaks = {
+        ...res.last_peaks,
+        source: res.last_peaks.source || "session",
+      };
+      window._emp.activeDataKind = "chipseq";
+      refreshChipPeakStatus();
+      return window._emp.chipLastPeaks;
+    }
+  } catch (_) { /* API down — caller surfaces error */ }
+  return null;
+}
+
+function isChipApiUnreachableError(msg = "") {
+  return /cannot reach emp api|failed to fetch|networkerror|econnrefused/i.test(String(msg || ""));
+}
+
+async function runChipAnnotate({ silentEmptyToast = false } = {}) {
+  const el = document.getElementById("chip-analysis-result");
+  const peaks = await ensureChipPeaksFromSession();
+  const peakFile = peaks?.peak_file || null;
+  if (!peakFile) {
+    const tip = t("chip.hint.annotateFail")
+      || "Upload a MACS peak file (.bed / .narrowPeak) in section 1, or run Call peaks (MACS) in section 3 — then annotate.";
+    if (el) {
+      el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: no peak file in this session.</p><p class="hint" style="padding:0 12px 12px">${escapeHtml(tip)}</p>`;
+      el.classList.remove("hidden");
+    }
+    toast(tip, "error");
+    const err = new Error(tip);
+    err.code = "NO_PEAK_FILE";
+    throw err;
+  }
+  if (!silentEmptyToast) {
+    toast(t("chip.toast.usingSessionPeaks") || "Annotating current peak file with ChIPseeker…", "info");
+  }
+  const ap = chipAnnotateParams();
+  const res = await withBusy("ChIPseeker annotation", () => API.chipAnnotateFull({
+    peak_file: peakFile,
+    ...ap,
+  }), {
+    mode: "hold",
+    message: "ChIPseeker 注释中，首次加载注释库可能较慢…",
+  });
+  window._emp.chipLastAnnotation = res.annotation_csv;
+  if (peaks && res.n_peaks != null) {
+    window._emp.chipLastPeaks = { ...peaks, n_peaks: res.n_peaks };
+    refreshChipPeakStatus();
+  }
+  renderChipPlots(res.plots);
+  renderChipTables(res.tables);
+  const nPlots = res.plots ? Object.keys(res.plots).length : 0;
+  const nTables = res.tables ? Object.keys(res.tables).length : 0;
+  const peakName = (peakFile || "").split(/[/\\]/).pop() || peakFile || "";
+  const lowAnno = Number(res.n_peaks) > 0 && Number(res.n_peaks) < 50
+    ? `<p class="hint" style="padding:0 12px 8px;color:#b45309">Annotated file = current session peak (<code>${escapeHtml(peakName)}</code>). Low count usually means MACS found few peaks — not a ChIPseeker pie-chart bug. Re-check §3 MACS output / Peak QC.</p>`
+    : "";
+  if (el) {
+    el.innerHTML = `<p style="padding:12px;color:#166534">✓ Annotated <strong>${res.n_peaks}</strong> peaks from <code>${escapeHtml(peakName)}</code> (${escapeHtml(res.txdb || ap.txdb || "")}, level=${escapeHtml(res.level || ap.level)}).<br>
+      Downstream: ${nPlots} plot(s) · ${nTables} table(s) — use download buttons below for CSV.<br>
+      <span class="meta">CSV: ${escapeHtml(res.annotation_csv || "")}</span></p>${lowAnno}`;
+    el.classList.remove("hidden");
+  }
+  if (Number(res.n_peaks) > 0 && Number(res.n_peaks) < 50) {
+    toast(`Annotated ${res.n_peaks} peak(s) — if unexpected, re-run MACS with looser params.`, "warning");
+  } else {
+    toast(t("chip.toast.annotateOk") || "ChIPseeker annotation + downstream enrichment complete.", "success");
+  }
+  return res;
+}
+
+async function uploadChipPeaksFromAnalysis({ annotate = false } = {}) {
+  const input = document.getElementById("chip-peak-file");
+  const file = input?.files?.[0];
+  if (!file) {
+    toast("Choose a peak file (.bed / .narrowPeak / .broadPeak / .gff).", "error");
+    return false;
+  }
+  setLoading(true);
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    const genome = document.getElementById("chip-anno-genome")?.value
+      || document.getElementById("chip-genome")?.value
+      || "hs";
+    const preset = document.getElementById("chip-macs-preset")?.value || "cutrun_tf_p05";
+    const res = await withBusy("Uploading peak file", () => API.chipUploadPeaks(file, genome, preset));
+    window._emp.chipLastPeaks = {
+      peak_file: res.peak_file,
+      run_dir: res.run_dir,
+      genome: res.genome || genome,
+      assembly: res.assembly,
+      preset: res.preset || preset,
+      source: "upload",
+      format_hint: res.format_hint,
+      display_name: file.name,
+      name: file.name,
+      n_peaks: res.n_peaks,
+      id: res.peak_id || res.last_peaks?.id,
+    };
+    window._emp.activeDataKind = "chipseq";
+    refreshChipPeakStatus(file.name);
+    await refreshChipdsLastPeaks({ forceList: true, forceGenomeSync: true });
+    await refreshExperimentList();
+    if (globalExp && [...globalExp.options].some((o) => o.value === CHIP_STANDALONE_TOKEN)) {
+      globalExp.value = CHIP_STANDALONE_TOKEN;
+    }
+    input.value = "";
+    if (annotate) {
+      showAlert("chip-profile-result",
+        `✓ Peak file uploaded (${file.name}). Running ChIPseeker annotation…`,
+        "success");
+      await runChipAnnotate({ silentEmptyToast: true });
+    } else {
+      showAlert("chip-profile-result",
+        `✓ Peak file uploaded (${file.name}). Ready for ChIPseeker — click Annotate in section 4 (or use Upload & Annotate).`,
+        "success");
+      toast("Peaks ready for direct ChIPseeker analysis.", "success");
+    }
+    return true;
+  } catch (e) {
+    showAlert("chip-profile-result", `Error: ${e.message}`, "error");
     toast(e.message, "error");
+    return false;
   } finally { setLoading(false); }
+}
+
+/** Local folder picker → upload BAM/SAM files (browser cannot expose absolute OS paths). */
+async function browseAndUploadChipFolder() {
+  const picker = document.getElementById("chip-folder-picker");
+  if (!picker) {
+    toast("Folder picker not available in this browser.", "error");
+    return;
+  }
+  picker.value = "";
+  picker.click();
+}
+
+async function onChipFolderPicked(ev) {
+  const files = [...(ev.target?.files || [])];
+  const bamLike = files.filter((f) => /\.(bam|sam)$/i.test(f.name));
+  if (!bamLike.length) {
+    toast("No BAM/SAM files found in the selected folder.", "error");
+    return;
+  }
+  // Show folder label in the path field (relative name only — browsers hide absolute paths).
+  const rel = bamLike[0].webkitRelativePath || bamLike[0].name;
+  const folderLabel = rel.includes("/") ? rel.split("/")[0] : `(local folder · ${bamLike.length} BAM/SAM)`;
+  const pathInput = document.getElementById("chip-folder-path");
+  if (pathInput) pathInput.value = `local:${folderLabel}`;
+
+  setLoading(true);
+  window._emp.analysisBusy = (window._emp.analysisBusy || 0) + 1;
+  let hideTimer = null;
+  const clearHideTimer = () => { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } };
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    for (const f of bamLike) {
+      clearHideTimer();
+      showGlobalProgress(`Upload ${f.name}`);
+      try {
+        await API.chipUploadBam(f, "t", (p) => {
+          updateGlobalProgress(p?.pct ?? 0, p?.message || "");
+        });
+        updateGlobalProgress(100, "Done");
+      } catch (e) {
+        updateGlobalProgress(100, `Failed: ${e.message}`);
+        toast(e.message, "error");
+        throw e;
+      }
+    }
+    hideTimer = setTimeout(hideGlobalProgress, 500);
+    await refreshChipBamTable();
+    showAlert(
+      "chip-profile-result",
+      `✓ Uploaded ${bamLike.length} BAM/SAM from local folder 「${folderLabel}」 as Treatment. Reassign Control in the table if needed.`,
+      "success"
+    );
+    toast(`Uploaded ${bamLike.length} alignment file(s).`, "success");
+  } catch (e) {
+    showAlert("chip-profile-result", `Error: ${e.message}`, "error");
+    clearHideTimer();
+    hideGlobalProgress();
+  } finally {
+    window._emp.analysisBusy = Math.max(0, (window._emp.analysisBusy || 1) - 1);
+    setLoading(false);
+    ev.target.value = "";
+  }
 }
 
 async function refreshChipBamTable() {
@@ -2887,10 +4105,9 @@ async function refreshChipBamTable() {
     if (!files.length) {
       wrap.classList.add("hidden");
       tbody.innerHTML = "";
-      return;
-    }
-    const sorted = [...files].sort((a, b) => (a.group === "c") - (b.group === "c"));
-    tbody.innerHTML = sorted.map((f) => `
+    } else {
+      const sorted = [...files].sort((a, b) => (a.group === "c") - (b.group === "c"));
+      tbody.innerHTML = sorted.map((f) => `
       <tr class="chip-row--${f.group === "c" ? "c" : "t"}" data-chip-id="${escapeHtml(f.id || f.name)}">
         <td>${escapeHtml(f.name || "")}</td>
         <td>
@@ -2902,43 +4119,31 @@ async function refreshChipBamTable() {
         <td class="meta">${escapeHtml(f.path || "")}</td>
       </tr>
     `).join("");
-    wrap.classList.remove("hidden");
-    tbody.querySelectorAll(".chip-bam-group").forEach((sel) => {
-      sel.addEventListener("change", async () => {
-        try {
-          await API.chipSetBamGroup(sel.dataset.id, sel.value);
-          await refreshChipBamTable();
-          toast("Sample group updated.", "success");
-        } catch (e) {
-          toast(e.message, "error");
-        }
+      wrap.classList.remove("hidden");
+      tbody.querySelectorAll(".chip-bam-group").forEach((sel) => {
+        sel.addEventListener("change", async () => {
+          try {
+            await API.chipSetBamGroup(sel.dataset.id, sel.value);
+            await refreshChipBamTable();
+            toast("Sample group updated.", "success");
+          } catch (e) {
+            toast(e.message, "error");
+          }
+        });
       });
-    });
-    if (res.last_peaks?.peak_file) window._emp.chipLastPeaks = res.last_peaks;
+    }
+    if (res.last_peaks?.peak_file) {
+      window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...res.last_peaks };
+      refreshChipPeakStatus();
+      const alreadyListed = globalExp
+        && [...globalExp.options].some((o) => o.value === CHIP_STANDALONE_TOKEN);
+      if (!alreadyListed) refreshExperimentList().catch(() => {});
+    }
     if (res.last_annotation_csv) window._emp.chipLastAnnotation = res.last_annotation_csv;
   } catch (_) {
     wrap.classList.add("hidden");
     if (summary) summary.classList.add("hidden");
   }
-}
-
-function renderChipPlots(plots) {
-  const el = document.getElementById("chip-plots");
-  if (!el) return;
-  const entries = plots && typeof plots === "object" ? Object.entries(plots) : [];
-  if (!entries.length) {
-    el.classList.add("hidden");
-    el.innerHTML = "";
-    return;
-  }
-  el.innerHTML = entries.map(([title, b64]) => `
-    <div class="chip-plot-panel card">
-      <h4>${escapeHtml(title.replace(/_/g, " "))}</h4>
-      <img src="data:image/png;base64,${b64}" alt="${escapeHtml(title)}">
-    </div>
-  `).join("");
-  el.classList.remove("hidden");
-  if (window.lucide) lucide.createIcons({ nodes: [el] });
 }
 
 document.getElementById("chip-macs-preset")?.addEventListener("change", (e) => {
@@ -2957,12 +4162,28 @@ document.getElementById("chip-btn-upload-treatment")?.addEventListener("click", 
 document.getElementById("chip-btn-upload-control")?.addEventListener("click", () => {
   uploadChipBams("chip-bam-files-control", "c", "Control");
 });
+document.getElementById("chip-btn-upload-peaks")?.addEventListener("click", () => {
+  uploadChipPeaksFromAnalysis({ annotate: false });
+});
+document.getElementById("chip-btn-upload-annotate")?.addEventListener("click", () => {
+  uploadChipPeaksFromAnalysis({ annotate: true });
+});
+document.getElementById("chip-btn-browse-folder")?.addEventListener("click", () => {
+  browseAndUploadChipFolder();
+});
+document.getElementById("chip-folder-picker")?.addEventListener("change", (e) => {
+  onChipFolderPicked(e);
+});
 
 document.getElementById("chip-btn-scan-folder")?.addEventListener("click", async () => {
   const folder = document.getElementById("chip-folder-path")?.value?.trim();
-  if (!folder) { toast("Enter a server folder path.", "error"); return; }
+  if (!folder || folder.startsWith("local:")) {
+    toast("Enter a server folder path for Scan, or use 「打开文件夹」 to pick local BAMs.", "error");
+    return;
+  }
   setLoading(true);
   try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
     const res = await withBusy("Scan BAM folder", () => API.chipScanFolder(folder, "t"));
     await refreshChipBamTable();
     showAlert("chip-profile-result", `✓ Registered ${res.n_files || 0} file(s) as Treatment. Reassign Control samples in the table.`, "success");
@@ -2995,14 +4216,65 @@ document.getElementById("chip-btn-peaks")?.addEventListener("click", async () =>
   const el = document.getElementById("chip-analysis-result");
   try {
     const mp = chipMacsParams();
+    const peaksG = String(window._emp.chipLastPeaks?.genome || "").toLowerCase();
+    const macsG = String(mp.genome || "").toLowerCase();
+    if (peaksG && macsG && peaksG !== macsG &&
+        !((peaksG === "hs" || peaksG === "hg19" || peaksG === "hg38") &&
+          (macsG === "hs" || macsG === "hg19" || macsG === "hg38"))) {
+      toast(
+        `Genome caution: existing peaks are “${peaksG}” but MACS is set to “${macsG}”. Continuing with MACS genome ${macsG}.`,
+        "warning"
+      );
+    }
     const res = await withBusy("MACS peak calling", () => API.chipCallPeaks({
       use_manifest: true,
       ...mp,
-    }));
-    window._emp.chipLastPeaks = res;
-    el.innerHTML = `<p style="padding:12px;color:#166534">✓ Peaks called with ${res.caller}. <strong>Treatment: ${res.n_treatment ?? (res.treatment_bams || []).length}</strong>, <strong>Control: ${res.n_control ?? (res.control_bams || []).length}</strong>.<br>Peak: ${escapeHtml(res.peak_file || "")}</p>`;
+    }), {
+      mode: "hold",
+      holdMin: 50,
+      holdMax: 85,
+      message: "MACS 运行中，大 BAM 可能需数十分钟…",
+    });
+    const nPeaks = Number(res.n_peaks);
+    window._emp.chipLastPeaks = {
+      ...(res.last_peaks || {}),
+      ...res,
+      source: "macs",
+      n_peaks: Number.isFinite(nPeaks) ? nPeaks : res.n_peaks,
+      display_name: (res.peak_file || "").split(/[/\\]/).pop() || "MACS peaks",
+      id: res.peak_id || res.last_peaks?.id,
+    };
+    window._emp.activeDataKind = "chipseq";
+    const warnLines = Array.isArray(res.macs_warnings)
+      ? res.macs_warnings.slice(0, 3).map((w) => `<li>${escapeHtml(String(w))}</li>`).join("")
+      : "";
+    const lowHint = res.low_peak_hint
+      ? `<p class="hint" style="padding:0 12px 8px;color:#b45309">${escapeHtml(res.low_peak_hint)}</p>`
+      : (Number.isFinite(nPeaks) && nPeaks < 50
+        ? `<p class="hint" style="padding:0 12px 8px;color:#b45309">Only ${nPeaks} peak(s) called — unusual. Try §3 Advanced: --nomodel + extsize 200, -q 0.05, or Histone/broad preset; then open narrowPeak / treat_pileup.bdg in IGV.</p>`
+        : "");
+    const peakCountHtml = Number.isFinite(nPeaks)
+      ? `<strong>${nPeaks}</strong> peak(s)`
+      : "peaks";
+    el.innerHTML = `<p style="padding:12px;color:#166534">✓ Peaks called with ${escapeHtml(res.caller || "MACS")}: ${peakCountHtml}. <strong>Treatment: ${res.n_treatment ?? (res.treatment_bams || []).length}</strong>, <strong>Control: ${res.n_control ?? (res.control_bams || []).length}</strong>.<br>
+      Peak: <code>${escapeHtml(res.peak_file || "")}</code><br>
+      ${res.summit_file ? `Summits: <code>${escapeHtml(res.summit_file)}</code><br>` : ""}
+      ${res.run_dir ? `Run dir: <code>${escapeHtml(res.run_dir)}</code><br>` : ""}
+      <span class="hint">Previous uploads / MACS runs remain in <strong>当前峰文件</strong> dropdown · View narrowPeak in IGV · Peak QC (downstream) · Annotate (ChIPseeker) in §4.</span></p>
+      ${lowHint}
+      ${warnLines ? `<ul class="hint" style="padding:0 12px 12px;margin:0;color:#92400e">${warnLines}</ul>` : ""}`;
     el.classList.remove("hidden");
-    toast("MACS peak calling complete.", "success");
+    refreshChipPeakStatus();
+    await refreshChipdsLastPeaks({ forceList: true, forceGenomeSync: true });
+    await refreshExperimentList();
+    if (globalExp && [...globalExp.options].some((o) => o.value === CHIP_STANDALONE_TOKEN)) {
+      globalExp.value = CHIP_STANDALONE_TOKEN;
+    }
+    if (Number.isFinite(nPeaks) && nPeaks < 50) {
+      toast(`MACS done but only ${nPeaks} peak(s) — check params / IGV before annotating.`, "warning");
+    } else {
+      toast("MACS complete — peak file ready for ChIPseeker.", "success");
+    }
   } catch (e) {
     el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${escapeHtml(e.message)}</p>`;
     el.classList.remove("hidden");
@@ -3014,22 +4286,37 @@ document.getElementById("chip-btn-annotate")?.addEventListener("click", async ()
   setLoading(true);
   const el = document.getElementById("chip-analysis-result");
   try {
-    const cp = chipParams();
-    const res = await withBusy("ChIPseeker annotation", () => API.chipAnnotateFull({
-      peak_file: window._emp.chipLastPeaks?.peak_file || null,
-      genome: cp.genome,
-      score_cutoff: cp.score_cutoff,
-    }));
-    window._emp.chipLastAnnotation = res.annotation_csv;
-    renderChipPlots(res.plots);
-    el.innerHTML = `<p style="padding:12px;color:#166534">✓ Annotated ${res.n_peaks} peaks. CSV: ${escapeHtml(res.annotation_csv || "")}</p>`;
-    el.classList.remove("hidden");
-    toast("ChIPseeker annotation complete.", "success");
+    await runChipAnnotate();
   } catch (e) {
-    el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${escapeHtml(e.message)}</p>`;
-    el.classList.remove("hidden");
-    toast(e.message, "error");
+    const msg = e?.message || String(e);
+    let tip = "";
+    if (isChipApiUnreachableError(msg)) {
+      tip = t("chip.hint.apiDown")
+        || "Backend API is unreachable. Start it with: bash webapp/scripts/start_local.sh — then retry Annotate.";
+    } else if (e?.code !== "NO_PEAK_FILE" && !/no peak file/i.test(msg)) {
+      tip = t("chip.hint.annotateFail")
+        || "Upload a MACS peak file (.bed / .narrowPeak) in section 1, or run Call peaks (MACS) in section 3 — then annotate.";
+    }
+    if (el && e?.code !== "NO_PEAK_FILE") {
+      el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${escapeHtml(msg)}</p>${
+        tip ? `<p class="hint" style="padding:0 12px 12px">${escapeHtml(tip)}</p>` : ""
+      }`;
+      el.classList.remove("hidden");
+    }
+    toast(msg, "error");
   } finally { setLoading(false); }
+});
+
+document.getElementById("chip-anno-genome")?.addEventListener("change", (e) => {
+  syncChipAnnoGenomeDefaults(e.target.value);
+});
+document.getElementById("chip-genome")?.addEventListener("change", (e) => {
+  const g = e.target.value === "mm" ? "mm" : "hs";
+  const annoG = document.getElementById("chip-anno-genome");
+  if (annoG) {
+    annoG.value = g;
+    syncChipAnnoGenomeDefaults(g);
+  }
 });
 
 document.getElementById("chip-btn-coanalysis")?.addEventListener("click", async () => {
@@ -3045,9 +4332,16 @@ document.getElementById("chip-btn-coanalysis")?.addEventListener("click", async 
       genome: cp.genome,
       score_cutoff: +document.getElementById("chip-co-score-cutoff")?.value || 10,
       min_total_counts: +document.getElementById("chip-min-counts")?.value || 100,
-    }));
+      rnaseq_p_cutoff: +document.getElementById("chip-rna-p-cutoff")?.value || 0.05,
+      promoter_filter: document.getElementById("chip-promoter-filter")?.checked !== false,
+    }), {
+      mode: "hold",
+      message: "跨组学联合分析运行中…",
+    });
     renderChipPlots(res.plots);
-    el.innerHTML = `<p style="padding:12px;color:#166534">✓ Co-analysis: ${res.chip_genes_n} peak-linked genes with RNA-seq ${escapeHtml(rnaseq)}.</p>`;
+    renderChipTables(res.tables);
+    el.innerHTML = `<p style="padding:12px;color:#166534">✓ Co-analysis: <strong>${res.chip_genes_n}</strong> peak-linked genes with RNA-seq ${escapeHtml(rnaseq)}.<br>
+      Plots: ${res.plots ? Object.keys(res.plots).length : 0} · Tables: ${res.tables ? Object.keys(res.tables).length : 0}</p>`;
     el.classList.remove("hidden");
     toast("RNA-seq co-analysis complete.", "success");
   } catch (e) {
@@ -3057,8 +4351,1494 @@ document.getElementById("chip-btn-coanalysis")?.addEventListener("click", async 
   } finally { setLoading(false); }
 });
 
+document.getElementById("chip-btn-cross")?.addEventListener("click", async () => {
+  const rna = document.getElementById("chip-cross-rnaseq")?.value || null;
+  const pro = document.getElementById("chip-cross-proteomics")?.value || null;
+  if (!rna && !pro) {
+    toast("Select at least one RNA-seq or proteomics experiment.", "error");
+    return;
+  }
+  if (!window._emp.chipLastAnnotation) {
+    toast("Run ChIPseeker annotation (section 4) first.", "error");
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await withBusy("ChIP cross-omics overlap", () => API.chipCrossOmics({
+      peak_annotation_csv: window._emp.chipLastAnnotation,
+      rnaseq_experiment: rna || null,
+      proteomics_experiment: pro || null,
+      rnaseq_p_cutoff: +document.getElementById("chip-cross-rna-p")?.value || 0.05,
+      rnaseq_fc_cutoff: +document.getElementById("chip-cross-rna-fc")?.value || 1,
+      proteomics_p_cutoff: +document.getElementById("chip-cross-pro-p")?.value || 0.05,
+      proteomics_fc_cutoff: +document.getElementById("chip-cross-pro-fc")?.value || 0.5,
+    }), {
+      mode: "hold",
+      message: "交叉组学重叠分析运行中…",
+    });
+    renderChipCrossResult(res);
+    toast("Cross-omics overlap complete.", "success");
+  } catch (e) {
+    const el = document.getElementById("chip-analysis-result");
+    if (el) {
+      el.innerHTML = `<p style="padding:12px;color:#991b1b">Error: ${escapeHtml(e.message)}</p>`;
+      el.classList.remove("hidden");
+    }
+    toast(e.message, "error");
+  } finally { setLoading(false); }
+});
+
 refreshChipBamTable();
-applyChipMacsPreset(document.getElementById("chip-macs-preset")?.value || "chipseq_tf");
+applyChipMacsPreset(document.getElementById("chip-macs-preset")?.value || "cutrun_tf_p05");
+
+// ── ChIPseq downstream checklist page ─────────────────
+let _chipdsCatalog = null;
+let _chipdsFiltersBound = false;
+
+function chipdsEsc(s) {
+  return escapeHtml(String(s ?? ""));
+}
+
+function chipdsPriorityClass(p) {
+  if (p === "must") return "chipds-pri--must";
+  if (p === "recommend") return "chipds-pri--recommend";
+  if (p === "advanced") return "chipds-pri--advanced";
+  return "chipds-pri--optional";
+}
+
+function chipdsStatusLabel(status) {
+  return status === "available" ? "可运行" : "规划中";
+}
+
+function chipdsNeedBam(v) {
+  const s = String(v ?? "").toLowerCase();
+  if (s === "yes" || s === "y" || s === "true" || s === "1") return "yes";
+  if (s === "no" || s === "n" || s === "false" || s === "0") return "no";
+  return s || "no";
+}
+
+async function fetchChipDownstreamCatalog() {
+  try {
+    const res = await API.chipDownstreamCatalog();
+    const cat = res?.catalog || res;
+    if (cat?.items?.length) return cat;
+  } catch (_) { /* fall through to static */ }
+  const r = await fetch(`data/chipseq_downstream_catalog.json?v=chipseq-peaks-fix-v1`);
+  if (!r.ok) throw new Error("无法加载下游分析目录");
+  return r.json();
+}
+
+function filterChipDownstreamItems(items) {
+  const stage = document.getElementById("chipds-filter-stage")?.value || "";
+  const priority = document.getElementById("chipds-filter-priority")?.value || "";
+  const bam = document.getElementById("chipds-filter-bam")?.value || "";
+  const status = document.getElementById("chipds-filter-status")?.value || "";
+  const q = (document.getElementById("chipds-search")?.value || "").trim().toLowerCase();
+  return (items || []).filter((it) => {
+    if (stage && it.stage !== stage) return false;
+    if (priority && it.priority !== priority) return false;
+    if (bam && chipdsNeedBam(it.need_bam) !== bam) return false;
+    if (status && (it.status || "planned") !== status) return false;
+    if (q) {
+      const blob = [it.name, it.purpose, it.software, it.alt_software, it.stage, it.method]
+        .map((x) => String(x || "").toLowerCase())
+        .join(" ");
+      if (!blob.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderChipDownstreamMarks(strategies) {
+  const root = document.getElementById("chipds-mark-strategies");
+  if (!root) return;
+  if (!strategies?.length) {
+    root.innerHTML = `<p class="hint">无 Mark 策略数据</p>`;
+    return;
+  }
+  root.innerHTML = strategies.map((m) => `
+    <div class="chipds-mark-card">
+      <div class="chipds-mark-title">${chipdsEsc(m.target)}</div>
+      <div class="chipds-mark-meta"><span>峰型</span>${chipdsEsc(m.peak_type)}</div>
+      <div class="chipds-mark-meta"><span>定位</span>${chipdsEsc(m.localization)}</div>
+      <div class="chipds-mark-meta"><span>必做</span>${chipdsEsc(m.must_do)}</div>
+      <div class="chipds-mark-meta"><span>软件</span>${chipdsEsc(m.software)}</div>
+      <div class="chipds-mark-note">${chipdsEsc(m.notes || "")}</div>
+    </div>
+  `).join("");
+}
+
+function renderChipDownstreamCatalog(catalog) {
+  const root = document.getElementById("chipds-catalog");
+  if (!root || !catalog) return;
+  const items = filterChipDownstreamItems(catalog.items || []);
+  const stages = catalog.stages?.length
+    ? catalog.stages
+    : [...new Set(items.map((i) => i.stage).filter(Boolean))];
+
+  if (!items.length) {
+    root.innerHTML = `<p class="hint">无匹配模块，请调整筛选条件。</p>`;
+    return;
+  }
+
+  // Dedupe by action: one card listing covered module ids (#a,#b,…)
+  const ACTION_PACK = {
+    chip_peak_qc: "core",
+    chip_peaks_blacklist: "core",
+    chip_peaks_merge: "core",
+    chip_peaks_summit: "core",
+    chip_peaks_overlap: "core",
+    chip_idr_approx: "core",
+    chip_diffbind: "core",
+    chip_annotate: "core",
+    chip_homer: "motif",
+    chip_promoter_call: "histone_enhancer",
+    chip_enhancer_call: "histone_enhancer",
+    chip_super_enhancer: "histone_enhancer",
+    chip_bivalent: "histone_enhancer",
+    chip_broad_domains: "histone_enhancer",
+    chip_chromatin_proxy: "histone_enhancer",
+    chip_deeptools_heatmap: "visualization",
+    chip_deeptools_coverage: "visualization",
+    chip_deeptools_corr: "visualization",
+    chip_rna_co: "rna_protein",
+    chip_cross: "rna_protein",
+    chip_microbiome_coanalysis: "microbiome_16s_mgx",
+    chip_metabolomics_coanalysis: "metabolomics",
+    chip_clinical_coanalysis: "clinical",
+  };
+
+  const byStage = new Map();
+  for (const st of stages) byStage.set(st, []);
+  for (const it of items) {
+    const st = it.stage || "其他";
+    if (!byStage.has(st)) byStage.set(st, []);
+    byStage.get(st).push(it);
+  }
+
+  const parts = [];
+  for (const [st, list] of byStage) {
+    if (!list.length) continue;
+    const groups = new Map();
+    const planned = [];
+    for (const it of list) {
+      const act = it.action || null;
+      if (!act) {
+        planned.push(it);
+        continue;
+      }
+      if (!groups.has(act)) groups.set(act, []);
+      groups.get(act).push(it);
+    }
+    const cards = [];
+    for (const [act, group] of groups) {
+      const primary = group[0];
+      const ids = group.map((g) => g.id).filter((x) => x != null);
+      const available = primary.status === "available" && act;
+      const bam = group.some((g) => chipdsNeedBam(g.need_bam) === "yes") ? "yes" : "no";
+      const packId = primary.pack_id || ACTION_PACK[act] || "";
+      const idLabel = ids.length > 1
+        ? `#${ids.map((id) => chipdsEsc(id)).join(",#")}`
+        : `#${chipdsEsc(ids[0] ?? primary.id)}`;
+      cards.push(`<article class="chipds-card ${available ? "chipds-card--run" : "chipds-card--planned"}" data-id="${chipdsEsc(primary.id)}" data-action="${chipdsEsc(act)}">
+            <div class="chipds-card-head">
+              <span class="chipds-card-id">${idLabel}</span>
+              <span class="chipds-pri ${chipdsPriorityClass(primary.priority)}">${chipdsEsc(primary.priority_label || primary.priority)}</span>
+              <span class="chipds-status ${available ? "chipds-status--ok" : "chipds-status--plan"}">${chipdsStatusLabel(primary.status)}</span>
+              ${bam === "yes" ? `<span class="chipds-bam">需BAM</span>` : ""}
+              ${packId ? `<span class="chipds-pack">pack:${chipdsEsc(packId)}</span>` : ""}
+            </div>
+            <h5 class="chipds-card-name">${chipdsEsc(primary.name)}${ids.length > 1 ? ` <span class="hint">(+${ids.length - 1})</span>` : ""}</h5>
+            <p class="chipds-card-purpose">${chipdsEsc(primary.purpose)}</p>
+            <p class="chipds-card-sw"><strong>软件</strong> ${chipdsEsc(primary.software || "—")}</p>
+            <div class="chipds-card-actions">
+              ${available
+                ? `<button type="button" class="btn btn-primary btn-sm" data-chipds-action="${chipdsEsc(act)}">运行</button>`
+                : `<button type="button" class="btn btn-outline btn-sm" disabled title="规划中">规划中</button>`}
+            </div>
+          </article>`);
+    }
+    for (const it of planned) {
+      cards.push(`<article class="chipds-card chipds-card--planned" data-id="${chipdsEsc(it.id)}">
+            <div class="chipds-card-head">
+              <span class="chipds-card-id">#${chipdsEsc(it.id)}</span>
+              <span class="chipds-pri ${chipdsPriorityClass(it.priority)}">${chipdsEsc(it.priority_label || it.priority)}</span>
+              <span class="chipds-status chipds-status--plan">${chipdsStatusLabel(it.status)}</span>
+            </div>
+            <h5 class="chipds-card-name">${chipdsEsc(it.name)}</h5>
+            <p class="chipds-card-purpose">${chipdsEsc(it.purpose)}</p>
+            <p class="chipds-card-sw"><strong>软件</strong> ${chipdsEsc(it.software || "—")}</p>
+            <div class="chipds-card-actions">
+              <button type="button" class="btn btn-outline btn-sm" disabled title="规划中">规划中</button>
+            </div>
+          </article>`);
+    }
+    parts.push(`<div class="chipds-stage">
+      <h4 class="chipds-stage-title">${chipdsEsc(st)} <span class="chipds-stage-count">${cards.length}</span></h4>
+      <div class="chipds-cards">${cards.join("")}</div>
+    </div>`);
+  }
+  root.innerHTML = parts.join("");
+  root.querySelectorAll("[data-chipds-action]").forEach((btn) => {
+    btn.addEventListener("click", () => runChipDownstreamAction(btn.dataset.chipdsAction));
+  });
+}
+
+function updateChipDownstreamSummary(catalog, filteredCount) {
+  const s = catalog?.summary || {};
+  const elM = document.getElementById("chipds-badge-modules");
+  const elMust = document.getElementById("chipds-badge-must");
+  const elAv = document.getElementById("chipds-badge-available");
+  if (elM) elM.textContent = `模块: ${filteredCount ?? s.modules ?? "—"} / ${s.modules ?? "—"}`;
+  if (elMust) elMust.textContent = `必做: ${s.must ?? "—"}`;
+  if (elAv) elAv.textContent = `可运行: ${s.available ?? "—"}`;
+}
+
+function fillChipDownstreamStageSelect(catalog) {
+  const sel = document.getElementById("chipds-filter-stage");
+  if (!sel || sel.dataset.filled === "1") return;
+  const stages = catalog.stages?.length
+    ? catalog.stages
+    : [...new Set((catalog.items || []).map((i) => i.stage).filter(Boolean))];
+  sel.innerHTML = `<option value="">全部阶段</option>` +
+    stages.map((st) => `<option value="${chipdsEsc(st)}">${chipdsEsc(st)}</option>`).join("");
+  sel.dataset.filled = "1";
+}
+
+function bindChipDownstreamFilters() {
+  if (_chipdsFiltersBound) return;
+  _chipdsFiltersBound = true;
+  const rerender = () => {
+    if (!_chipdsCatalog) return;
+    const filtered = filterChipDownstreamItems(_chipdsCatalog.items || []);
+    updateChipDownstreamSummary(_chipdsCatalog, filtered.length);
+    renderChipDownstreamCatalog(_chipdsCatalog);
+  };
+  ["chipds-filter-stage", "chipds-filter-priority", "chipds-filter-bam", "chipds-filter-status"]
+    .forEach((id) => document.getElementById(id)?.addEventListener("change", rerender));
+  document.getElementById("chipds-search")?.addEventListener("input", rerender);
+}
+
+function openChipseqSection(sectionId) {
+  openChipseqWorkspace({ skipNavigate: false });
+  setTimeout(() => {
+    const el = document.getElementById(sectionId);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.classList.add("chip-section-flash");
+      setTimeout(() => el.classList.remove("chip-section-flash"), 1600);
+    }
+  }, 280);
+}
+
+async function runChipDownstreamAction(action) {
+  if (!action) return;
+  if (action === "chip_annotate") {
+    openChipseqSection("chip-section-annotate");
+    toast("已跳转到 ChIP-seq · §4 ChIPseeker", "info");
+    return;
+  }
+  if (action === "chip_rna_co") {
+    openChipseqSection("chip-section-rna");
+    toast("已跳转到 ChIP-seq · §5 RNA 联合分析", "info");
+    return;
+  }
+  if (action === "chip_cross") {
+    openChipseqSection("chip-section-cross");
+    toast("已跳转到 ChIP-seq · §6 跨组学重叠", "info");
+    return;
+  }
+  if (action === "chip_peak_qc") {
+    await runChipPeakQcOnPage();
+    return;
+  }
+  if (action === "chip_homer") {
+    focusChipdsToolPanel("homer");
+    await runChipHomerOnPage();
+    return;
+  }
+  if (action === "chip_diffbind") {
+    focusChipdsToolPanel("diffbind");
+    await runChipDiffBindOnPage();
+    return;
+  }
+  if (action === "chip_deeptools_heatmap") {
+    focusChipdsToolPanel("deeptools");
+    const modeEl = document.getElementById("chipds-dt-mode");
+    if (modeEl) modeEl.value = "heatmap";
+    await runChipDeepToolsOnPage();
+    return;
+  }
+  if (action === "chip_deeptools_corr") {
+    focusChipdsToolPanel("deeptools");
+    const modeEl = document.getElementById("chipds-dt-mode");
+    if (modeEl) modeEl.value = "corr";
+    await runChipDeepToolsOnPage();
+    return;
+  }
+  if (action === "chip_deeptools_coverage") {
+    focusChipdsToolPanel("deeptools");
+    const modeEl = document.getElementById("chipds-dt-mode");
+    if (modeEl) modeEl.value = "coverage";
+    await runChipDeepToolsOnPage();
+    return;
+  }
+  const peaksOpsMap = {
+    chip_peaks_blacklist: "blacklist",
+    chip_peaks_merge: "merge",
+    chip_peaks_summit: "summit",
+    chip_peaks_overlap: "overlap",
+    chip_idr_approx: "idr",
+    chip_promoter_call: "promoter",
+    chip_enhancer_call: "enhancer",
+    chip_super_enhancer: "super_enhancer",
+    chip_broad_domains: "broad",
+    chip_bivalent: "bivalent",
+    chip_chromatin_proxy: "chromatin_proxy",
+  };
+  if (peaksOpsMap[action]) {
+    focusChipdsToolPanel("peaksops");
+    await runChipPeaksOpsOnPage(peaksOpsMap[action]);
+    return;
+  }
+  if (action === "chip_microbiome_coanalysis") {
+    await runChipMicrobiomeCoanalysisOnPage();
+    return;
+  }
+  if (action === "chip_metabolomics_coanalysis") {
+    await runChipMetabolomicsCoanalysisOnPage();
+    return;
+  }
+  if (action === "chip_clinical_coanalysis") {
+    await runChipClinicalCoanalysisOnPage();
+    return;
+  }
+  toast(`未知动作: ${action}`, "warning");
+}
+
+function focusChipdsToolPanel(which) {
+  const map = {
+    homer: "chipds-panel-homer",
+    diffbind: "chipds-panel-diffbind",
+    deeptools: "chipds-panel-deeptools",
+    peaksops: "chipds-panel-peaksops",
+  };
+  const id = map[which];
+  const el = id ? document.getElementById(id) : null;
+  if (el) {
+    el.open = true;
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function renderChipdsToolPlots(plots) {
+  const el = document.getElementById("chipds-tool-plots");
+  if (!el) return;
+  const entries = plots && typeof plots === "object" ? Object.entries(plots).filter(([, v]) => v) : [];
+  if (!entries.length) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = entries.map(([title, b64]) => {
+    const src = String(b64).startsWith("data:") ? b64 : `data:image/png;base64,${b64}`;
+    return `<div>
+      <div class="chipds-plot-title">${chipdsEsc(String(title).replace(/_/g, " "))}</div>
+      <img src="${src}" alt="${chipdsEsc(title)}">
+    </div>`;
+  }).join("");
+  el.classList.remove("hidden");
+}
+
+function renderChipdsTableFromRows(rows, statusMsg) {
+  const status = document.getElementById("chipds-qc-status");
+  const summary = document.getElementById("chipds-qc-summary");
+  const wrap = document.getElementById("chipds-qc-table-wrap");
+  const table = document.getElementById("chipds-qc-table");
+  if (status && statusMsg) {
+    status.textContent = statusMsg;
+    status.className = "alert alert-success";
+    status.classList.remove("hidden");
+  }
+  if (summary) summary.classList.add("hidden");
+  if (!table || !wrap) return;
+  if (!rows?.length) {
+    wrap.classList.add("hidden");
+    return;
+  }
+  const cols = Object.keys(rows[0]);
+  table.querySelector("thead").innerHTML =
+    `<tr>${cols.map((c) => `<th>${chipdsEsc(c)}</th>`).join("")}</tr>`;
+  table.querySelector("tbody").innerHTML = rows.map((row) =>
+    `<tr>${cols.map((c) => `<td>${chipdsEsc(row[c])}</td>`).join("")}</tr>`
+  ).join("");
+  wrap.classList.remove("hidden");
+}
+
+function renderChipdsJsonSlim(res, dropKeys = []) {
+  const jsonEl = document.getElementById("chipds-qc-json");
+  if (!jsonEl) return;
+  const slim = { ...res };
+  for (const k of dropKeys) delete slim[k];
+  if (slim.plots) slim.plots = Object.keys(slim.plots);
+  jsonEl.textContent = JSON.stringify(slim, null, 2);
+  jsonEl.classList.remove("hidden");
+}
+
+function setChipdsError(msg) {
+  const status = document.getElementById("chipds-qc-status");
+  if (status) {
+    status.textContent = msg || "失败";
+    status.className = "alert alert-error";
+    status.classList.remove("hidden");
+  }
+  document.getElementById("chipds-qc-summary")?.classList.add("hidden");
+  document.getElementById("chipds-qc-table-wrap")?.classList.add("hidden");
+  document.getElementById("chipds-tool-plots")?.classList.add("hidden");
+}
+
+async function refreshChipdsToolStatus() {
+  const hints = document.getElementById("chipds-tool-hints");
+  const setBadge = (id, ok, label) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = `${label}: ${ok ? "已安装" : "未安装"}`;
+    el.className = `chipds-tool-badge ${ok ? "chipds-tool-badge--ok" : "chipds-tool-badge--miss"}`;
+  };
+  try {
+    const res = await API.chipToolsStatus();
+    const tools = res?.tools || {};
+    setBadge("chipds-tool-homer", !!tools.homer?.available, "HOMER");
+    setBadge("chipds-tool-diffbind", !!tools.diffbind?.available, "DiffBind");
+    setBadge("chipds-tool-deeptools", !!tools.deeptools?.available, "deepTools");
+    setBadge("chipds-tool-genomicranges", !!tools.genomicranges?.available, "GenomicRanges");
+    const hintParts = [];
+    const usable = tools.homer?.genomes_usable || tools.homer?.genomes_installed || [];
+    const onDisk = tools.homer?.genomes_on_disk || [];
+    if (tools.homer?.available) {
+      hintParts.push(
+        usable.length
+          ? `HOMER 可用基因组: ${usable.join(", ")}`
+          : "HOMER CLI 已找到，但尚无已注册基因组（需 configureHomer.pl -install）"
+      );
+      if (onDisk.length && (!usable.length || onDisk.some((g) => !usable.includes(g)))) {
+        hintParts.push(`磁盘目录（未全部注册）: ${onDisk.join(", ")}`);
+      }
+    }
+    if (tools.homer?.install_hint) hintParts.push(tools.homer.install_hint);
+    if (tools.diffbind?.install_hint) hintParts.push(tools.diffbind.install_hint);
+    if (tools.deeptools?.install_hint) hintParts.push(tools.deeptools.install_hint);
+    if (tools.bedtools && !tools.bedtools.available && tools.bedtools.note) {
+      hintParts.push(tools.bedtools.note);
+    }
+    if (hints) hints.textContent = hintParts.length
+      ? hintParts.join(" · ")
+      : "工具均已检测到，可直接在下方面板运行。";
+  } catch (e) {
+    setBadge("chipds-tool-homer", false, "HOMER");
+    setBadge("chipds-tool-diffbind", false, "DiffBind");
+    setBadge("chipds-tool-deeptools", false, "deepTools");
+    setBadge("chipds-tool-genomicranges", false, "GenomicRanges");
+    if (hints) hints.textContent = e.message || "无法检测工具状态（请确认 API 已启动）";
+  }
+}
+
+async function runChipHomerOnPage() {
+  setLoading(true);
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    // Refresh badge / peaks metadata only — do not clobber a manual genome choice.
+    const peaks = await refreshChipdsLastPeaks({ forceList: true, preserveGenomeSelects: true });
+    const peaksUi = chipGenomeToUi(peaks?.assembly || peaks?.genome || "");
+    const genomeChosen = document.getElementById("chipds-homer-genome")?.value || peaksUi || "hg38";
+    if (peaksUi && genomeChosen && peaksUi !== genomeChosen) {
+      toast(`峰文件基因组为 ${peaksUi}，当前选择 ${genomeChosen}，结果可能无意义`, "warning");
+    }
+    const res = await API.chipHomer({
+      genome: genomeChosen,
+      size: +document.getElementById("chipds-homer-size")?.value || 200,
+      motif_length: document.getElementById("chipds-homer-len")?.value || "8,10,12",
+      annotate: document.getElementById("chipds-homer-annotate")?.value === "1",
+    });
+    if (!res?.success) throw new Error(res?.error || "HOMER failed");
+    // Keep the user's select value; do not force-echo peak assembly.
+    renderChipdsToolPlots(null);
+    const rows = res.top_motifs || res.annotate?.preview || [];
+    renderChipdsTableFromRows(
+      rows,
+      `HOMER 成功 · ${res.n_known_motifs ?? rows.length} motifs · genome ${res.genome || genomeChosen} · ${res.output_dir || ""}`
+    );
+    const summary = document.getElementById("chipds-qc-summary");
+    if (summary) {
+      summary.innerHTML = `
+        <div><strong>峰数</strong> ${chipdsEsc(res.n_peaks)}</div>
+        <div><strong>命令</strong> <code>${chipdsEsc(res.command || "")}</code></div>
+        <div><strong>knownResults</strong> ${chipdsEsc(res.known_results || "—")}</div>
+      `;
+      summary.classList.remove("hidden");
+    }
+    renderChipdsJsonSlim(res, ["top_motifs"]);
+    document.getElementById("chipds-qc-status")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    toast("HOMER motif 完成", "success");
+  } catch (e) {
+    setChipdsError(e.message);
+    renderChipdsJsonSlim({ success: false, error: e.message });
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function runChipDiffBindOnPage() {
+  setLoading(true);
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    const res = await API.chipDiffBind({
+      method: document.getElementById("chipds-db-method")?.value || "DESeq2",
+      fdr: +document.getElementById("chipds-db-fdr")?.value || 0.05,
+      top_n: +document.getElementById("chipds-db-topn")?.value || 50,
+    });
+    renderChipdsToolPlots(res.plots || null);
+    const rows = res.top_sites || [];
+    const sum = res.summary || {};
+    renderChipdsTableFromRows(
+      rows,
+      `DiffBind 成功 · DB ${sum.n_db ?? "—"} / ${sum.n_total ?? rows.length} · T=${res.n_treatment} C=${res.n_control}`
+    );
+    const summary = document.getElementById("chipds-qc-summary");
+    if (summary) {
+      summary.innerHTML = `
+        <div><strong>差异位点 (FDR&lt;${chipdsEsc(res.fdr_threshold)})</strong> ${chipdsEsc(sum.n_db)} · 非差异 ${chipdsEsc(sum.n_not_db)}</div>
+        <div><strong>报告</strong> ${chipdsEsc(res.report_csv || "—")}</div>
+        <div><strong>样本表</strong> ${chipdsEsc(res.samplesheet || "—")}</div>
+      `;
+      summary.classList.remove("hidden");
+    }
+    renderChipdsJsonSlim(res, ["top_sites", "plots"]);
+    document.getElementById("chipds-qc-status")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    toast("DiffBind 完成", "success");
+  } catch (e) {
+    setChipdsError(e.message);
+    renderChipdsJsonSlim({ success: false, error: e.message });
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function runChipDeepToolsOnPage() {
+  setLoading(true);
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    const mode = document.getElementById("chipds-dt-mode")?.value || "heatmap";
+    const res = await API.chipDeepTools({
+      mode,
+      bin_size: +document.getElementById("chipds-dt-binsize")?.value || 50,
+      before_region: +document.getElementById("chipds-dt-before")?.value || 1000,
+      after_region: +document.getElementById("chipds-dt-after")?.value || 1000,
+      normalize_using: document.getElementById("chipds-dt-norm")?.value || "RPKM",
+    });
+    renderChipdsToolPlots(res.plots || null);
+    const status = document.getElementById("chipds-qc-status");
+    if (status) {
+      status.textContent = `deepTools ${res.mode || mode} 成功 · ${res.output_dir || ""}`;
+      status.className = "alert alert-success";
+      status.classList.remove("hidden");
+    }
+    const summary = document.getElementById("chipds-qc-summary");
+    if (summary) {
+      const cov = (res.coverage_files || []).map((p) => basenameSafe(p)).join(", ");
+      summary.innerHTML = `
+        <div><strong>模式</strong> ${chipdsEsc(res.mode || mode)}</div>
+        ${res.n_peaks != null ? `<div><strong>峰数</strong> ${chipdsEsc(res.n_peaks)}</div>` : ""}
+        ${res.n_bams != null ? `<div><strong>BAM 数</strong> ${chipdsEsc(res.n_bams)}</div>` : ""}
+        ${cov ? `<div><strong>coverage</strong> ${chipdsEsc(cov)}</div>` : ""}
+        ${res.plot_path ? `<div><strong>图</strong> ${chipdsEsc(res.plot_path)}</div>` : ""}
+      `;
+      summary.classList.remove("hidden");
+    }
+    document.getElementById("chipds-qc-table-wrap")?.classList.add("hidden");
+    renderChipdsJsonSlim(res, ["plots"]);
+    document.getElementById("chipds-qc-status")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    toast(`deepTools ${mode} 完成`, "success");
+  } catch (e) {
+    setChipdsError(e.message);
+    renderChipdsJsonSlim({ success: false, error: e.message });
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+}
+
+function basenameSafe(p) {
+  const s = String(p || "");
+  const i = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+  return i >= 0 ? s.slice(i + 1) : s;
+}
+
+/** Treat UI placeholders like /path/to/... as unset. */
+function isChipPlaceholderPath(p) {
+  const s = String(p || "").trim();
+  if (!s) return true;
+  if (/^(\/path\/to\/|C:\\path\\to\\|\/path\\to\\)/i.test(s)) return true;
+  if (/path/i.test(s) && /(rep2_or_markB|markC)\.bed$/i.test(s)) return true;
+  return false;
+}
+
+/** Map session/MACS genome codes to HOMER / peaks_ops UI select values.
+ *  Dropdown values: hg38 | hg19 | mm10 | mm39. Never returns hg18.
+ */
+function chipGenomeToUi(g) {
+  const s = String(g || "").toLowerCase().trim();
+  if (["mm", "mm10", "mouse", "mu", "m"].includes(s)) return "mm10";
+  if (s === "mm39") return "mm39";
+  if (["hg19", "grch37"].includes(s)) return "hg19";
+  // hs / human / hg38 / legacy hg18 → hg38 (do not surface hg18 in the UI)
+  if (["hg38", "grch38", "hs", "human", "h", "hg18", "ncbi36"].includes(s)) return "hg38";
+  if (["hg38", "hg19", "mm10", "mm39"].includes(s)) return s;
+  return "hg38";
+}
+
+/** Peak-file identity used to detect when last_peaks has been replaced. */
+function chipdsLastPeaksIdentity(peaks) {
+  return String(peaks?.peak_file || "").trim();
+}
+
+function chipdsGenomeSelectIsUserSet(el) {
+  return el?.dataset?.userSet === "1";
+}
+
+function markChipdsGenomeSelectUserSet(el) {
+  if (el) el.dataset.userSet = "1";
+}
+
+function clearChipdsGenomeSelectUserSet(el) {
+  if (el) delete el.dataset.userSet;
+}
+
+/**
+ * Sync HOMER / peaks_ops genome dropdowns from last_peaks (or an explicit genome).
+ * @param {string} genome
+ * @param {{ force?: boolean }} [opts] force=true clears userSet and always writes
+ */
+function syncChipdsGenomeSelects(genome, opts = {}) {
+  const { force = false } = opts;
+  const ui = chipGenomeToUi(genome);
+  const homer = document.getElementById("chipds-homer-genome");
+  const ops = document.getElementById("chipds-ops-genome");
+  // Only assign when the option exists — never inject orphan values like hg18.
+  if (homer && [...homer.options].some((o) => o.value === ui)) {
+    if (force || !chipdsGenomeSelectIsUserSet(homer)) {
+      homer.value = ui;
+      if (force) clearChipdsGenomeSelectUserSet(homer);
+    }
+  }
+  if (ops && [...ops.options].some((o) => o.value === ui)) {
+    if (force || !chipdsGenomeSelectIsUserSet(ops)) {
+      ops.value = ui;
+      if (force) clearChipdsGenomeSelectUserSet(ops);
+    }
+  }
+}
+
+function chipPeakEntryLabel(entry) {
+  if (!entry) return "";
+  if (entry.label) return entry.label;
+  const srcRaw = String(entry.source || "upload").toLowerCase();
+  const src = (srcRaw === "upload" || srcRaw === "preimported")
+    ? "上传"
+    : (srcRaw === "macs" ? "MACS" : `衍生/${srcRaw.replace(/^ops_/, "")}`);
+  const name = entry.name || entry.display_name || basenameSafe(entry.peak_file || entry.path || "") || "peaks";
+  const n = entry.n_peaks;
+  const nTxt = (n == null || n === "")
+    ? "?"
+    : (Number(n) === 1 ? "1 peak" : `${n} peaks`);
+  return `${src}: ${name} (${nTxt})`;
+}
+
+function fillChipPeakSelectEl(sel, peakFiles, activeId) {
+  if (!sel) return;
+  const prev = sel.value;
+  const files = Array.isArray(peakFiles) ? peakFiles : [];
+  sel.innerHTML = "";
+  if (!files.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "（尚未注册峰文件）";
+    sel.appendChild(opt);
+    return;
+  }
+  for (const e of files) {
+    const opt = document.createElement("option");
+    opt.value = e.id || e.peak_file || "";
+    opt.textContent = chipPeakEntryLabel(e);
+    opt.title = e.peak_file || e.path || "";
+    if (Number(e.n_peaks) === 0) opt.dataset.empty = "1";
+    sel.appendChild(opt);
+  }
+  const want = activeId || prev || "";
+  if (want && [...sel.options].some((o) => o.value === want)) {
+    sel.value = want;
+  } else {
+    sel.selectedIndex = 0;
+  }
+}
+
+function renderChipPeakSelectors(peakFiles, activeId, lastPeaks) {
+  fillChipPeakSelectEl(document.getElementById("chip-peak-select"), peakFiles, activeId);
+  fillChipPeakSelectEl(document.getElementById("chipds-peak-select"), peakFiles, activeId);
+  fillChipPeakSelectEl(document.getElementById("chip-deps-peak"), peakFiles, activeId);
+  if (lastPeaks?.peak_file) {
+    window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...lastPeaks };
+    window._emp.chipPeakFiles = peakFiles || [];
+    window._emp.chipActivePeakId = activeId || lastPeaks.id || "";
+  }
+}
+
+function renderChipdsLastPeaksBadge(peaks) {
+  const badge = document.getElementById("chipds-last-peaks-badge");
+  if (!badge) return;
+  const path = peaks?.peak_file || "";
+  if (!path) {
+    badge.textContent = "未加载 — 请先在 ChIPseq 页上传峰文件或运行 MACS";
+    badge.className = "chipds-last-peaks-badge chipds-last-peaks-badge--empty";
+    badge.title = "";
+    return;
+  }
+  const name = basenameSafe(path);
+  const gLabel = peaks?.assembly || chipGenomeToUi(peaks?.genome) || peaks?.genome || "";
+  const genome = gLabel ? ` · ${gLabel}` : "";
+  const srcRaw = String(peaks?.source || "").toLowerCase();
+  const src = srcRaw
+    ? ` · ${(srcRaw === "preimported" || srcRaw === "upload") ? "上传" : (srcRaw === "macs" ? "MACS" : srcRaw)}`
+    : "";
+  const n = peaks?.n_peaks;
+  const nTxt = (n == null || n === "") ? "" : ` · ${n} peaks`;
+  badge.textContent = `${name}${genome}${src}${nTxt}`;
+  badge.title = path;
+  if (Number(n) === 0) {
+    badge.className = "chipds-last-peaks-badge chipds-last-peaks-badge--warn";
+    badge.textContent += " ⚠ 空文件";
+  } else {
+    badge.className = "chipds-last-peaks-badge chipds-last-peaks-badge--ok";
+  }
+}
+
+/**
+ * Refresh last_peaks badge / registry. Genome selects are synced only when:
+ * - forceGenomeSync (e.g. 「使用已上传峰文件」), or
+ * - last_peaks identity (peak_file path) changed, or
+ * - first load / selects not yet userSet (and preserveGenomeSelects is false).
+ * Never clobbers dataset.userSet genomes unless forceGenomeSync or identity change.
+ */
+async function refreshChipdsLastPeaks(opts = {}) {
+  const {
+    toastOnMissing = false,
+    forceList = false,
+    preserveGenomeSelects = false,
+    forceGenomeSync = false,
+    preferUpload = false,
+  } = opts;
+  window._emp = window._emp || {};
+  const prevIdentity = window._emp.chipLastPeaksIdentity || chipdsLastPeaksIdentity(window._emp.chipLastPeaks);
+  let peaks = (!forceList && window._emp?.chipLastPeaks?.peak_file)
+    ? window._emp.chipLastPeaks
+    : null;
+  let peakFiles = window._emp.chipPeakFiles || [];
+  let activeId = window._emp.chipActivePeakId || "";
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    const res = await API.chipListPeaks();
+    peakFiles = Array.isArray(res?.peak_files) ? res.peak_files : [];
+    activeId = res?.active_peak_id || "";
+    if (res?.last_peaks?.peak_file) {
+      window._emp.chipLastPeaks = {
+        ...(window._emp.chipLastPeaks || {}),
+        ...res.last_peaks,
+      };
+      peaks = window._emp.chipLastPeaks;
+    }
+    // 「使用已上传峰文件」: bind newest upload entry if present.
+    if (preferUpload) {
+      const uploads = peakFiles.filter((e) => {
+        const s = String(e.source || "").toLowerCase();
+        return (s === "upload" || s === "preimported") && Number(e.n_peaks) > 0;
+      });
+      const pick = uploads[0] || peakFiles.find((e) => Number(e.n_peaks) > 0) || null;
+      if (pick?.id) {
+        const sel = await API.chipSelectPeak({ peak_id: pick.id });
+        if (sel?.last_peaks?.peak_file) {
+          window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...sel.last_peaks };
+          peaks = window._emp.chipLastPeaks;
+          activeId = sel.active_peak_id || pick.id;
+          peakFiles = Array.isArray(sel.peak_files) ? sel.peak_files : peakFiles;
+        }
+      }
+    }
+  } catch (_) {
+    // session / API may not be ready
+  }
+  window._emp.chipPeakFiles = peakFiles;
+  window._emp.chipActivePeakId = activeId;
+  renderChipPeakSelectors(peakFiles, activeId, peaks);
+  const nextIdentity = chipdsLastPeaksIdentity(peaks);
+  const identityChanged = Boolean(nextIdentity && nextIdentity !== prevIdentity);
+  if (nextIdentity) window._emp.chipLastPeaksIdentity = nextIdentity;
+
+  renderChipdsLastPeaksBadge(peaks);
+  refreshChipPeakStatus();
+
+  const peakGenome = peaks?.assembly || peaks?.genome;
+  if (peakGenome) {
+    if (forceGenomeSync || identityChanged) {
+      syncChipdsGenomeSelects(peakGenome, { force: true });
+    } else if (!preserveGenomeSelects) {
+      syncChipdsGenomeSelects(peakGenome, { force: false });
+    }
+  }
+  if (!peaks?.peak_file && toastOnMissing) {
+    toast("请先在 ChIPseq 页上传峰文件或运行 MACS", "warning");
+  } else if (peaks?.peak_file && Number(peaks.n_peaks) === 0 && toastOnMissing) {
+    toast("当前峰文件为 0 peaks — 请在下拉中切换到其他上传/MACS 结果", "warning");
+  }
+  return peaks;
+}
+
+async function onChipPeakSelectChange(ev) {
+  const peakId = (ev?.currentTarget?.value || "").trim();
+  if (!peakId) return;
+  setLoading(true);
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    const res = await API.chipSelectPeak({ peak_id: peakId });
+    if (!res?.success && res?.error) throw new Error(res.error);
+    window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...(res.last_peaks || {}) };
+    window._emp.chipActivePeakId = res.active_peak_id || peakId;
+    window._emp.chipPeakFiles = Array.isArray(res.peak_files) ? res.peak_files : (window._emp.chipPeakFiles || []);
+    window._emp.chipLastPeaksIdentity = chipdsLastPeaksIdentity(window._emp.chipLastPeaks);
+    renderChipPeakSelectors(window._emp.chipPeakFiles, window._emp.chipActivePeakId, window._emp.chipLastPeaks);
+    renderChipdsLastPeaksBadge(window._emp.chipLastPeaks);
+    refreshChipPeakStatus();
+    const g = window._emp.chipLastPeaks?.assembly || window._emp.chipLastPeaks?.genome;
+    if (g) syncChipdsGenomeSelects(g, { force: true });
+    const label = chipPeakEntryLabel(window._emp.chipLastPeaks);
+    if (res.warning) toast(res.warning, "warning");
+    else toast(`已切换当前峰文件: ${label || basenameSafe(window._emp.chipLastPeaks?.peak_file || "")}`, "success");
+  } catch (e) {
+    toast(e.message, "error");
+    await refreshChipdsLastPeaks({ forceList: true, preserveGenomeSelects: true });
+  } finally {
+    setLoading(false);
+  }
+}
+
+function collectChipPeaksOpsParams(op) {
+  const peakBRaw = (document.getElementById("chipds-ops-peak-b")?.value || "").trim();
+  const peakCRaw = (document.getElementById("chipds-ops-peak-c")?.value || "").trim();
+  const peakB = isChipPlaceholderPath(peakBRaw) ? "" : peakBRaw;
+  const peakC = isChipPlaceholderPath(peakCRaw) ? "" : peakCRaw;
+  const params = {
+    op,
+    genome: document.getElementById("chipds-ops-genome")?.value || "hg38",
+    merge_gap: +document.getElementById("chipds-ops-merge-gap")?.value || 0,
+    summit_size: +document.getElementById("chipds-ops-summit")?.value || 250,
+    promoter_window: +document.getElementById("chipds-ops-promoter")?.value || 2000,
+    stitch_gap: +document.getElementById("chipds-ops-stitch")?.value || 12500,
+  };
+  if (peakB) params.peak_b = peakB;
+  if (peakC) params.peak_c = peakC;
+  return params;
+}
+
+async function runChipPeaksOpsOnPage(op) {
+  setLoading(true);
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await refreshChipdsLastPeaks({ forceList: true, preserveGenomeSelects: true });
+    const params = collectChipPeaksOpsParams(op);
+    const needsB = ["overlap", "idr", "bivalent", "chromatin_proxy"].includes(op);
+    if (needsB && !params.peak_b) {
+      throw new Error("该操作需要 peak_b（第二峰集路径）。请在上方「Peak 集合操作」面板填写真实路径（勿用 /path/to/ 占位符）。");
+    }
+    const res = await API.chipPeaksOps(params);
+    if (!res?.success) throw new Error(res?.error || "peaks_ops failed");
+    if (res.last_peaks?.peak_file) {
+      window._emp = window._emp || {};
+      const prevId = window._emp.chipLastPeaksIdentity || chipdsLastPeaksIdentity(window._emp.chipLastPeaks);
+      window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...res.last_peaks };
+      const nextId = chipdsLastPeaksIdentity(window._emp.chipLastPeaks);
+      window._emp.chipLastPeaksIdentity = nextId;
+      renderChipdsLastPeaksBadge(window._emp.chipLastPeaks);
+      // New peak file from ops → align genome; otherwise keep manual choice.
+      if ((res.last_peaks.assembly || res.last_peaks.genome) && nextId && nextId !== prevId) {
+        syncChipdsGenomeSelects(res.last_peaks.assembly || res.last_peaks.genome, { force: true });
+      }
+    }
+    renderChipdsToolPlots(res.plots || null);
+    const rows = res.preview || (res.transition?.top_transitions) || [];
+    const statusBits = [
+      `peaks_ops · ${res.op || op}`,
+      res.n_after != null ? `after ${res.n_after}` : null,
+      res.n_promoter != null ? `promoter ${res.n_promoter}` : null,
+      res.n_enhancer != null ? `enhancer ${res.n_enhancer}` : null,
+      res.n_super != null ? `SE ${res.n_super}` : null,
+      res.n_domains != null ? `domains ${res.n_domains}` : null,
+      res.n_bivalent != null ? `bivalent ${res.n_bivalent}` : null,
+      res.jaccard != null ? `jaccard ${Number(res.jaccard).toFixed(3)}` : null,
+      res.output_bed || res.files?.shared || "",
+    ].filter(Boolean);
+    renderChipdsTableFromRows(rows, statusBits.join(" · "));
+    const summary = document.getElementById("chipds-qc-summary");
+    if (summary) {
+      const extras = [];
+      if (res.note) extras.push(`<div><strong>说明</strong> ${chipdsEsc(res.note)}</div>`);
+      if (res.state_counts) {
+        extras.push(`<div><strong>状态计数</strong> ${chipdsEsc(JSON.stringify(res.state_counts))}</div>`);
+      }
+      if (res.distance_bins) {
+        extras.push(`<div><strong>距离分箱</strong> ${chipdsEsc(JSON.stringify(res.distance_bins))}</div>`);
+      }
+      if (res.counts) {
+        extras.push(`<div><strong>集合计数</strong> ${chipdsEsc(JSON.stringify(res.counts))}</div>`);
+      }
+      summary.innerHTML = extras.join("") || `<div><strong>op</strong> ${chipdsEsc(op)}</div>`;
+      summary.classList.remove("hidden");
+    }
+    renderChipdsJsonSlim(res, ["preview", "plots"]);
+    document.getElementById("chipds-qc-status")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    toast(`Peak ops「${op}」完成`, "success");
+  } catch (e) {
+    setChipdsError(e.message);
+    renderChipdsJsonSlim({ success: false, error: e.message });
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+}
+
+function bindChipdsToolPanels() {
+  if (bindChipdsToolPanels._bound) return;
+  bindChipdsToolPanels._bound = true;
+  document.getElementById("chipds-btn-refresh-tools")?.addEventListener("click", () => refreshChipdsToolStatus());
+  document.getElementById("chipds-btn-homer")?.addEventListener("click", () => runChipHomerOnPage());
+  document.getElementById("chipds-btn-diffbind")?.addEventListener("click", () => runChipDiffBindOnPage());
+  document.getElementById("chipds-btn-deeptools")?.addEventListener("click", () => runChipDeepToolsOnPage());
+  document.getElementById("chipds-btn-use-uploaded-peaks")?.addEventListener("click", async () => {
+    const peaks = await refreshChipdsLastPeaks({
+      toastOnMissing: true,
+      forceList: true,
+      forceGenomeSync: true,
+      preferUpload: true,
+    });
+    if (peaks?.peak_file) toast(`已同步峰文件: ${basenameSafe(peaks.peak_file)}`, "success");
+  });
+  document.getElementById("chipds-btn-refresh-peaks")?.addEventListener("click", async () => {
+    await refreshChipdsLastPeaks({ forceList: true, preserveGenomeSelects: true, toastOnMissing: true });
+    toast("峰文件列表已刷新", "success");
+  });
+  document.getElementById("chipds-peak-select")?.addEventListener("change", onChipPeakSelectChange);
+  document.getElementById("chip-peak-select")?.addEventListener("change", onChipPeakSelectChange);
+  // Track manual genome choices so refresh / run does not overwrite them.
+  for (const id of ["chipds-homer-genome", "chipds-ops-genome"]) {
+    document.getElementById(id)?.addEventListener("change", (ev) => {
+      markChipdsGenomeSelectUserSet(ev.currentTarget);
+    });
+  }
+}
+
+function renderChipPeakQcResult(res) {
+  const status = document.getElementById("chipds-qc-status");
+  const summary = document.getElementById("chipds-qc-summary");
+  const wrap = document.getElementById("chipds-qc-table-wrap");
+  const table = document.getElementById("chipds-qc-table");
+  const jsonEl = document.getElementById("chipds-qc-json");
+  document.getElementById("chipds-tool-plots")?.classList.add("hidden");
+
+  if (!res?.success) {
+    if (status) {
+      status.textContent = res?.error || "Peak QC 失败";
+      status.className = "alert alert-error";
+      status.classList.remove("hidden");
+    }
+    summary?.classList.add("hidden");
+    wrap?.classList.add("hidden");
+    if (jsonEl) {
+      jsonEl.textContent = JSON.stringify(res || {}, null, 2);
+      jsonEl.classList.remove("hidden");
+    }
+    return;
+  }
+
+  if (status) {
+    status.textContent = `Peak QC 成功 · ${res.n_peaks} peaks · ${res.path || ""}`;
+    status.className = "alert alert-success";
+    status.classList.remove("hidden");
+  }
+
+  const ws = res.width_summary || {};
+  const ss = res.score_summary;
+  const chromLines = (res.chrom_counts || [])
+    .slice(0, 12)
+    .map((c) => `${c.chrom}: ${c.n}`)
+    .join(" · ");
+  if (summary) {
+    summary.innerHTML = `
+      <div><strong>峰数</strong> ${chipdsEsc(res.n_peaks)}</div>
+      <div><strong>宽度</strong> min ${chipdsEsc(ws.min)} · median ${chipdsEsc(ws.median)} · mean ${chipdsEsc(ws.mean != null ? Number(ws.mean).toFixed(1) : "—")} · max ${chipdsEsc(ws.max)}</div>
+      ${ss ? `<div><strong>Score (${chipdsEsc(res.score_column || "score")})</strong> min ${chipdsEsc(ss.min)} · median ${chipdsEsc(ss.median)} · mean ${chipdsEsc(ss.mean != null ? Number(ss.mean).toFixed(2) : "—")} · max ${chipdsEsc(ss.max)}</div>` : `<div><strong>Score</strong> —</div>`}
+      <div><strong>染色体 (top)</strong> ${chipdsEsc(chromLines || "—")}</div>
+    `;
+    summary.classList.remove("hidden");
+  }
+
+  const preview = res.preview || [];
+  if (table && wrap) {
+    if (!preview.length) {
+      wrap.classList.add("hidden");
+    } else {
+      const cols = Object.keys(preview[0]);
+      table.querySelector("thead").innerHTML =
+        `<tr>${cols.map((c) => `<th>${chipdsEsc(c)}</th>`).join("")}</tr>`;
+      table.querySelector("tbody").innerHTML = preview.map((row) =>
+        `<tr>${cols.map((c) => `<td>${chipdsEsc(row[c])}</td>`).join("")}</tr>`
+      ).join("");
+      wrap.classList.remove("hidden");
+    }
+  }
+
+  if (jsonEl) {
+    const slim = { ...res };
+    delete slim.preview;
+    jsonEl.textContent = JSON.stringify(slim, null, 2);
+    jsonEl.classList.remove("hidden");
+  }
+}
+
+async function runChipPeakQcOnPage() {
+  setLoading(true);
+  try {
+    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    const res = await API.chipPeakQc();
+    renderChipPeakQcResult(res);
+    document.getElementById("chipds-qc-status")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (res?.success) toast(`Peak QC: ${res.n_peaks} peaks`, "success");
+    else toast(res?.error || "Peak QC 失败", "error");
+  } catch (e) {
+    renderChipPeakQcResult({ success: false, error: e.message });
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function loadChipDownstreamPage() {
+  bindChipDownstreamFilters();
+  bindChipdsToolPanels();
+  refreshChipdsToolStatus();
+  refreshChipdsLastPeaks({ forceList: true });
+  try {
+    if (!_chipdsCatalog) {
+      _chipdsCatalog = await fetchChipDownstreamCatalog();
+    }
+    fillChipDownstreamStageSelect(_chipdsCatalog);
+    renderChipDownstreamMarks(_chipdsCatalog.mark_strategies || []);
+    const filtered = filterChipDownstreamItems(_chipdsCatalog.items || []);
+    updateChipDownstreamSummary(_chipdsCatalog, filtered.length);
+    renderChipDownstreamCatalog(_chipdsCatalog);
+    if (window.lucide) lucide.createIcons();
+  } catch (e) {
+    const root = document.getElementById("chipds-catalog");
+    if (root) root.innerHTML = `<p class="hint" style="color:#991b1b">${chipdsEsc(e.message)}</p>`;
+    toast(e.message, "error");
+  }
+}
+
+// ── ChIP unified wizard + recipe packs ──────────────────────────────
+let _chipRecipePacks = null;
+let _chipWizardBound = false;
+
+function ensureChipUnifiedLayout() {
+  const host = document.getElementById("chip-advanced-downstream-host");
+  const down = document.getElementById("page-chipseq_downstream");
+  if (!host || !down || host.dataset.moved === "1") return;
+  const kids = [...down.children];
+  for (const el of kids) host.appendChild(el);
+  host.dataset.moved = "1";
+  down.classList.add("hidden");
+  loadChipDownstreamPage().catch(() => {});
+}
+
+function setChipWizardStep(step) {
+  const s = String(step || "1");
+  window._emp.chipWizardStep = s;
+  document.querySelectorAll(".chip-wizard-tab").forEach((btn) => {
+    const on = String(btn.dataset.chipStep) === s;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  document.querySelectorAll("[data-chip-step-panel]").forEach((panel) => {
+    const on = String(panel.dataset.chipStepPanel) === s;
+    panel.classList.toggle("hidden", !on);
+  });
+  if (s === "2") {
+    refreshChipRecipeDeps();
+    loadChipRecipePacks().catch(() => {});
+  }
+  if (s === "advanced") {
+    ensureChipUnifiedLayout();
+    loadChipDownstreamPage().catch(() => {});
+  }
+  if (!_chipWizardBound) {
+    _chipWizardBound = true;
+    document.getElementById("chip-wizard-tabs")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".chip-wizard-tab");
+      if (!btn) return;
+      setChipWizardStep(btn.dataset.chipStep);
+    });
+    document.getElementById("chip-deps-refresh")?.addEventListener("click", () => refreshChipRecipeDeps());
+    document.getElementById("chip-recipe-combo-run")?.addEventListener("click", () => {
+      const ids = [...document.querySelectorAll("#chip-recipe-combo-checks input[type=checkbox]:checked")]
+        .map((el) => el.value)
+        .filter(Boolean);
+      runChipRecipeCombo(ids);
+    });
+    document.getElementById("chip-deps-peak")?.addEventListener("change", async (ev) => {
+      const v = ev.target.value;
+      if (!v) return;
+      try {
+        await API.chipSelectPeak({ peak_id: v });
+        await refreshChipPeakStatus();
+      } catch (e) { toast(e.message, "error"); }
+    });
+  }
+}
+
+function _chipExpOmics(exp) {
+  return exp?.omics || inferOmicsForExperiment(exp?.name) || "";
+}
+
+function fillChipRecipeDepSelects(exps) {
+  const list = exps || window._emp.experiments || [];
+  const none = `<option value="">— none —</option>`;
+  const opt = (e) => `<option value="${chipdsEsc(e.name)}">${chipdsEsc(e.name)}${e.omics ? ` (${chipdsEsc(e.omics)})` : ""}</option>`;
+  const fill = (id, pred) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const prev = el.value;
+    const matched = list.filter(pred);
+    el.innerHTML = none + matched.map(opt).join("") +
+      (matched.length < list.length
+        ? `<optgroup label="all experiments">${list.map(opt).join("")}</optgroup>`
+        : "");
+    if (prev && [...el.options].some((o) => o.value === prev)) el.value = prev;
+  };
+  fill("chip-deps-rna", (e) => /transcriptomics|rna/i.test(_chipExpOmics(e)) || /rna|gene|tx/i.test(e.name));
+  fill("chip-deps-proteomics", (e) => /proteomics|protein/i.test(_chipExpOmics(e)) || /prot/i.test(e.name));
+  fill("chip-deps-m16s", (e) => /microbiome_16s|16s|tax/i.test(_chipExpOmics(e)) || /16s|m16s|tax/i.test(e.name));
+  fill("chip-deps-mgx", (e) => /metagenomics|mgx/i.test(_chipExpOmics(e)) || /mgx|metagen|ko/i.test(e.name));
+  fill("chip-deps-mbx", (e) => /metabolomics|mbx/i.test(_chipExpOmics(e)) || /mbx|metabol/i.test(e.name));
+  const clin = document.getElementById("chip-deps-clinical");
+  if (clin) {
+    const prev = clin.value;
+    clin.innerHTML = `${none}<option value="standalone">standalone clinical_raw/meta</option>`;
+    if (prev) clin.value = prev;
+  }
+}
+
+async function refreshChipRecipeDeps() {
+  fillChipRecipeDepSelects(window._emp.experiments || []);
+  try {
+    const bams = await API.chipListBams();
+    const el = document.getElementById("chip-deps-bam");
+    if (el) {
+      el.textContent = `T: ${bams.n_treatment ?? 0} · C: ${bams.n_control ?? 0}`;
+    }
+  } catch (_) { /* ignore */ }
+  try {
+    await refreshChipdsLastPeaks({ forceList: true });
+  } catch (_) { /* ignore */ }
+}
+
+async function loadChipRecipePacks() {
+  const root = document.getElementById("chip-recipe-packs");
+  if (!root) return;
+  if (!_chipRecipePacks) {
+    try {
+      const r = await fetch(`data/chipseq_recipe_packs.json?v=recipes-v1`);
+      if (!r.ok) throw new Error(`recipe packs HTTP ${r.status}`);
+      _chipRecipePacks = await r.json();
+    } catch (e) {
+      try {
+        const api = await API.chipRecipePacks();
+        _chipRecipePacks = api.packs || api;
+      } catch (e2) {
+        root.innerHTML = `<p class="hint" style="color:#991b1b">${chipdsEsc(e2.message || e.message)}</p>`;
+        return;
+      }
+    }
+  }
+  const packs = _chipRecipePacks.packs || [];
+  const zh = (getLocale?.() || localStorage.getItem("emp_locale") || "zh") === "zh";
+  const internal = packs.filter((p) => p.group === "chip_internal");
+  const joint = packs.filter((p) => p.group === "joint");
+  const card = (p) => {
+    const title = zh ? (p.title_zh || p.title_en) : (p.title_en || p.title_zh);
+    const desc = zh ? (p.description_zh || p.description_en) : (p.description_en || p.description_zh);
+    return `<article class="chip-recipe-card" data-pack-id="${chipdsEsc(p.id)}">
+      <div class="chip-recipe-card-head">
+        <span class="chip-badge ${p.group === "joint" ? "chip-badge--t" : "chip-badge--peak"}">${chipdsEsc(p.group === chip_internal")}</span>
+        <h5>${chipdsEsc(title)}</h5>
+      </div>
+      <p class="hint">${chipdsEsc(desc || "")}</p>
+      <p class="chip-recipe-req"><strong>requires</strong> ${(p.requires || []).map(chipdsEsc).join(", ")}</p>
+      <button type="button" class="btn btn-primary btn-sm" data-run-pack="${chipdsEsc(p.id)}">运行</button>
+    </article>`;
+  };
+  root.innerHTML = `
+    <h4 class="chip-section-title">ChIP 内包</h4>
+    <div class="chip-recipe-grid">${internal.map(card).join("")}</div>
+    <h4 class="chip-section-title">跨组学联合包</h4>
+    <div class="chip-recipe-grid">${joint.map(card).join("")}</div>`;
+  root.querySelectorAll("[data-run-pack]").forEach((btn) => {
+    btn.addEventListener("click", () => runChipRecipePack(btn.dataset.runPack));
+  });
+
+  const combo = _chipRecipePacks.combo || {};
+  const note = document.getElementById("chip-recipe-combo-note");
+  if (note) note.textContent = zh ? (combo.title_zh || _chipRecipePacks.combo_note_zh || "") : (combo.title_en || _chipRecipePacks.combo_note_en || "");
+  const checks = document.getElementById("chip-recipe-combo-checks");
+  if (checks) {
+    const ids = combo.selectable_pack_ids || joint.map((p) => p.id);
+    checks.innerHTML = ids.map((id) => {
+      const p = packs.find((x) => x.id === id);
+      const label = p ? (zh ? p.title_zh : p.title_en) : id;
+      return `<label class="checkbox-label chip-recipe-combo-item">
+        <input type="checkbox" value="${chipdsEsc(id)}" ${id === "core" ? "" : ""}>
+        <span>${chipdsEsc(label || id)}</span>
+      </label>`;
+    }).join("");
+  }
+}
+
+function chipRecipeLog(msg, kind = "info") {
+  const el = document.getElementById("chip-recipe-results");
+  if (!el) return;
+  const line = document.createElement("div");
+  line.className = `chip-recipe-log chip-recipe-log--${kind}`;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function chipRecipeGate(pack) {
+  const requires = pack.requires || [];
+  const peakSel = document.getElementById("chip-deps-peak")?.value ||
+    document.getElementById("chip-peak-select")?.value ||
+    window._emp.chipLastPeaks?.peak_file;
+  const rna = document.getElementById("chip-deps-rna")?.value || "";
+  const pro = document.getElementById("chip-deps-proteomics")?.value || "";
+  const m16s = document.getElementById("chip-deps-m16s")?.value || "";
+  const mgx = document.getElementById("chip-deps-mgx")?.value || "";
+  const mbx = document.getElementById("chip-deps-mbx")?.value || "";
+  const clin = document.getElementById("chip-deps-clinical")?.value || "";
+  const missing = [];
+  for (const r of requires) {
+    if (r === "peaks" && !peakSel) missing.push("peaks");
+    if (r === "genome") { /* MACS/HOMER genome always available via UI */ }
+    if (r === "bam_or_peaks" && !peakSel) {
+      // BAM optional if peaks present; check later in deeptools
+    }
+    if (r === "rna_or_proteomics" && !rna && !pro) missing.push("RNA or proteomics");
+    if (r === "m16s_or_mgx" && !m16s && !mgx) missing.push("16S or MGX");
+    if (r === "mbx" && !mbx) missing.push("metabolomics");
+    if (r === "clinical" && !clin) missing.push("clinical");
+  }
+  return { ok: !missing.length, missing, peakSel, rna, pro, m16s, mgx, mbx, clin };
+}
+
+async function runChipRecipePack(packId) {
+  if (!_chipRecipePacks) await loadChipRecipePacks();
+  const pack = (_chipRecipePacks?.packs || []).find((p) => p.id === packId);
+  if (!pack) {
+    toast(`Unknown pack: ${packId}`, "error");
+    return;
+  }
+  const gate = chipRecipeGate(pack);
+  if (!gate.ok) {
+    toast(`缺少依赖: ${gate.missing.join(", ")}`, "error");
+    chipRecipeLog(`[${packId}] blocked: ${gate.missing.join(", ")}`, "error");
+    return;
+  }
+  const results = document.getElementById("chip-recipe-results");
+  if (results) results.innerHTML = `<p class="hint">Running pack <strong>${chipdsEsc(packId)}</strong>…</p>`;
+  chipRecipeLog(`[${packId}] start`, "info");
+  setLoading(true);
+  try {
+    for (const step of pack.steps || []) {
+      const action = step.action;
+      const extra = step.requires_extra || [];
+      if (extra.includes("bam_2t2c")) {
+        try {
+          const bams = await API.chipListBams();
+          if ((bams.n_treatment || 0) < 2 || (bams.n_control || 0) < 2) {
+            chipRecipeLog(`[${packId}] skip ${action} (need ≥2T+≥2C BAM)`, "warn");
+            continue;
+          }
+        } catch (_) {
+          chipRecipeLog(`[${packId}] skip ${action} (BAM check failed)`, "warn");
+          continue;
+        }
+      }
+      if (extra.includes("peak_b") && !document.getElementById("chipds-ops-peak-b")?.value) {
+        chipRecipeLog(`[${packId}] skip ${action} (peak_b not set)`, "warn");
+        continue;
+      }
+      if (extra.includes("rna") && !gate.rna) {
+        chipRecipeLog(`[${packId}] skip ${action} (no RNA)`, "warn");
+        continue;
+      }
+      if (extra.includes("rna_or_proteomics") && !gate.rna && !gate.pro) {
+        chipRecipeLog(`[${packId}] skip ${action} (no RNA/proteomics)`, "warn");
+        continue;
+      }
+      chipRecipeLog(`[${packId}] → ${action}`, "info");
+      try {
+        if (action === "chip_annotate") {
+          await runChipAnnotate({ silentEmptyToast: true });
+        } else if (action === "chip_rna_co") {
+          if (!gate.rna) {
+            chipRecipeLog(`[${packId}] skip ${action} (no RNA)`, "warn");
+            continue;
+          }
+          const sel = document.getElementById("chip-rnaseq-exp");
+          if (sel) sel.value = gate.rna;
+          await API.chipRnaseqCoanalysis({
+            rnaseq_experiment: gate.rna,
+            genome: document.getElementById("chip-anno-genome")?.value || "hs",
+            score_cutoff: +(document.getElementById("chip-co-score-cutoff")?.value || 10),
+            min_total_counts: +(document.getElementById("chip-min-counts")?.value || 100),
+            rnaseq_p_cutoff: +(document.getElementById("chip-rna-p-cutoff")?.value || 0.05),
+            promoter_filter: !!document.getElementById("chip-promoter-filter")?.checked,
+          });
+        } else if (action === "chip_cross") {
+          await API.chipCrossOmics({
+            rnaseq_experiment: gate.rna || null,
+            proteomics_experiment: gate.pro || null,
+            rnaseq_p_cutoff: +(document.getElementById("chip-cross-rna-p")?.value || 0.05),
+            rnaseq_fc_cutoff: +(document.getElementById("chip-cross-rna-fc")?.value || 1),
+            proteomics_p_cutoff: +(document.getElementById("chip-cross-pro-p")?.value || 0.05),
+            proteomics_fc_cutoff: +(document.getElementById("chip-cross-pro-fc")?.value || 0.5),
+          });
+        } else if (action === "chip_microbiome_coanalysis") {
+          await API.chipMicrobiomeCoanalysis({
+            m16s_experiment: gate.m16s || null,
+            mgx_experiment: gate.mgx || null,
+            genome: document.getElementById("chip-anno-genome")?.value || "hs",
+          });
+        } else if (action === "chip_metabolomics_coanalysis") {
+          await API.chipMetabolomicsCoanalysis({
+            mbx_experiment: gate.mbx,
+            genome: document.getElementById("chip-anno-genome")?.value || "hs",
+          });
+        } else if (action === "chip_clinical_coanalysis") {
+          await API.chipClinicalCoanalysis({
+            companion_experiment: gate.rna || gate.m16s || null,
+          });
+        } else {
+          await runChipDownstreamAction(action);
+        }
+        chipRecipeLog(`[${packId}] ✓ ${action}`, "ok");
+      } catch (e) {
+        chipRecipeLog(`[${packId}] ✗ ${action}: ${e.message}`, "error");
+      }
+    }
+    for (const pl of pack.planned_steps || []) {
+      chipRecipeLog(`[${packId}] planned: ${pl.title || pl.id}`, "warn");
+    }
+    chipRecipeLog(`[${packId}] done`, "ok");
+    toast(`Pack ${packId} finished`, "success");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function runChipRecipeCombo(selectedIds) {
+  if (!_chipRecipePacks) await loadChipRecipePacks();
+  const order = _chipRecipePacks?.combo?.default_order || selectedIds;
+  const ids = order.filter((id) => selectedIds.includes(id));
+  if (!ids.length) {
+    toast("请至少勾选一个配方包", "error");
+    return;
+  }
+  const results = document.getElementById("chip-recipe-results");
+  if (results) results.innerHTML = `<p class="hint">Combo: ${ids.map(chipdsEsc).join(" → ")}</p>`;
+  for (const id of ids) {
+    await runChipRecipePack(id);
+  }
+}
+
+async function runChipMicrobiomeCoanalysisOnPage() {
+  const m16s = document.getElementById("chip-deps-m16s")?.value || "";
+  const mgx = document.getElementById("chip-deps-mgx")?.value || "";
+  if (!m16s && !mgx) {
+    toast("Select 16S and/or MGX in the dependency panel", "error");
+    setChipWizardStep("2");
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await API.chipMicrobiomeCoanalysis({
+      m16s_experiment: m16s || null,
+      mgx_experiment: mgx || null,
+    });
+    chipRecipeLog(`microbiome coanalysis: genes=${res.chip_genes_n} 16S=${res.m16s_sig_n} MGX=${res.mgx_sig_n}`, "ok");
+    toast("Microbiome co-analysis done", "success");
+  } catch (e) {
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function runChipMetabolomicsCoanalysisOnPage() {
+  const mbx = document.getElementById("chip-deps-mbx")?.value || "";
+  if (!mbx) {
+    toast("Select metabolomics experiment in the dependency panel", "error");
+    setChipWizardStep("2");
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await API.chipMetabolomicsCoanalysis({ mbx_experiment: mbx });
+    chipRecipeLog(`metabolomics coanalysis: genes=${res.chip_genes_n} MBX=${res.mbx_sig_n}`, "ok");
+    toast("Metabolomics co-analysis done", "success");
+  } catch (e) {
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function runChipClinicalCoanalysisOnPage() {
+  const clin = document.getElementById("chip-deps-clinical")?.value || "";
+  if (!clin) {
+    toast("Select clinical source in the dependency panel", "error");
+    setChipWizardStep("2");
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await API.chipClinicalCoanalysis({
+      companion_experiment: document.getElementById("chip-deps-rna")?.value || null,
+    });
+    chipRecipeLog(`clinical coanalysis mode=${res.mode} genes=${res.chip_genes_n} shared=${res.shared_samples_n}`, "ok");
+    toast("Clinical co-analysis done", "success");
+  } catch (e) {
+    toast(e.message, "error");
+  } finally {
+    setLoading(false);
+  }
+}
 
 prepAction("mgx-btn-preprocess", "mgx-profile-result", exp =>
   ensureWorkflowReady("metagenomics", exp, {
@@ -3667,13 +6447,26 @@ document.getElementById("mgx-btn-export-diff")?.addEventListener("click", () => 
 });
 
 // ── OMICS PRESET ──────────────────────────────────
+function ensureChipseqNavVisible() {
+  // ChIPseq + downstream must stay in the sidebar (not analysis-only embedding).
+  document.querySelectorAll(
+    '.nav-item[data-page="chipseq"], .nav-item[data-page="chipseq_downstream"]'
+  ).forEach((el) => {
+    el.classList.remove("hidden");
+    el.style.removeProperty("display");
+  });
+}
+
 function applyOmicsPreset(omics) {
   const body = document.body;
   [...body.classList].forEach((c) => {
     if (c.startsWith("omics-")) body.classList.remove(c);
   });
-  if (omics && omics !== "all") body.classList.add(`omics-${omics}`);
+  // multiomics / customize behave like "all": show every tab (no body filter class)
+  const showAll = !omics || omics === "all" || omics === "multiomics" || omics === "customize";
+  if (!showAll) body.classList.add(`omics-${omics}`);
   localStorage.setItem("emp_omics", omics || "all");
+  ensureChipseqNavVisible();
 
   document.querySelectorAll(".tab-bar").forEach((bar) => {
     const section = bar.closest("section");
@@ -3707,6 +6500,10 @@ window.addEventListener("emp:omics-change", (e) => {
   const sel = document.getElementById("omics-pipeline");
   if (sel) sel.value = omics;
   applyOmicsPreset(omics);
+  const listEl = document.getElementById("workflow-list");
+  listEl?.querySelectorAll(".workflow-tag").forEach((b) => {
+    b.classList.toggle("is-active", b.dataset.workflowId === omics);
+  });
 });
 
 // ── GLOBAL CLEAR ALL ──────────────────────────────
@@ -3716,10 +6513,17 @@ async function clearAllData() {
   localStorage.removeItem("emp_session_id");
   window._emp.experiments = [];
   window._emp.currentExp = null;
+  window._emp.standaloneClinical = null;
+  window._emp.chipLastPeaks = null;
+  window._emp.activeDataKind = "experiment";
+  window._emp.uiSnapshots = {};
+  window._emp.uiSnapshotActiveKey = null;
   window._emp.coldataCols = [];
   window._emp.features = [];
   window._emp.featuresN = 0;
   invalidateExperimentCache();
+  try { sessionStorage.removeItem(uiSnapshotStorageKey()); } catch (_) { /* ignore */ }
+  updateUiSnapshotBadges();
   document.querySelectorAll(".result-area, .alert").forEach((el) => {
     el.innerHTML = ""; el.classList.add("hidden");
   });
@@ -4656,7 +7460,7 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
     document.querySelectorAll(".ai-copilot-btn-label").forEach((el) => {
       el.textContent = t("copilot.btn");
     });
-    import("./github_sync.js?v=2026-07-21-gh-sync-v3").then((m) => m.applyGithubSyncI18n?.());
+    import("./github_sync.js?v=2026-07-22-multiomics-v1").then((m) => m.applyGithubSyncI18n?.());
     if (document.getElementById("page-clinical")?.classList.contains("active")) {
       updateClinicalPrecheck();
     }
@@ -4668,7 +7472,9 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
   await initGithubSync();
   await loadWorkflowBlueprint();
   await loadDemoDatasetButtons();
+  loadUiSnapshotsFromStorage();
   await refreshExperimentList();
+  updateUiSnapshotBadges();
   if (localStorage.getItem("emp_session_id")) {
     document.getElementById("btn-topbar-clear")?.classList.remove("hidden");
   }

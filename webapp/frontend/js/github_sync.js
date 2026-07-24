@@ -1,6 +1,6 @@
 // Course GitHub sync panel: student login, repo bind, weekly / project sync.
-import * as API from "./api.js?v=2026-07-21-gh-sync-v3";
-import { t } from "./locale.js?v=2026-07-16-multi-demo-v2";
+import * as API from "./api.js?v=2026-07-22-import-auth-v5";
+import { t } from "./locale.js?v=2026-07-22-multiomics-v1";
 
 const LS_STUDENT_TOKEN = "emp_student_token";
 const LS_TRACK = "emp_github_track";
@@ -20,6 +20,8 @@ const BUILTIN_ASSIGNMENTS = [
 
 let _tracks = [];
 let _student = null;
+/** Serialize Sync clicks — prevent overlapping homework sync requests. */
+let emp_sync_inflight = false;
 
 function toast(msg, type = "info") {
   window.dispatchEvent(new CustomEvent("emp:toast", { detail: { msg, type } }));
@@ -28,6 +30,40 @@ function toast(msg, type = "info") {
 function setLoading(on) {
   const el = document.getElementById("loading-spinner");
   if (el) el.classList.toggle("hidden", !on);
+}
+
+function setSyncButtonDisabled(disabled) {
+  const btn = $("btn-gh-sync");
+  if (!btn) return;
+  btn.disabled = !!disabled;
+  btn.setAttribute("aria-busy", disabled ? "true" : "false");
+}
+
+/** True when analysis / busy UI is active (spinner, progress bar, or busy depth). */
+function isAnalysisOrBusyActive() {
+  if ((window._emp?.analysisBusy || 0) > 0) return true;
+  const gp = document.getElementById("global-progress");
+  if (gp && !gp.classList.contains("hidden")) return true;
+  const spinner = document.getElementById("loading-spinner");
+  // Spinner may be used by sync itself; only treat as busy when sync is NOT the owner.
+  if (spinner && !spinner.classList.contains("hidden") && !emp_sync_inflight) return true;
+  return false;
+}
+
+/** Guard sync: block while analysis/jobs run or another sync is in flight. */
+function assertCanSync() {
+  if (emp_sync_inflight || window._emp?.syncInflight) {
+    toast(t("github.syncInProgress") || "Sync in progress", "error");
+    return false;
+  }
+  if (isAnalysisOrBusyActive()) {
+    toast(
+      t("github.analysisRunning") || "Analysis running — wait before sync",
+      "error"
+    );
+    return false;
+  }
+  return true;
 }
 
 function $(id) {
@@ -56,6 +92,51 @@ function updateCustomFields() {
   const track = currentTrack();
   const trackWrap = $("gh-custom-track-wrap");
   if (trackWrap) trackWrap.classList.toggle("hidden", !(track && track.custom));
+  updatePathPreview();
+}
+
+/** Slug for customize track — mirrors backend .github_slugify loosely. */
+function slugifyTrack(text, fallback = "customize") {
+  const raw = String(text || "").trim();
+  if (!raw) return fallback;
+  let slug = raw
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+  if (!slug || !/^[A-Za-z0-9]/.test(slug)) slug = fallback;
+  return slug;
+}
+
+/** Live preview of week-first GitHub path (UI Week N ↔ folder Week_0N). */
+function previewGitPath() {
+  const trackSel = $("gh-track")?.value || "track";
+  const asg = currentAssignment();
+  let weekDir;
+  let typeDir;
+  if (asg?.type === "project") {
+    weekDir = asg.id === "project_major" ? "Project_Major" : "Project_Other";
+    typeDir = "project";
+  } else {
+    const n = asg?.week || 1;
+    weekDir = `Week_${String(n).padStart(2, "0")}`;
+    typeDir = "weekly";
+  }
+  let trackFolder = trackSel;
+  const track = currentTrack();
+  if (track?.custom || trackSel === "customize") {
+    const custom = ($("gh-custom-track")?.value || "").trim();
+    trackFolder = custom ? slugifyTrack(custom) : "customize";
+  }
+  return `EMP2026/${weekDir}/${trackFolder}/${typeDir}/runs/<timestamp>/`;
+}
+
+function updatePathPreview() {
+  const el = $("gh-path-preview");
+  if (!el) return;
+  const path = previewGitPath();
+  el.innerHTML = `将写入：<code>${esc(path)}</code>`;
 }
 
 function fillAssignmentSelect() {
@@ -112,6 +193,8 @@ function fillTrackSelect() {
     { id: "transcriptomics", title: "转录组 RNA-seq" },
     { id: "metabolomics", title: "代谢组" },
     { id: "metagenomics", title: "宏基因组" },
+    { id: "clinical", title: "临床 / Clinical" },
+    { id: "multiomics", title: "多组学数据分析" },
     { id: "customize", title: "自定义 (Customize)", custom: true },
   ];
   const tracks = (_tracks && _tracks.length) ? _tracks : fallbackTracks;
@@ -126,6 +209,7 @@ function fillTrackSelect() {
   const ca = $("gh-custom-assignment");
   if (ca && localStorage.getItem(LS_CUSTOM_ASG)) ca.value = localStorage.getItem(LS_CUSTOM_ASG);
   fillAssignmentSelect();
+  updatePathPreview();
 }
 
 async function refreshStatus() {
@@ -283,6 +367,8 @@ async function onUnbind() {
 }
 
 async function onSync() {
+  if (!assertCanSync()) return;
+
   const track_id = $("gh-track")?.value;
   const assignment_id = $("gh-assignment")?.value;
   if (!track_id || !assignment_id) {
@@ -308,6 +394,9 @@ async function onSync() {
   const session_id = localStorage.getItem("emp_session_id") || null;
   const experiment = window._emp?.currentExp || null;
 
+  emp_sync_inflight = true;
+  if (window._emp) window._emp.syncInflight = true;
+  setSyncButtonDisabled(true);
   setLoading(true);
   try {
     const res = await API.githubSync({
@@ -320,7 +409,8 @@ async function onSync() {
       include_rds,
       commit_message,
     });
-    toast(res.message || t("github.syncOk"), "success");
+    const okMsg = res.message || t("github.syncOk");
+    toast(okMsg, res.partial ? "info" : "success");
     if (res.sync?.html_url) {
       const link = $("gh-last-commit");
       if (link) {
@@ -331,8 +421,17 @@ async function onSync() {
     }
     await refreshSyncHistory();
   } catch (e) {
-    toast(e.message || String(e), "error");
+    const msg = e.message || String(e);
+    // Backend 409 / busy messages — surface as clear wait guidance
+    if (/still running|wait before|busy|sync blocked|conflict/i.test(msg)) {
+      toast(msg, "error");
+    } else {
+      toast(msg, "error");
+    }
   } finally {
+    emp_sync_inflight = false;
+    if (window._emp) window._emp.syncInflight = false;
+    setSyncButtonDisabled(false);
     setLoading(false);
   }
 }
@@ -355,6 +454,7 @@ export function applyGithubSyncI18n() {
   const hint = $("gh-assignment-hint");
   if (hint) hint.textContent = t("github.assignmentHint") || hint.textContent;
   updateCustomFields();
+  updatePathPreview();
 }
 
 export async function initGithubSync() {
@@ -370,11 +470,13 @@ export async function initGithubSync() {
   $("gh-track")?.addEventListener("change", () => {
     localStorage.setItem(LS_TRACK, $("gh-track").value);
     fillAssignmentSelect();
+    updatePathPreview();
   });
   $("gh-assignment")?.addEventListener("change", () => {
     localStorage.setItem(LS_ASSIGNMENT, $("gh-assignment").value);
     updateCustomFields();
   });
+  $("gh-custom-track")?.addEventListener("input", updatePathPreview);
 
   try {
     const data = await API.githubAssignments();
