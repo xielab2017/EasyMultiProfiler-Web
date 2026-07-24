@@ -72,7 +72,7 @@
   <rect class="panel" x="60" y="184" width="270" height="430" rx="14"/>
   <text x="80" y="220" class="label" font-size="20">1. Course &amp; Weeks</text>
   <rect class="item" x="80" y="240" width="230" height="48" rx="10"/>
-  <text x="96" y="270" class="small" font-size="14">16S / RNA-seq / Metab / MGX</text>
+  <text x="96" y="270" class="small" font-size="13">16S / RNA / ChIP peaks / Metab / MGX</text>
   <rect class="item" x="80" y="300" width="230" height="48" rx="10"/>
   <text x="96" y="330" class="small" font-size="14">Week 1-5 task cards + quiz</text>
   <rect class="item" x="80" y="360" width="230" height="48" rx="10"/>
@@ -100,7 +100,7 @@
   <rect class="panel" x="652" y="184" width="270" height="430" rx="14"/>
   <text x="672" y="220" class="label" font-size="20">3. Analyze in EMP-Web</text>
   <rect class="item" x="672" y="240" width="230" height="48" rx="10"/>
-  <text x="688" y="270" class="small" font-size="14">Import -&gt; Prepare -&gt; Analyze</text>
+  <text x="688" y="270" class="small" font-size="13">Import types + peak BED sample</text>
   <rect class="item" x="672" y="300" width="230" height="48" rx="10"/>
   <text x="688" y="330" class="small" font-size="14">Visualize / Clinical / Run All</text>
   <rect class="item" x="672" y="360" width="230" height="48" rx="10"/>

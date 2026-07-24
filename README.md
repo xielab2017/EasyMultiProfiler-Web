@@ -10,7 +10,7 @@
 > **分支**：[`V9.0.0_Education`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/V9.0.0_Education)  
 > **定位**：课堂试用 / 课程作业提交预览，**非**替代正式 `main` / `v7.0.0` 生产分支。
 
-![EasyMultiProfiler Web Education banner](docs/images/emp-web-v8-education-banner.png)
+![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
 
 ---
 
@@ -32,7 +32,7 @@ EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API
 
 ## 架构一览
 
-![V9 Education architecture](docs/images/emp-web-v8-architecture.png)
+![V9 Education architecture](docs/images/emp-web-v9-architecture.png)
 
 > 矢量源文件：[docs/TECHNICAL_MODE_V9_EDUCATION.svg](docs/TECHNICAL_MODE_V9_EDUCATION.svg)（与上图同内容）
 
