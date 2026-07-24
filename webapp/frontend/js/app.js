@@ -2522,10 +2522,13 @@ function bindChipseqUploadCard() {
     setLoading(true);
     try {
       if (!localStorage.getItem("emp_session_id")) await API.createSession();
-      const genome = genomeSel?.value || "hs";
+      const genome = genomeSel?.value || "mm";
       const preset = presetSel?.value || "cutrun_tf_p05";
       const res = await withBusy("Uploading pre-called peaks",
         () => API.chipUploadPeaks(file, genome, preset));
+      const annoEl = document.getElementById("chip-anno-genome");
+      if (annoEl) delete annoEl.dataset.userSet;
+      syncChipAnnoFromPeakGenome(res.genome || genome, { force: true });
       window._emp.chipLastPeaks = {
         peak_file: res.peak_file,
         run_dir: res.run_dir,
@@ -3673,7 +3676,7 @@ function syncChipAnnoGenomeDefaults(genome) {
 function chipAnnotateParams() {
   const annoGenome = document.getElementById("chip-anno-genome")?.value
     || document.getElementById("chip-genome")?.value
-    || "hs";
+    || "mm";
   const tssUp = document.getElementById("chip-tss-up")?.value;
   const tssDn = document.getElementById("chip-tss-dn")?.value;
   const txdb = document.getElementById("chip-txdb")?.value || "";
@@ -3773,18 +3776,24 @@ function refreshChipPeakStatus(displayName = null) {
     el.innerHTML = html;
     el.classList.remove("hidden");
   });
-  // Keep ChIPseeker genome / OrgDb aligned with peak genome (e.g. mm → mouse).
-  syncChipAnnoFromPeakGenome(peaks?.genome);
+  // Align ChIPseeker genome only if user has not manually overridden the dropdown.
+  syncChipAnnoFromPeakGenome(peaks?.genome, { force: false });
 }
 
-function syncChipAnnoFromPeakGenome(genome) {
+function syncChipAnnoFromPeakGenome(genome, opts = {}) {
   if (!genome) return;
+  const force = opts.force === true;
+  const annoG = document.getElementById("chip-anno-genome");
+  // ponytail: respect manual species choice; peak metadata often stale (defaulted to hs).
+  if (!force && annoG?.dataset?.userSet === "1") {
+    syncChipAnnoGenomeDefaults(annoG.value || "mm");
+    return;
+  }
   const g = String(genome).toLowerCase();
-  let key = "hs";
+  let key = "mm";
   if (g === "mm" || g.startsWith("mm") || g.includes("mouse")) key = "mm";
   else if (g === "hg19") key = "hg19";
   else if (g === "hs" || g.startsWith("hg") || g.includes("human")) key = "hs";
-  const annoG = document.getElementById("chip-anno-genome");
   const macsG = document.getElementById("chip-genome");
   if (annoG && annoG.value !== key && [...annoG.options].some((o) => o.value === key)) {
     annoG.value = key;
@@ -3792,7 +3801,8 @@ function syncChipAnnoFromPeakGenome(genome) {
   } else if (annoG) {
     syncChipAnnoGenomeDefaults(annoG.value || key);
   }
-  if (macsG && (key === "hs" || key === "mm") && macsG.value !== key) {
+  if (macsG && (key === "hs" || key === "mm") && macsG.value !== key
+      && macsG.dataset?.userSet !== "1") {
     macsG.value = key;
   }
 }
@@ -3989,9 +3999,12 @@ async function uploadChipPeaksFromAnalysis({ annotate = false } = {}) {
     if (!localStorage.getItem("emp_session_id")) await API.createSession();
     const genome = document.getElementById("chip-anno-genome")?.value
       || document.getElementById("chip-genome")?.value
-      || "hs";
+      || "mm";
     const preset = document.getElementById("chip-macs-preset")?.value || "cutrun_tf_p05";
     const res = await withBusy("Uploading peak file", () => API.chipUploadPeaks(file, genome, preset));
+    const annoEl = document.getElementById("chip-anno-genome");
+    if (annoEl) delete annoEl.dataset.userSet;
+    syncChipAnnoFromPeakGenome(res.genome || genome, { force: true });
     window._emp.chipLastPeaks = {
       peak_file: res.peak_file,
       run_dir: res.run_dir,
@@ -4316,14 +4329,27 @@ document.getElementById("chip-btn-annotate")?.addEventListener("click", async ()
 });
 
 document.getElementById("chip-anno-genome")?.addEventListener("change", (e) => {
+  e.target.dataset.userSet = "1";
   syncChipAnnoGenomeDefaults(e.target.value);
+  if (window._emp.chipLastPeaks) {
+    window._emp.chipLastPeaks.genome = e.target.value;
+    window._emp.chipLastPeaks.assembly = e.target.value === "mm" ? "mm10"
+      : (e.target.value === "hg19" ? "hg19" : "hg38");
+  }
+  try { refreshChipPeakStatus(); } catch (_) { /* ignore */ }
 });
 document.getElementById("chip-genome")?.addEventListener("change", (e) => {
+  e.target.dataset.userSet = "1";
   const g = e.target.value === "mm" ? "mm" : "hs";
   const annoG = document.getElementById("chip-anno-genome");
   if (annoG) {
     annoG.value = g;
+    annoG.dataset.userSet = "1";
     syncChipAnnoGenomeDefaults(g);
+  }
+  if (window._emp.chipLastPeaks) {
+    window._emp.chipLastPeaks.genome = g;
+    window._emp.chipLastPeaks.assembly = g === "mm" ? "mm10" : "hg38";
   }
 });
 
@@ -5195,8 +5221,15 @@ async function refreshChipdsLastPeaks(opts = {}) {
   const nextIdentity = chipdsLastPeaksIdentity(peaks);
   const identityChanged = Boolean(nextIdentity && nextIdentity !== prevIdentity);
   if (nextIdentity) window._emp.chipLastPeaksIdentity = nextIdentity;
+  if (identityChanged || forceGenomeSync) {
+    const annoG = document.getElementById("chip-anno-genome");
+    if (annoG) delete annoG.dataset.userSet;
+  }
 
   renderChipdsLastPeaksBadge(peaks);
+  if (identityChanged || forceGenomeSync) {
+    syncChipAnnoFromPeakGenome(peaks?.genome || peaks?.assembly, { force: true });
+  }
   refreshChipPeakStatus();
 
   const peakGenome = peaks?.assembly || peaks?.genome;
@@ -5227,8 +5260,14 @@ async function onChipPeakSelectChange(ev) {
     window._emp.chipActivePeakId = res.active_peak_id || peakId;
     window._emp.chipPeakFiles = Array.isArray(res.peak_files) ? res.peak_files : (window._emp.chipPeakFiles || []);
     window._emp.chipLastPeaksIdentity = chipdsLastPeaksIdentity(window._emp.chipLastPeaks);
+    const annoG = document.getElementById("chip-anno-genome");
+    if (annoG) delete annoG.dataset.userSet;
     renderChipPeakSelectors(window._emp.chipPeakFiles, window._emp.chipActivePeakId, window._emp.chipLastPeaks);
     renderChipdsLastPeaksBadge(window._emp.chipLastPeaks);
+    syncChipAnnoFromPeakGenome(
+      window._emp.chipLastPeaks?.genome || window._emp.chipLastPeaks?.assembly,
+      { force: true }
+    );
     refreshChipPeakStatus();
     const g = window._emp.chipLastPeaks?.assembly || window._emp.chipLastPeaks?.genome;
     if (g) syncChipdsGenomeSelects(g, { force: true });

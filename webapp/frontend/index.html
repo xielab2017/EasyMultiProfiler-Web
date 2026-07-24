@@ -1913,25 +1913,25 @@
         <div class="form-group">
           <label data-i18n="chip.label.genomeMap">Genome mapping</label>
           <select id="chip-anno-genome">
-            <option value="hs" selected>Human (auto hg38→hg19)</option>
+            <option value="mm" selected>Mouse mm10 (mm)</option>
+            <option value="hs">Human (auto hg38→hg19)</option>
             <option value="hg19">Human hg19</option>
-            <option value="mm">Mouse mm10 (mm)</option>
           </select>
         </div>
         <div class="form-group">
           <label>TxDb</label>
           <select id="chip-txdb">
             <option value="">Auto (from genome)</option>
-            <option value="TxDb.Hsapiens.UCSC.hg19.knownGene" selected>Hsapiens hg19 knownGene</option>
+            <option value="TxDb.Mmusculus.UCSC.mm10.knownGene" selected>Mmusculus mm10 knownGene</option>
+            <option value="TxDb.Hsapiens.UCSC.hg19.knownGene">Hsapiens hg19 knownGene</option>
             <option value="TxDb.Hsapiens.UCSC.hg38.knownGene">Hsapiens hg38 knownGene</option>
-            <option value="TxDb.Mmusculus.UCSC.mm10.knownGene">Mmusculus mm10 knownGene</option>
           </select>
         </div>
         <div class="form-group">
           <label>annoDb (OrgDb)</label>
           <select id="chip-annodb">
-            <option value="org.Hs.eg.db" selected>org.Hs.eg.db</option>
-            <option value="org.Mm.eg.db">org.Mm.eg.db</option>
+            <option value="org.Mm.eg.db" selected>org.Mm.eg.db</option>
+            <option value="org.Hs.eg.db">org.Hs.eg.db</option>
           </select>
         </div>
         <div class="form-group">
@@ -3456,7 +3456,7 @@
     else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
   }
 </script>
-<script type="module" src="js/app.js?v=i18n-locale-v1"></script>
+<script type="module" src="js/app.js?v=chip-genome-sticky-mm"></script>
 <script>
   // Initialise Lucide icons after all content is ready
   document.addEventListener("DOMContentLoaded", () => lucide.createIcons());

@@ -88,6 +88,7 @@ export const OMICS_RECOMMENDED = {
   },
   chipseq: {
     "chip-genome": "mm",
+    "chip-anno-genome": "mm",
     "chip-prefer-macs": "auto",
     "chip-macs-preset": "cutrun_tf_p05",
     "chip-format": "BAMPE",
