@@ -1,0 +1,5 @@
+# Large alignment files stay local; peak BED is tracked for Import/ChIP demos.
+*.bam
+*.bam.bai
+*.bai
+.DS_Store
