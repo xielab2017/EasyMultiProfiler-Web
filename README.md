@@ -1,13 +1,13 @@
-# EasyMultiProfiler Web · V9.0.0_Education
+# EasyMultiProfiler Web · V9.0.1_Education
 
 **教育预览版（Preview）** — 在 V7 一键安装与多组学分析能力之上，新增 **课程按周作业 + 学号登录 + GitHub 仓库同步**。
 
-![](https://img.shields.io/badge/version-V9.0.0__Education-1f6feb)
+![](https://img.shields.io/badge/version-V9.0.1__Education-1f6feb)
 ![](https://img.shields.io/badge/preview-branch-orange)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
-> **分支**：[`V9.0.0_Education`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/V9.0.0_Education)  
+> **分支**：[`V9.0.1_Education`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/V9.0.1_Education)  
 > **定位**：课堂试用 / 课程作业提交预览，**非**替代正式 `main` / `v7.0.0` 生产分支。
 
 ![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
@@ -18,12 +18,12 @@
 
 EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API + 静态前端 + EasyMultiProfiler 核心）。
 
-**V9.0.0_Education** 面向教学场景，让学生可以：
+**V9.0.1_Education** 面向教学场景，让学生可以：
 
 1. 在 **Course** 里按 case / 周次完成微课、测验与实操  
-2. 用 **学号 + 自设口令** 登录课程身份  
-3. 绑定自己的 **GitHub 仓库 + Token**  
-4. 在 **Export** 页一键把本周作业或期末项目同步到 GitHub（**每次新建 run，保留历史**）  
+2. 用 **学号 + 姓名（必填）+ 自设口令** 登录课程身份  
+3. 连接到课堂统一作业仓库 **xielab2017/Bioinformatics_homework_XieLiwei**（可选课堂 Token 自动绑定，否则学生填一次 PAT）  
+4. 在 **Export** 页一键把本周作业或期末项目同步到课堂仓库（**每次新建 run，保留历史**）  
 5. 需要时仍可本地下载 CSV / PDF / RDS
 
 ![Student analysis to GitHub weekly sync](docs/images/emp-web-v8-github-sync.png)
@@ -51,15 +51,15 @@ EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API
 
 | Shell | 命令 |
 |------|------|
-| **macOS / Linux（bash / zsh）** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.0_Education/webapp/scripts/install_from_github.sh)"` |
-| **Windows PowerShell** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.0_Education/webapp/scripts/install_from_github.ps1 \| iex` |
+| **macOS / Linux（bash / zsh）** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.1_Education/webapp/scripts/install_from_github.sh)"` |
+| **Windows PowerShell** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.1_Education/webapp/scripts/install_from_github.ps1 \| iex` |
 
 > 若安装脚本仍默认拉 `v7.0.0`，请先手动 clone 本预览分支再本地启动（见下）。
 
 ### 已 clone 仓库
 
 ```bash
-git clone -b V9.0.0_Education https://github.com/xielab2017/EasyMultiProfiler-Web.git
+git clone -b V9.0.1_Education https://github.com/xielab2017/EasyMultiProfiler-Web.git
 cd EasyMultiProfiler-Web
 bash install.sh                  # macOS / Linux
 # 或 Windows：install.cmd / Start-EMP-Web.bat
@@ -91,15 +91,16 @@ bash webapp/scripts/start_local.sh
 
 ### 准备
 
-1. 在 GitHub 新建一个**空仓库**（例如 `emp-coursework-2026`）  
-2. 创建 PAT：推荐 **fine-grained**，仅授权该仓库 **Contents: Read and write**  
-3. （可选，部署端）设置 `EMP_GITHUB_SECRET_KEY`，用于加密存储学生 Token  
+1. 课堂统一提交仓库：`https://github.com/xielab2017/Bioinformatics_homework_XieLiwei`（可用 `EMP_CLASS_HOMEWORK_REPO` 覆盖）  
+2. 部署端可选设置 `EMP_CLASS_GITHUB_TOKEN`（对课堂仓库有 Contents 写权限）→ 登录后自动绑定，学生无需粘贴 PAT  
+3. 若未配置课堂 Token：学生准备自己的 PAT（fine-grained，对该课堂仓库 **Contents: Read and write**）  
+4. （可选）设置 `EMP_GITHUB_SECRET_KEY`，用于加密存储 Token  
 
 ### 操作步骤
 
 1. 打开左侧 **Export**  
-2. **注册 / 登录**（学号 + 口令 ≥ 8 位）  
-3. **绑定仓库**：粘贴 `https://github.com/<you>/<repo>` 与 Token  
+2. **注册 / 登录**（学号 + **姓名必填** + 口令 ≥ 8 位）  
+3. 仓库地址已锁定为课堂仓库；若提示需要 Token，粘贴 PAT 后点 **绑定仓库**  
 4. 选择 **课程轨道** 与 **本周作业 / 期末项目**  
 5. 点击 **同步到 GitHub** → 打开返回的 commit 链接核对  
 
@@ -153,10 +154,11 @@ EMP2026/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/github/assignments` | 周次 / 项目作业列表 |
-| POST | `/api/github/register` | 学号注册 |
-| POST | `/api/github/login` | 登录，返回 `student_token` |
-| GET | `/api/github/status` | 登录与绑定状态 |
-| POST | `/api/github/bind` | 绑定 repo + PAT |
+| POST | `/api/github/register` | 学号注册（姓名必填）；含课堂仓库 ensure |
+| POST | `/api/github/login` | 登录，返回 `student_token` + 课堂仓库状态 |
+| GET | `/api/github/status` | 登录与绑定状态（含 `class_homework_repo`） |
+| POST | `/api/github/ensure_class_repo` | 确保绑定课堂作业仓库 |
+| POST | `/api/github/bind` | 绑定课堂 repo + PAT（始终指向课堂仓库） |
 | POST | `/api/github/sync` | 同步到指定周 / 项目 |
 | GET | `/api/github/syncs` | 本机同步历史 |
 
@@ -183,7 +185,8 @@ EMP2026/
 | [docs/INSTALL_MAC.md](docs/INSTALL_MAC.md) | macOS / Linux 安装 |
 | [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Windows 安装 |
 | [docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md) | 用户操作指南 |
-| [docs/RELEASE_NOTES_v9.0.0_Education.md](docs/RELEASE_NOTES_v9.0.0_Education.md) | 本预览版说明 |
+| [docs/CHIP_OPS_GUIDE.md](docs/CHIP_OPS_GUIDE.md) | ChIP-seq / CUT&RUN Step1+Step2 操作路径 |
+| [docs/RELEASE_NOTES_v9.0.1_Education.md](docs/RELEASE_NOTES_v9.0.1_Education.md) | 本预览版说明 |
 | [CHANGELOG_V7.md](CHANGELOG_V7.md) | V7 变更 |
 
 网页内左侧 **Guide** / **Course** 也有交互说明。
@@ -199,7 +202,7 @@ EasyMultiProfiler-Web/
 ├── docs/
 │   ├── images/                 # README 配图（banner / sync / architecture PNG）
 │   ├── TECHNICAL_MODE_V9_EDUCATION.svg
-│   └── RELEASE_NOTES_v9.0.0_Education.md
+│   └── RELEASE_NOTES_v9.0.1_Education.md
 └── webapp/
     ├── backend/helpers/github_sync.R
     ├── data/course_assignments.json

@@ -3745,6 +3745,13 @@ function(req, res) {
   plumber_github_status_get(req, res)
 }
 
+#* Ensure student is bound to the classroom homework repo
+#* @post /api/github/ensure_class_repo
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_ensure_class_repo_post(req, res)
+}
+
 #* Bind GitHub repo + PAT
 #* @post /api/github/bind
 #* @serializer unboxedJSON

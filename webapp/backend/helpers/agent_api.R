@@ -187,7 +187,7 @@ emp_agent_capabilities <- function() {
   list(
     success = TRUE,
     api_version = "1.0",
-    emp_version = Sys.getenv("EMP_WEB_VERSION", unset = "9.0.0-Education"),
+    emp_version = Sys.getenv("EMP_WEB_VERSION", unset = "9.0.1-Education"),
     package_version = package_version,
     features = list(
       path_import = length(.emp_allowed_roots()) > 0,

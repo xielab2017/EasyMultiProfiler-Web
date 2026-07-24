@@ -1380,6 +1380,10 @@ export async function githubStatus() {
   return request("GET", "/github/status");
 }
 
+export async function githubEnsureClassRepo() {
+  return request("POST", "/github/ensure_class_repo", {});
+}
+
 export async function githubBind(payload) {
   return request("POST", "/github/bind", payload);
 }

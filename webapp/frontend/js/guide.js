@@ -1,7 +1,7 @@
 /**
  * User Guide page — bilingual render + install command copy.
  */
-import { getLocale, t } from "./locale.js?v=2026-07-23-clinical-guide";
+import { getLocale, t } from "./locale.js?v=2026-07-24-chip-guide";
 
 const INSTALL_MAC_ONE_LINE =
   'bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"';
@@ -15,7 +15,7 @@ library(EasyMultiProfiler)`;
 
 const COPY = {
   zh: {
-    heroTitle: "EasyMultiProfiler Web v9.0 使用指南",
+    heroTitle: "EasyMultiProfiler Web v9.0.1 使用指南",
     heroHint: "本页汇总<strong>安装路径</strong>（Mac / Windows / 仅 R 包）与<strong>网页内分析流程</strong>。零基础：先完成对应系统安装，再从 Course 或「一键示例数据」开始。",
     pathsTitle: "三条安装路径（请只选与你电脑匹配的一条）",
     macCard: "🍎 macOS · Web 版",
@@ -47,7 +47,7 @@ const COPY = {
     rP: "Web 版 AI、Course、Run All <strong>仅在浏览器版</strong>提供。",
     rCopy: "复制 R 代码",
     flowTitle: "网页内分析流程（v5 推荐）",
-    featTitle: "v9.0 新功能速览",
+    featTitle: "v9.0.1 新功能速览",
     navTitle: "左侧导航说明",
     faqTitle: "常见问题",
     clinDemoTitle: "Demo 操作指南：临床 × 16S（三线表 + 全流程关联）",
@@ -65,9 +65,10 @@ const COPY = {
     clinDemoTroubleshoot: "排错",
     m16sDemoTitle: "Demo 操作指南：16S Microbiome（全模块流程）",
     rnaDemoTitle: "Demo 操作指南：RNA-seq Transcriptomics（全模块流程）",
+    chipDemoTitle: "Demo 操作指南：ChIP-seq / CUT&RUN（Step1 + Step2）",
   },
   en: {
-    heroTitle: "EasyMultiProfiler Web v9.0 User Guide",
+    heroTitle: "EasyMultiProfiler Web v9.0.1 User Guide",
     heroHint: "Install paths (Mac / Windows / R-only) and the in-app workflow. Complete install first, then start from <strong>Course</strong> or one-click demo data.",
     pathsTitle: "Three install paths (pick one for your computer)",
     macCard: "🍎 macOS · Web",
@@ -99,7 +100,7 @@ const COPY = {
     rP: "AI interpret, Course, Run All are <strong>web-only</strong> features.",
     rCopy: "Copy R code",
     flowTitle: "In-app workflow (v5)",
-    featTitle: "v9.0 highlights",
+    featTitle: "v9.0.1 highlights",
     navTitle: "Sidebar pages",
     faqTitle: "FAQ",
     clinDemoTitle: "Demo walkthrough: Clinical × 16S (three-line table + association)",
@@ -117,6 +118,7 @@ const COPY = {
     clinDemoTroubleshoot: "Troubleshooting",
     m16sDemoTitle: "Demo walkthrough: 16S Microbiome (full module flow)",
     rnaDemoTitle: "Demo walkthrough: RNA-seq Transcriptomics (full module flow)",
+    chipDemoTitle: "Demo walkthrough: ChIP-seq / CUT&RUN (Step1 + Step2)",
   },
 };
 
@@ -130,7 +132,7 @@ function renderGuideHtml() {
     <div class="card guide-hero">
       <div class="guide-hero-head">
         <h2>${L("heroTitle")}</h2>
-        <span class="version-badge version-badge-lg">v9.0</span>
+        <span class="version-badge version-badge-lg">v9.0.1</span>
       </div>
       <p class="hint">${L("heroHint")}</p>
     </div>
@@ -189,7 +191,7 @@ function renderGuideHtml() {
         </div>
       </div>
     </div>
-    ${renderFlowSection()}${renderClinicalDemoSection()}${renderM16sDemoSection()}${renderRnaseqDemoSection()}${renderFaqSection()}
+    ${renderFlowSection()}${renderClinicalDemoSection()}${renderM16sDemoSection()}${renderRnaseqDemoSection()}${renderChipDemoSection()}${renderFaqSection()}
   `;
 }
 
@@ -555,6 +557,100 @@ function renderRnaseqDemoSection() {
     <div class="card" id="guide-rnaseq-demo">
       <details class="guide-fold">
         <summary class="guide-fold-summary">${L("rnaDemoTitle")}</summary>
+        <div class="guide-fold-body">${body}</div>
+      </details>
+    </div>`;
+}
+
+function renderChipDemoSection() {
+  const zh = getLocale() === "zh";
+  const body = zh
+    ? `
+      <p class="hint">实跑核对（<code>webapp/test_outputs/chip_full_ops_guide/</code>）：PASS <strong>39</strong> / SKIP <strong>4</strong>（联合包 EXPECTED_GATE）/ FAIL <strong>0</strong>。峰样本 <code>tests/ChIP/HA_summits_0.05.bed</code>（mm）；BAM 本地 <code>HA3/4</code> vs <code>IgG1/3</code>（勿提交 BAM）。</p>
+
+      <h4>① Step1 — 上传峰 → 预处理 → 注释</h4>
+      <ol class="guide-steps">
+        <li>左侧打开 <strong>ChIP-seq</strong>；基因组选 <strong>mm</strong>（小鼠）。</li>
+        <li>上传峰 BED：<code>tests/ChIP/HA_summits_0.05.bed</code>（或自有 narrowPeak/summit）→ <strong>选择活动峰</strong>。</li>
+        <li>Peak QC → blacklist → merge → summit（peaks_ops）。</li>
+        <li><strong>Annotate</strong>（ChIPseeker）— 联合分析前必须完成。</li>
+      </ol>
+
+      <h4>② Step2 — 配方包 / 工具面板</h4>
+      <ol class="guide-steps">
+        <li><strong>核心 / 组蛋白</strong>：可不依赖 BAM（promoter / enhancer / SE / broad 等）。</li>
+        <li><strong>Motif</strong>：HOMER（需本机 HOMER + mm10/hg38）；教学冒烟可 <code>noknown</code>。</li>
+        <li><strong>DiffBind / deepTools</strong>：先注册 ≥2 treatment + ≥2 control BAM；无 BAM 时跳过并提示。</li>
+        <li>建议顺序：deepTools → DiffBind → HOMER（HOMER 后 RSS 高，易拖垮 bamCoverage）。</li>
+      </ol>
+
+      <h4>③ 联合包（Peak × 组学）</h4>
+      <ol class="guide-steps">
+        <li>先在 <strong>数据</strong> 页导入 RNA / 16S / 代谢 / 临床（Course Demo 或上传），并跑出差异结果（或导入 DE CSV）。</li>
+        <li>再回 ChIP Step2 跑 <code>rna_protein</code> / <code>microbiome_16s_mgx</code> / <code>metabolomics</code> / <code>clinical</code>。</li>
+        <li>仅有峰、无 DE/临床表时 API 返回 <strong>EXPECTED_GATE</strong>（依赖缺失，非故障）。</li>
+      </ol>
+
+      <h4>④ 预期输出（本仓库测试数据）</h4>
+      <div class="guide-demo-table-wrap">
+        <table class="guide-demo-table">
+          <thead><tr><th>项目</th><th>期望</th></tr></thead>
+          <tbody>
+            <tr><td>峰上传 + QC / ops</td><td>PASS；annotate ≈ 5000 峰（top5000 子集）</td></tr>
+            <tr><td>HOMER smoke</td><td>≈ 3–4 min（noknown, max_peaks=200）</td></tr>
+            <tr><td>deepTools / DiffBind</td><td>需 2T+2C BAM；coverage 约数分钟/BAM</td></tr>
+            <tr><td>RNA 桥（rnaseq_course + DESeq2）</td><td>rnaseq_coanalysis / cross_omics PASS</td></tr>
+            <tr class="guide-demo-sig"><td>联合包无 DE</td><td>EXPECTED_GATE（先跑差异或导入 DE）</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>排错</h4>
+      <dl class="guide-faq">
+        <dt>DiffBind: missing value where TRUE/FALSE needed</dt>
+        <dd>保持窄峰/1-bp summit；后端写 BED3。勿先做 summit±200 再 DiffBind。</dd>
+        <dt>deepTools / API 断连</dt>
+        <dd>多 GB BAM 易 OOM。重启 API；优先 coverage/corr；必要时减小 BAM 数或加大 bin。</dd>
+        <dt>联合包缺依赖</dt>
+        <dd>Data 页导入并完成差异；ChIP 页依赖面板须指向有 <code>diff_raw</code> 的实验。</dd>
+      </dl>
+      <p class="hint">完整操作报告：<code>docs/CHIP_OPS_GUIDE.md</code> · <code>webapp/test_outputs/chip_full_ops_guide/report.md</code></p>`
+    : `
+      <p class="hint">Verified run (<code>webapp/test_outputs/chip_full_ops_guide/</code>): PASS <strong>39</strong> / SKIP <strong>4</strong> (joint EXPECTED_GATE) / FAIL <strong>0</strong>. Peaks: <code>tests/ChIP/HA_summits_0.05.bed</code> (mm); BAMs local HA3/4 vs IgG1/3 (do not commit BAMs).</p>
+
+      <h4>① Step1 — upload peaks → ops → annotate</h4>
+      <ol class="guide-steps">
+        <li>Open <strong>ChIP-seq</strong>; genome <strong>mm</strong>.</li>
+        <li>Upload <code>tests/ChIP/HA_summits_0.05.bed</code> → select active peak.</li>
+        <li>Peak QC → blacklist → merge → summit → <strong>Annotate</strong> (required before joint packs).</li>
+      </ol>
+
+      <h4>② Step2 — recipes / tools</h4>
+      <ol class="guide-steps">
+        <li>Core / histone packs work without BAM.</li>
+        <li>Motif needs HOMER; DiffBind/deepTools need ≥2T+≥2C BAMs.</li>
+        <li>Prefer deepTools → DiffBind → HOMER under memory pressure.</li>
+      </ol>
+
+      <h4>③ Joint packs</h4>
+      <ol class="guide-steps">
+        <li>Import RNA/16S/MBX/clinical on <strong>Data</strong> and compute (or import) DE first.</li>
+        <li>Without DE/clinical, bridges return <strong>EXPECTED_GATE</strong> (not a bug).</li>
+      </ol>
+
+      <h4>Troubleshooting</h4>
+      <dl class="guide-faq">
+        <dt>DiffBind TRUE/FALSE error</dt>
+        <dd>Keep narrow peaks; backend uses BED3 — do not pre-expand summit±N.</dd>
+        <dt>API drop on deepTools</dt>
+        <dd>Restart API; large BAMs can OOM plumber after HOMER.</dd>
+      </dl>
+      <p class="hint">See <code>docs/CHIP_OPS_GUIDE.md</code> and <code>webapp/test_outputs/chip_full_ops_guide/report.md</code>.</p>`;
+
+  return `
+    <div class="card" id="guide-chip-demo">
+      <details class="guide-fold">
+        <summary class="guide-fold-summary">${L("chipDemoTitle")}</summary>
         <div class="guide-fold-body">${body}</div>
       </details>
     </div>`;

@@ -8,6 +8,9 @@ const LS_ASSIGNMENT = "emp_github_assignment";
 const LS_CUSTOM_TRACK = "emp_github_custom_track";
 const LS_CUSTOM_ASG = "emp_github_custom_assignment";
 
+const DEFAULT_CLASS_REPO =
+  "https://github.com/xielab2017/Bioinformatics_homework_XieLiwei";
+
 /** Fixed assignment menu — always available even if API is down. */
 const BUILTIN_ASSIGNMENTS = [
   ...Array.from({ length: 16 }, (_, i) => {
@@ -139,6 +142,31 @@ function updatePathPreview() {
   el.innerHTML = `将写入：<code>${esc(path)}</code>`;
 }
 
+function prefillClassRepo(url) {
+  const input = $("gh-repo-url");
+  if (!input) return;
+  const repoUrl = (url || DEFAULT_CLASS_REPO).trim() || DEFAULT_CLASS_REPO;
+  input.value = repoUrl;
+  input.readOnly = true;
+  input.setAttribute("aria-readonly", "true");
+  const hint = $("gh-repo-lock-hint");
+  if (hint) hint.textContent = t("github.classRepoLocked") || "本课程统一提交仓库";
+}
+
+function applyAuthClassRepo(res) {
+  const classRepo = res?.class_homework_repo || DEFAULT_CLASS_REPO;
+  prefillClassRepo(classRepo);
+  if (res?.student) _student = res.student;
+  const bound = !!(res?.github_bound || (_student?.github && _student.github.bound));
+  setPanelMode(bound ? "bound" : "logged_in");
+  renderStudentChip();
+  if (res?.need_pat && !bound) {
+    toast(t("github.needPatForClass") || "请填写可写入课堂仓库的 GitHub Token。", "info");
+  } else if (res?.auto_bound) {
+    toast(t("github.autoBoundOk") || "已自动连接到课堂作业仓库。", "success");
+  }
+}
+
 function fillAssignmentSelect() {
   const asgSel = $("gh-assignment");
   if (!asgSel) return;
@@ -218,23 +246,23 @@ async function refreshStatus() {
     _student = null;
     setPanelMode("auth");
     renderStudentChip();
+    prefillClassRepo(DEFAULT_CLASS_REPO);
     return;
   }
   try {
     const res = await API.githubStatus();
     _student = res.student;
+    prefillClassRepo(res.class_homework_repo || DEFAULT_CLASS_REPO);
     const bound = !!(res.student && res.student.github && res.student.github.bound);
     setPanelMode(bound ? "bound" : "logged_in");
     renderStudentChip();
-    if ($("gh-repo-url") && bound) {
-      $("gh-repo-url").value = res.student.github.html_url || "";
-    }
     await refreshSyncHistory();
   } catch (e) {
     localStorage.removeItem(LS_STUDENT_TOKEN);
     _student = null;
     setPanelMode("auth");
     renderStudentChip();
+    prefillClassRepo(DEFAULT_CLASS_REPO);
   }
 }
 
@@ -277,14 +305,17 @@ async function onRegister() {
     toast(t("github.needIdPassword"), "error");
     return;
   }
+  if (!display_name) {
+    toast(t("github.needDisplayName") || "请填写姓名。", "error");
+    return;
+  }
   setLoading(true);
   try {
     const res = await API.githubRegister({ student_id, password, display_name });
     localStorage.setItem(LS_STUDENT_TOKEN, res.student_token);
-    _student = res.student;
     toast(t("github.registerOk"), "success");
-    setPanelMode("logged_in");
-    renderStudentChip();
+    applyAuthClassRepo(res);
+    await refreshSyncHistory();
   } catch (e) {
     toast(e.message || String(e), "error");
   } finally {
@@ -295,19 +326,19 @@ async function onRegister() {
 async function onLogin() {
   const student_id = ($("gh-student-id")?.value || "").trim();
   const password = $("gh-password")?.value || "";
+  const display_name = ($("gh-display-name")?.value || "").trim();
   if (!student_id || !password) {
     toast(t("github.needIdPassword"), "error");
     return;
   }
   setLoading(true);
   try {
-    const res = await API.githubLogin({ student_id, password });
+    const payload = { student_id, password };
+    if (display_name) payload.display_name = display_name;
+    const res = await API.githubLogin(payload);
     localStorage.setItem(LS_STUDENT_TOKEN, res.student_token);
-    _student = res.student;
     toast(t("github.loginOk"), "success");
-    const bound = !!(res.student && res.student.github && res.student.github.bound);
-    setPanelMode(bound ? "bound" : "logged_in");
-    renderStudentChip();
+    applyAuthClassRepo(res);
     await refreshSyncHistory();
   } catch (e) {
     toast(e.message || String(e), "error");
@@ -328,10 +359,10 @@ async function onLogout() {
 }
 
 async function onBind() {
-  const repo_url = ($("gh-repo-url")?.value || "").trim();
+  const repo_url = ($("gh-repo-url")?.value || "").trim() || DEFAULT_CLASS_REPO;
   const github_token = ($("gh-pat")?.value || "").trim();
   const branch = ($("gh-branch")?.value || "").trim() || null;
-  if (!repo_url || !github_token) {
+  if (!github_token) {
     toast(t("github.needRepoToken"), "error");
     return;
   }
@@ -340,6 +371,7 @@ async function onBind() {
     const res = await API.githubBind({ repo_url, github_token, branch });
     _student = res.student;
     if ($("gh-pat")) $("gh-pat").value = "";
+    prefillClassRepo(repo_url);
     toast(t("github.bindOk"), "success");
     setPanelMode("bound");
     renderStudentChip();
@@ -489,6 +521,7 @@ export async function initGithubSync() {
   fillAssignmentSelect();
 
   applyGithubSyncI18n();
+  prefillClassRepo(DEFAULT_CLASS_REPO);
   await refreshStatus();
   if (typeof lucide !== "undefined") lucide.createIcons();
 }

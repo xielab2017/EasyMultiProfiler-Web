@@ -162,7 +162,7 @@ emp_session_manifest <- function(session_id, owner_id) {
     list_jobs_for_session(session_id, owner_id)
   } else list()
   stored$versions <- list(
-    emp_web = Sys.getenv("EMP_WEB_VERSION", unset = "9.0.0-Education"),
+    emp_web = Sys.getenv("EMP_WEB_VERSION", unset = "9.0.1-Education"),
     emp_package = tryCatch(as.character(utils::packageVersion("EasyMultiProfiler")), error = function(e) "unknown"),
     r = as.character(getRversion())
   )

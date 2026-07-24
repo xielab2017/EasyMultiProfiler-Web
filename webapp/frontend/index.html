@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EasyMultiProfiler Web V9.0.0 Education</title>
+  <title>EasyMultiProfiler Web V9.0.1 Education</title>
     <link rel="stylesheet" href="css/style.css?v=omics-demo-fold-v1">
     <link rel="stylesheet" href="css/code_lab.css?v=2026-07-16-multi-demo-v2">
     <link rel="stylesheet" href="css/teaching.css?v=2026-07-22-gh-week-first">
@@ -134,7 +134,7 @@
       <div id="perf-last" class="perf-last">—</div>
     </div>
     <div id="locale-note" class="locale-note">
-      <span class="version-badge">v9.0</span>
+      <span class="version-badge">v9.0.1</span>
       <button type="button" class="btn-link" id="btn-help-guide" data-i18n="footer.guide">安装与使用指南</button>
       · <button type="button" class="btn-link" id="btn-help-course" data-i18n="footer.course">Course 入门</button>
       · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/main/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
@@ -195,7 +195,7 @@
   <section id="page-course" class="page active">
     <div class="card guide-course-banner">
       <p class="hint" style="margin:0">
-        <strong>v9.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
+        <strong>v9.0.1</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
         （Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」
       </p>
     </div>
@@ -220,14 +220,14 @@
     <div id="teaching-prompt-root"></div>
   </section>
 
-  <!-- ── PAGE: USER GUIDE (v9.0) ─────────────────────── -->
+  <!-- ── PAGE: USER GUIDE (v9.0.1) ─────────────────────── -->
   <section id="page-guide" class="page">
     <div id="guide-root"></div>
   </section>
 
   <section id="page-import" class="page">
     <div class="card welcome-card" id="welcome-card">
-      <h2>👋 欢迎使用 EasyMultiProfiler v9.0</h2>
+      <h2>👋 欢迎使用 EasyMultiProfiler v9.0.1</h2>
       <p class="hint">
         <strong>还没安装？</strong> 左侧点 <strong>Guide</strong> 查看 Mac / Windows 分平台安装步骤（两条路径不同，请勿混用）。
         <strong>已装好？</strong> 从 <strong>Course</strong> 学，或下方一键加载 16S / RNA-seq / Clinical 示例数据。
@@ -3300,13 +3300,13 @@
   <section id="page-export" class="page">
     <div class="card" id="github-sync-card">
       <h2 id="gh-card-title">GitHub 课程仓库同步</h2>
-      <p class="hint" id="gh-card-hint">用学号登录，绑定自己的 GitHub 仓库与 Token；按周作业或期末项目一键同步（每次新建 run，保留历史）。</p>
+      <p class="hint" id="gh-card-hint">用学号登录后，作业提交到课堂统一仓库 xielab2017/Bioinformatics_homework_XieLiwei；按周或项目一键同步（每次新建 run，保留历史）。</p>
       <div id="gh-student-chip" class="gh-student-chip"></div>
 
       <div id="gh-auth-panel" class="gh-panel">
         <div class="gh-form-grid">
           <label>学号 / Student ID<input type="text" id="gh-student-id" autocomplete="username" placeholder="e.g. 20260001"></label>
-          <label>显示名（可选）<input type="text" id="gh-display-name" placeholder="姓名"></label>
+          <label>姓名（必填）<input type="text" id="gh-display-name" autocomplete="name" placeholder="姓名" required></label>
           <label>口令 / Password<input type="password" id="gh-password" autocomplete="current-password" placeholder="至少 8 位"></label>
         </div>
         <div class="gh-actions">
@@ -3317,8 +3317,13 @@
 
       <div id="gh-bind-panel" class="gh-panel hidden">
         <div class="gh-form-grid">
-          <label>GitHub 仓库 URL<input type="url" id="gh-repo-url" placeholder="https://github.com/you/emp-coursework"></label>
-          <label>Personal Access Token<input type="password" id="gh-pat" autocomplete="off" placeholder="ghp_…（仅存服务端加密）"></label>
+          <label>GitHub 仓库 URL
+            <input type="url" id="gh-repo-url" readonly
+              value="https://github.com/xielab2017/Bioinformatics_homework_XieLiwei"
+              placeholder="https://github.com/xielab2017/Bioinformatics_homework_XieLiwei">
+            <span class="hint" id="gh-repo-lock-hint">本课程统一提交仓库</span>
+          </label>
+          <label>Personal Access Token<input type="password" id="gh-pat" autocomplete="off" placeholder="ghp_…（仅存服务端加密；有课堂 Token 时可自动绑定）"></label>
           <label>分支（可选）<input type="text" id="gh-branch" placeholder="main"></label>
         </div>
         <div class="gh-actions">

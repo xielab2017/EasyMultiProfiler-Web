@@ -342,36 +342,203 @@ github_get_assignment <- function(track_id, assignment_id,
   .github_write_json(.github_profile_path(profile$student_id), profile)
 }
 
+.github_class_homework_repo_url <- function() {
+  url <- trimws(Sys.getenv("EMP_CLASS_HOMEWORK_REPO", unset = ""))
+  if (!nzchar(url)) {
+    url <- "https://github.com/xielab2017/Bioinformatics_homework_XieLiwei"
+  }
+  url
+}
+
+.github_class_github_token <- function() {
+  trimws(Sys.getenv("EMP_CLASS_GITHUB_TOKEN", unset = ""))
+}
+
+github_class_config <- function() {
+  parsed <- .github_parse_repo(.github_class_homework_repo_url())
+  list(
+    class_homework_repo = .github_class_homework_repo_url(),
+    owner = parsed$owner,
+    repo = parsed$repo,
+    has_class_token = nzchar(.github_class_github_token())
+  )
+}
+
+.github_is_class_repo_bound <- function(gh, cfg = NULL) {
+  cfg <- cfg %||% github_class_config()
+  isTRUE(gh$bound) &&
+    identical(as.character(gh$owner %||% ""), as.character(cfg$owner)) &&
+    identical(as.character(gh$repo %||% ""), as.character(cfg$repo))
+}
+
+.github_push_connection_artifact <- function(identity) {
+  profile <- identity$profile
+  gh <- profile$github %||% list()
+  if (!isTRUE(gh$bound)) stop("尚未绑定课堂仓库。")
+  token <- .github_get_pat(profile)
+  owner <- gh$owner
+  repo <- gh$repo
+  branch <- gh$branch %||% "main"
+  conn <- list(
+    event = "connection",
+    student_id = identity$student_id,
+    display_name = profile$display_name %||% identity$student_id,
+    connected_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    class_homework_repo = sprintf("%s/%s", owner, repo),
+    emp_version = .github_emp_version()
+  )
+  staging <- tempfile(pattern = "emp-gh-conn-")
+  dir.create(staging, recursive = TRUE)
+  on.exit(unlink(staging, recursive = TRUE, force = TRUE), add = TRUE)
+  abs_path <- file.path(staging, "connection.json")
+  jsonlite::write_json(conn, abs_path, auto_unbox = TRUE, pretty = TRUE, null = "null")
+  rel <- sprintf(
+    "EMP2026/students/%s/connection.json",
+    make.names(identity$student_id)
+  )
+  push <- .github_push_files(
+    owner, repo, branch, token,
+    list(list(path = gsub("\\\\", "/", rel), abs = abs_path)),
+    sprintf("[EMP] connect %s to class homework repo", identity$student_id)
+  )
+  list(success = TRUE, html_url = push$html_url, path = rel, commit_sha = push$commit_sha)
+}
+
+github_ensure_class_repo <- function(identity) {
+  cfg <- github_class_config()
+  class_url <- cfg$class_homework_repo
+  profile <- .github_load_profile(identity$student_id)
+  identity$profile <- profile
+  gh <- profile$github %||% list()
+  auto_bound <- FALSE
+  need_pat <- FALSE
+  connection_pushed <- FALSE
+  connection_error <- NULL
+
+  push_conn <- function(idty) {
+    tryCatch({
+      .github_push_connection_artifact(idty)
+      connection_pushed <<- TRUE
+      NULL
+    }, error = function(e) {
+      connection_error <<- conditionMessage(e)
+      NULL
+    })
+  }
+
+  if (.github_is_class_repo_bound(gh, cfg)) {
+    # Already on class repo — keep bind; connection push is best-effort once.
+    need_pat <- FALSE
+  } else if (nzchar(.github_class_github_token())) {
+    github_bind_repo(identity, class_url, .github_class_github_token(), branch = NULL)
+    identity$profile <- .github_load_profile(identity$student_id)
+    auto_bound <- TRUE
+    push_conn(identity)
+  } else if (isTRUE(gh$bound) && nzchar(gh$token_ciphertext %||% "")) {
+    token <- tryCatch(.github_get_pat(profile), error = function(e) "")
+    if (!nzchar(token)) {
+      need_pat <- TRUE
+    } else {
+      ok <- tryCatch({
+        github_bind_repo(identity, class_url, token, branch = gh$branch)
+        TRUE
+      }, error = function(e) FALSE)
+      if (isTRUE(ok)) {
+        identity$profile <- .github_load_profile(identity$student_id)
+        auto_bound <- TRUE
+        push_conn(identity)
+      } else {
+        need_pat <- TRUE
+      }
+    }
+  } else {
+    need_pat <- TRUE
+  }
+
+  profile <- .github_load_profile(identity$student_id)
+  bound <- isTRUE((profile$github %||% list())$bound)
+  out <- list(
+    success = TRUE,
+    class_homework_repo = class_url,
+    github_bound = bound,
+    auto_bound = auto_bound,
+    need_pat = isTRUE(need_pat) && !bound,
+    connection_pushed = connection_pushed,
+    student = .github_public_profile(profile)
+  )
+  if (!is.null(connection_error)) out$connection_error <- connection_error
+  out
+}
+
+.github_auth_with_class_repo <- function(student_token, profile) {
+  identity <- list(
+    student_id = profile$student_id,
+    profile = profile,
+    token_hash = .github_token_hash(student_token)
+  )
+  ensure <- tryCatch(
+    github_ensure_class_repo(identity),
+    error = function(e) {
+      list(
+        class_homework_repo = .github_class_homework_repo_url(),
+        github_bound = isTRUE((profile$github %||% list())$bound),
+        auto_bound = FALSE,
+        need_pat = !isTRUE((profile$github %||% list())$bound),
+        connection_pushed = FALSE,
+        student = .github_public_profile(profile),
+        ensure_error = conditionMessage(e)
+      )
+    }
+  )
+  list(
+    success = TRUE,
+    student_token = student_token,
+    student = ensure$student %||% .github_public_profile(profile),
+    class_homework_repo = ensure$class_homework_repo %||% .github_class_homework_repo_url(),
+    github_bound = isTRUE(ensure$github_bound),
+    auto_bound = isTRUE(ensure$auto_bound),
+    need_pat = isTRUE(ensure$need_pat),
+    connection_pushed = isTRUE(ensure$connection_pushed),
+    connection_error = ensure$connection_error %||% NULL,
+    ensure_error = ensure$ensure_error %||% NULL
+  )
+}
+
 github_register_student <- function(student_id, password, display_name = NULL) {
   student_id <- trimws(as.character(student_id %||% ""))
   password <- as.character(password %||% "")
+  display_name <- trimws(as.character(display_name %||% ""))
   if (!.github_student_id_ok(student_id)) {
     stop("学号格式无效：3–32 位字母数字，可含 . _ -")
   }
+  if (!nzchar(display_name)) stop("请填写姓名（显示名不能为空）。")
   if (nchar(password, type = "chars") < 8L) stop("口令至少 8 位。")
   path <- .github_profile_path(student_id)
   if (file.exists(path)) stop("该学号已注册，请直接登录。")
   hashed <- .github_hash_password(password)
   profile <- list(
     student_id = student_id,
-    display_name = if (nzchar(trimws(as.character(display_name %||% "")))) {
-      trimws(as.character(display_name))
-    } else student_id,
+    display_name = display_name,
     password_hash = hashed$hash,
     password_salt = hashed$salt,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     github = list(bound = FALSE)
   )
   .github_save_profile(profile)
-  github_login_student(student_id, password)
+  github_login_student(student_id, password, display_name = display_name)
 }
 
-github_login_student <- function(student_id, password) {
+github_login_student <- function(student_id, password, display_name = NULL) {
   student_id <- trimws(as.character(student_id %||% ""))
   password <- as.character(password %||% "")
   profile <- tryCatch(.github_load_profile(student_id), error = function(e) NULL)
   if (is.null(profile) || !.github_check_password(password, profile$password_hash, profile$password_salt)) {
     stop("学号或口令错误。")
+  }
+  dn <- trimws(as.character(display_name %||% ""))
+  if (nzchar(dn)) {
+    profile$display_name <- dn
+    .github_save_profile(profile)
   }
   raw_token <- .github_new_session_token()
   th <- .github_token_hash(raw_token)
@@ -380,11 +547,7 @@ github_login_student <- function(student_id, password) {
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     expires_at = format(Sys.time() + 60 * 60 * 24 * 30, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   ))
-  list(
-    success = TRUE,
-    student_token = raw_token,
-    student = .github_public_profile(profile)
-  )
+  .github_auth_with_class_repo(raw_token, profile)
 }
 
 github_logout_student <- function(student_token) {
@@ -474,7 +637,8 @@ github_logout_student <- function(student_token) {
 }
 
 github_bind_repo <- function(identity, repo_url, github_token, branch = NULL) {
-  parsed <- .github_parse_repo(repo_url)
+  # Classroom fixed destination — ignore personal repo URLs.
+  parsed <- .github_parse_repo(.github_class_homework_repo_url())
   token <- trimws(as.character(github_token %||% ""))
   if (!nzchar(token)) stop("请提供 GitHub Personal Access Token。")
   info <- .github_validate_token_repo(token, parsed$owner, parsed$repo)
@@ -505,7 +669,14 @@ github_unbind_repo <- function(identity) {
 }
 
 github_status <- function(identity) {
-  list(success = TRUE, student = .github_public_profile(identity$profile))
+  cfg <- github_class_config()
+  list(
+    success = TRUE,
+    student = .github_public_profile(identity$profile),
+    class_homework_repo = cfg$class_homework_repo,
+    has_class_token = cfg$has_class_token,
+    github_bound = isTRUE((identity$profile$github %||% list())$bound)
+  )
 }
 
 .github_get_pat <- function(profile) {
@@ -682,7 +853,7 @@ github_status <- function(identity) {
     "EMP_WEB_VERSION",
     unset = tryCatch(
       as.character(utils::packageVersion("EasyMultiProfiler")),
-      error = function(e) "9.0.0-Education"
+      error = function(e) "9.0.1-Education"
     )
   )
 }
@@ -1276,7 +1447,11 @@ plumber_github_register_post <- function(req, res) {
 plumber_github_login_post <- function(req, res) {
   safe_api({
     b <- emp_json_request_body(req)
-    github_login_student(student_id = b$student_id, password = b$password)
+    github_login_student(
+      student_id = b$student_id,
+      password = b$password,
+      display_name = b$display_name
+    )
   }, res)
 }
 
@@ -1298,6 +1473,13 @@ plumber_github_status_get <- function(req, res) {
   safe_api({
     identity <- .github_identity_from_req(req)
     github_status(identity)
+  }, res)
+}
+
+plumber_github_ensure_class_repo_post <- function(req, res) {
+  safe_api({
+    identity <- .github_identity_from_req(req)
+    github_ensure_class_repo(identity)
   }, res)
 }
 
