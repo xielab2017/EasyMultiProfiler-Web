@@ -350,3 +350,190 @@ add_experiment_to_mae <- function(mae, data_file, metadata_file = NULL,
     sampleMap = S4Vectors::DataFrame(sample_map)
   )
 }
+
+# Shared omics import path used by multipart and server-local path endpoints.
+import_omics_files <- function(data_file, metadata_file = NULL,
+                               experiment_name = "experiment",
+                               data_type = "normal",
+                               assay_name = "counts",
+                               start_level = "Species",
+                               tax_sep = ";",
+                               session_id = NULL,
+                               owner_id = NULL,
+                               project_id = NULL) {
+  if (!data_type %in% c("tax", "normal")) {
+    stop("Path-based omics import supports data_type 'tax' or 'normal'.")
+  }
+  if (is.null(session_id) || !nzchar(session_id)) {
+    session_id <- if (!is.null(owner_id) && exists("emp_create_owned_session", mode = "function")) {
+      emp_create_owned_session(owner_id, project_id)
+    } else {
+      create_session()
+    }
+  } else {
+    if (!is.null(owner_id) && exists("emp_assert_session_owner", mode = "function")) {
+      emp_assert_session_owner(session_id, owner_id)
+    }
+    ensure_session_dir(session_id)
+  }
+  if (!is.null(owner_id) && exists("emp_register_session_owner", mode = "function")) {
+    emp_register_session_owner(session_id, owner_id, project_id)
+  }
+
+  mae_exists <- file.exists(mae_path(session_id))
+  if (mae_exists) {
+    mae <- load_mae(session_id)
+    if (experiment_name %in% names(mae)) {
+      stop(sprintf(
+        "Experiment name '%s' already exists. Choose a unique name to add another omics dataset.",
+        experiment_name
+      ))
+    }
+    mae <- add_experiment_to_mae(
+      mae, data_file, metadata_file, experiment_name, data_type,
+      assay_name, start_level, tax_sep
+    )
+    import_mode <- "omics_add"
+  } else {
+    mae <- build_mae(
+      data_file, metadata_file, experiment_name, data_type,
+      assay_name, start_level, tax_sep
+    )
+    import_mode <- "omics_new"
+  }
+
+  save_mae(session_id, mae)
+  tryCatch(
+    save_raw_empt(session_id, experiment_name, .promote_to_empt(mae, experiment_name)),
+    error = function(e) NULL
+  )
+  register_experiment_meta(session_id, experiment_name, data_type)
+  write_experiments_meta(session_id, mae)
+
+  ex <- mae[[experiment_name]]
+  list(
+    success = TRUE,
+    session_id = session_id,
+    import_mode = import_mode,
+    experiment_name = experiment_name,
+    samples = ncol(ex),
+    features = nrow(ex),
+    assay = assay_name,
+    omics = data_type_to_omics(data_type),
+    experiment_count = length(mae)
+  )
+}
+
+# ── Import pre-computed differential / marker result tables ──────────
+# Normalizes common DE column aliases into the classic DESeq2-style
+# cache used by ChIP joint bridges (diff_raw_<experiment>.rds).
+
+.import_diff_pick_col <- function(nms, candidates) {
+  hit <- intersect(candidates, nms)
+  if (length(hit)) hit[[1]] else NA_character_
+}
+
+import_diff_raw_table <- function(session_id,
+                                  experiment,
+                                  file_path,
+                                  method = "imported",
+                                  group_var = "imported",
+                                  ref_group = "ref",
+                                  test_group = "test") {
+  if (is.null(session_id) || !nzchar(as.character(session_id)[1])) {
+    stop("session_id is required")
+  }
+  experiment <- trimws(as.character(experiment %||% "")[1])
+  if (!nzchar(experiment)) stop("experiment is required")
+  file_path <- as.character(file_path %||% "")[1]
+  if (!nzchar(file_path) || !file.exists(file_path)) {
+    stop("diff result file not found")
+  }
+
+  ensure_session_dir(session_id)
+  df <- tryCatch(read_table_auto(file_path), error = function(e) {
+    stop("Failed to parse DE result table: ", conditionMessage(e))
+  })
+  if (is.null(df) || !nrow(df) || !ncol(df)) stop("DE result table is empty.")
+
+  nms <- names(df)
+  gcol <- .import_diff_pick_col(nms, c(
+    "feature", "Feature", "gene", "Gene", "SYMBOL", "symbol", "GeneID", "gene_id",
+    "geneSymbol", "Gene.Symbol", "id", "ID", "OTU", "ASV", "KO", "EC", "metabolite",
+    "Metabolite", "compound", "Compound", "taxon", "Taxon"
+  ))
+  if (is.na(gcol)) {
+    # Fall back to first non-numeric column, else first column.
+    non_num <- nms[vapply(df, function(x) !is.numeric(x), logical(1))]
+    gcol <- if (length(non_num)) non_num[[1]] else nms[[1]]
+  }
+  pcol <- .import_diff_pick_col(nms, c(
+    "pvalue", "p.value", "p_value", "P.Value", "PValue", "p", "pval"
+  ))
+  qcol <- .import_diff_pick_col(nms, c(
+    "padj", "p_adj", "p.adj", "adj.P.Val", "FDR", "fdr", "qvalue", "q_value",
+    "p_val_adj", "P.adjust"
+  ))
+  fcol <- .import_diff_pick_col(nms, c(
+    "log2FoldChange", "log2FC", "logFC", "avg_log2FC", "effect", "score",
+    "Score", "coef", "Coefficient", "FC", "fold_change"
+  ))
+
+  if (is.na(qcol) && is.na(pcol) && is.na(fcol)) {
+    stop("DE table needs at least one of: padj/p, log2FC/score (plus a feature id column).")
+  }
+
+  feat <- trimws(as.character(df[[gcol]]))
+  keep <- nzchar(feat) & !is.na(feat)
+  raw_df <- data.frame(
+    feature        = feat[keep],
+    symbol         = feat[keep],
+    baseMean       = NA_real_,
+    log2FoldChange = if (!is.na(fcol)) suppressWarnings(as.numeric(df[[fcol]][keep])) else NA_real_,
+    lfcSE          = NA_real_,
+    stat           = NA_real_,
+    pvalue         = if (!is.na(pcol)) suppressWarnings(as.numeric(df[[pcol]][keep])) else NA_real_,
+    padj           = if (!is.na(qcol)) {
+      suppressWarnings(as.numeric(df[[qcol]][keep]))
+    } else if (!is.na(pcol)) {
+      suppressWarnings(as.numeric(df[[pcol]][keep]))
+    } else {
+      NA_real_
+    },
+    stringsAsFactors = FALSE
+  )
+  # If only score/FC provided, synthesize a weak p so bridges can still filter.
+  if (all(is.na(raw_df$padj)) && all(is.na(raw_df$pvalue)) && any(is.finite(raw_df$log2FoldChange))) {
+    raw_df$pvalue <- 1 / (1 + abs(raw_df$log2FoldChange))
+    raw_df$padj <- raw_df$pvalue
+  }
+  if (!nrow(raw_df)) stop("No usable feature rows after parsing DE table.")
+
+  .save_diff_raw_cache(
+    session_id, experiment,
+    method = method %||% "imported",
+    group_var = group_var %||% "imported",
+    ref_group = ref_group %||% "ref",
+    test_group = test_group %||% "test",
+    raw_df = raw_df,
+    comparison_mode = "imported"
+  )
+
+  list(
+    success = TRUE,
+    session_id = session_id,
+    import_mode = "diff_raw",
+    experiment_name = experiment,
+    features = nrow(raw_df),
+    columns_detected = list(
+      feature = gcol,
+      pvalue = if (!is.na(pcol)) pcol else NULL,
+      padj = if (!is.na(qcol)) qcol else NULL,
+      effect = if (!is.na(fcol)) fcol else NULL
+    ),
+    message = paste0(
+      "Cached differential results as diff_raw_", make.names(experiment),
+      ".rds — ChIP joint packs can use this without re-running DE."
+    )
+  )
+}

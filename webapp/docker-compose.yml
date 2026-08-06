@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # ── R / Plumber REST API ──────────────────────────
@@ -12,11 +10,21 @@ services:
     ports:
       - "8000:8000"           # also exposed directly for debugging
     volumes:
-      - emp_sessions:/tmp/emp_sessions   # persist sessions across restarts
+      - emp_sessions:/tmp/emp_sessions   # retain the pre-v7 named volume and sessions
     environment:
       - R_LIBS_USER=/usr/local/lib/R/library
+      - API_HOST=0.0.0.0
+      - EMP_SESSION_DIR=/tmp/emp_sessions
+      - EMP_JOB_DIR=/tmp/emp_sessions/.jobs
+      - EMP_PROJECT_DIR=/tmp/emp_sessions/.projects
+      - EMP_API_TOKEN=${EMP_API_TOKEN:-}
+      - EMP_API_TOKEN_SHA256S=${EMP_API_TOKEN_SHA256S:-}
+      - EMP_API_OWNER_ID=${EMP_API_OWNER_ID:-agent-hub}
+      - EMP_ENDPOINT_ID=${EMP_ENDPOINT_ID:-docker-default}
+      - EMP_ENABLE_USER_R=false
+      - EMP_CORS_ORIGIN=http://localhost
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 5

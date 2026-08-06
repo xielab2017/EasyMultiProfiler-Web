@@ -1,141 +1,220 @@
-# EasyMultiProfiler Web v7.0
+# EasyMultiProfiler Web · V9.0.0_Education
 
-**多组学下游分析与可视化 — 浏览器版（R 后端 + EasyMultiProfiler 分析核心 + 静态前端）**
+**教育预览版（Preview）** — 在 V7 一键安装与多组学分析能力之上，新增 **课程按周作业 + 学号登录 + GitHub 仓库同步**。
 
-![](https://img.shields.io/badge/version-7.0-blue)
+![](https://img.shields.io/badge/version-V9.0.0__Education-1f6feb)
+![](https://img.shields.io/badge/preview-branch-orange)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
-![](https://img.shields.io/badge/macOS%20%7C%20Windows-1--line%20install-brightgreen)
-![](https://img.shields.io/badge/auto--install-R%20%7C%20python3%20%7C%20git-orange)
+![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
-> **V7 重大升级**：从 GitHub `clone` → 启动网页**只需 1 行命令**。脚本会
-> ① 自动识别你的 OS / 架构；
-> ② 缺什么装什么（**git / python3 / R** 自动按系统装）；
-> ③ 顺带装好 **CRAN + Bioconductor + EasyMultiProfiler** 依赖；
-> ④ 启动后端 + 网页并打开浏览器。
->
-> **不再需要用户预先安装 R / RStudio / EMP 包**。
+> **分支**：[`V9.0.0_Education`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/V9.0.0_Education)  
+> **定位**：课堂试用 / 课程作业提交预览，**非**替代正式 `main` / `v7.0.0` 生产分支。
 
-![EasyMultiProfiler Web V7 technical mode diagram](docs/TECHNICAL_MODE_V6.svg)
+![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
 
 ---
 
-## 一行命令启动（推荐）— 自动识别 OS
+## 这是什么
 
-脚本会**自动检测**你的操作系统并选择对应的安装路径（macOS / Linux 走 `.sh`，Windows 走 PowerShell `.ps1`）。你只需要挑与你当前 shell 匹配的那一行：
+EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API + 静态前端 + EasyMultiProfiler 核心）。
 
-| 当前 Shell | 命令 |
+**V9.0.0_Education** 面向教学场景，让学生可以：
+
+1. 在 **Course** 里按 case / 周次完成微课、测验与实操  
+2. 用 **学号 + 自设口令** 登录课程身份  
+3. 绑定自己的 **GitHub 仓库 + Token**  
+4. 在 **Export** 页一键把本周作业或期末项目同步到 GitHub（**每次新建 run，保留历史**）  
+5. 需要时仍可本地下载 CSV / PDF / RDS
+
+![Student analysis to GitHub weekly sync](docs/images/emp-web-v8-github-sync.png)
+
+---
+
+## 架构一览
+
+![V9 Education architecture](docs/images/emp-web-v9-architecture.png)
+
+> 矢量源文件：[docs/TECHNICAL_MODE_V9_EDUCATION.svg](docs/TECHNICAL_MODE_V9_EDUCATION.svg)（与上图同内容）
+
+| 层 | 能力 |
+|----|------|
+| Course | 4 条组学轨道 + **自定义 (Customize)**；作业为第 **1–16 周** + 课程大作业 + 期末项目 + 自定义作业 |
+| Student | 学号注册登录；服务端会话 token（`X-Student-Token`） |
+| Analyze | 完整继承 V7：导入、预处理、差异/多样性、可视化、Clinical、Run All、Code Lab、AI |
+| Sync | 打包 manifest / 表格 / 图 / 教学报告 → 推送到学生仓库约定目录 |
+
+---
+
+## 一行命令启动（预览分支）
+
+脚本会自动识别 OS，安装缺失的 git / python3 / R / EMP 依赖并启动网页。
+
+| Shell | 命令 |
 |------|------|
-| **macOS / Linux 终端（bash / zsh）** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.sh)"` |
-| **Windows PowerShell** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.ps1 \| iex` |
-| **Windows CMD / 双击 `.cmd`** | 下载 `install.cmd`，**双击运行**或在 CMD 中输入 `install.cmd` |
+| **macOS / Linux（bash / zsh）** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.0_Education/webapp/scripts/install_from_github.sh)"` |
+| **Windows PowerShell** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.0_Education/webapp/scripts/install_from_github.ps1 \| iex` |
 
-> 复制错行也没关系——`.sh` / `.ps1` 入口都内置了 OS 自检，会自动转发到正确分支。
-> 例如在 macOS 的 PowerShell 7 (`pwsh`) 里跑 `.ps1`，会自动调 `.sh`。
+> 若安装脚本仍默认拉 `v7.0.0`，请先手动 clone 本预览分支再本地启动（见下）。
 
-### 已经被 `git clone` 下来的用户
+### 已 clone 仓库
 
 ```bash
-bash install.sh                                  # macOS / Linux（仓库自带）
-powershell -File webapp\sscripts\bootstrap_and_start.ps1   # Windows PowerShell
-install.cmd                                       # Windows CMD / 双击
+git clone -b V9.0.0_Education https://github.com/xielab2017/EasyMultiProfiler-Web.git
+cd EasyMultiProfiler-Web
+bash install.sh                  # macOS / Linux
+# 或 Windows：install.cmd / Start-EMP-Web.bat
+```
+
+本地开发常用：
+
+```bash
+bash webapp/scripts/start_local.sh
+```
+
+- 网页：http://127.0.0.1:8080  
+- API：http://127.0.0.1:8000/api/health  
+
+### 终止运行 / Stop
+
+关闭浏览器不会停止后台服务。请用对应平台的停止入口（与启动脚本同目录）：
+
+| 平台 | 双击 / 命令 |
+|------|-------------|
+| **macOS** | `Stop-EMP-Web-Mac.command`，或 `bash webapp/scripts/stop_local.sh` |
+| **Windows** | `Stop-EMP-Web-Windows.bat`，或 `Restart-EMP-Web.bat`（先停再启） |
+
+停止脚本会结束 `.local_run` 中记录的 API / Web / Gateway PID，并释放默认端口 `8000` / `8080` / `8090`。
+
+---
+
+## 学生：GitHub 作业同步（Export 页）
+
+### 准备
+
+1. 在 GitHub 新建一个**空仓库**（例如 `emp-coursework-2026`）  
+2. 创建 PAT：推荐 **fine-grained**，仅授权该仓库 **Contents: Read and write**  
+3. （可选，部署端）设置 `EMP_GITHUB_SECRET_KEY`，用于加密存储学生 Token  
+
+### 操作步骤
+
+1. 打开左侧 **Export**  
+2. **注册 / 登录**（学号 + 口令 ≥ 8 位）  
+3. **绑定仓库**：粘贴 `https://github.com/<you>/<repo>` 与 Token  
+4. 选择 **课程轨道** 与 **本周作业 / 期末项目**  
+5. 点击 **同步到 GitHub** → 打开返回的 commit 链接核对  
+
+### 仓库目录约定
+
+```text
+EMP2026/
+  Week_01/
+    microbiome_16s/
+      weekly/
+        LATEST
+        runs/<timestamp>/
+          manifest.json      # 含学号、版本、GitHub、git_path
+          data/ results/ plots/ teaching/
+    transcriptomics/
+      weekly/
+        ...
+  Week_02/
+    ...
+  Project_Major/
+    transcriptomics/
+      project/
+        runs/...
+  profile.json               # 学号、GitHub 账号/仓库、EMP 版本、最近 git_path
+  _ledger/<run_id>.json      # 每次同步一条记录（增量，不擦除历史）
+  README.md
+```
+
+路径规则：`EMP2026 / Week_XX / <课程轨道> / <作业类型> / runs / ...`  
+- 周次文件夹：`Week_01` … `Week_16`（便于排序；界面下拉显示为 Week 1–16）  
+- 轨道在周次之下（如 `transcriptomics`、`microbiome_16s`、`clinical`）  
+- 作业类型：`weekly`（周作业）或 `project`（项目大作业，在 `Project_Major/` 下）
+
+同步策略：**增量写入**；每次新建 `runs/<时间戳>/`，不删除仓库已有文件。
+
+---
+
+## 教师 / 助教提示
+
+- 作业槽位定义：[`webapp/data/course_assignments.json`](webapp/data/course_assignments.json)  
+- 教学 case：[`webapp/data/teaching_cases.json`](webapp/data/teaching_cases.json)  
+- 学生资料目录：平台数据根下 `students/`（可用 `EMP_STUDENTS_DIR` 覆盖）  
+- 批改时可看学生仓库 `Week_XX/<track>/weekly/` 与 `profile.json` / `_ledger/`  
+- 每次同步会写入学号、GitHub 登录名/仓库、EMP 版本号与 `git_path` 
+- 局域网 / Tailscale 访问说明：[`webapp/docs/LAN_TAILSCALE_ACCESS.md`](webapp/docs/LAN_TAILSCALE_ACCESS.md)
+
+---
+
+## 主要 API（教育同步）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/github/assignments` | 周次 / 项目作业列表 |
+| POST | `/api/github/register` | 学号注册 |
+| POST | `/api/github/login` | 登录，返回 `student_token` |
+| GET | `/api/github/status` | 登录与绑定状态 |
+| POST | `/api/github/bind` | 绑定 repo + PAT |
+| POST | `/api/github/sync` | 同步到指定周 / 项目 |
+| GET | `/api/github/syncs` | 本机同步历史 |
+
+请求头：`X-Student-Token: <token>`（登录后由前端自动携带）。
+
+---
+
+## 相对 V7 的新增点
+
+- 课程 **按周** 作业模型（对接 case task）  
+- **学号 + 口令** 学生身份  
+- **GitHub 绑定与一键同步**（run 历史保留）  
+- Export 页 GitHub 课程仓库面板（中英 i18n）  
+- 继承 V7：零依赖一键安装、多组学工作流、AI Copilot、Code Lab、Run All 等  
+
+技术架构图（V7 分析核心仍适用）：[`docs/TECHNICAL_MODE_V6.svg`](docs/TECHNICAL_MODE_V6.svg)
+
+---
+
+## 文档索引
+
+| 文档 | 内容 |
+|------|------|
+| [docs/INSTALL_MAC.md](docs/INSTALL_MAC.md) | macOS / Linux 安装 |
+| [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Windows 安装 |
+| [docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md) | 用户操作指南 |
+| [docs/RELEASE_NOTES_v9.0.0_Education.md](docs/RELEASE_NOTES_v9.0.0_Education.md) | 本预览版说明 |
+| [CHANGELOG_V7.md](CHANGELOG_V7.md) | V7 变更 |
+
+网页内左侧 **Guide** / **Course** 也有交互说明。
+
+---
+
+## 仓库结构（摘要）
+
+```text
+EasyMultiProfiler-Web/
+├── DESCRIPTION
+├── R/                          # EMP R 包
+├── docs/
+│   ├── images/                 # README 配图（banner / sync / architecture PNG）
+│   ├── TECHNICAL_MODE_V9_EDUCATION.svg
+│   └── RELEASE_NOTES_v9.0.0_Education.md
+└── webapp/
+    ├── backend/helpers/github_sync.R
+    ├── data/course_assignments.json
+    ├── data/teaching_cases.json
+    ├── frontend/js/github_sync.js
+    └── scripts/                # 安装与本地启动
 ```
 
 ---
-
-## 后续日常启动
-
-- **macOS** ：双击 `Run-EMP-Web-Mac.command`
-- **Windows** ：双击 `Start-EMP-Web.bat`
-
-需要重装 R 包 / EMP 时：
-
-- macOS ：`bash webapp/scripts/launch_emp_web.sh --repair`
-- Windows ：双击 `Repair-and-Start-EMP-Web.bat`
-
----
-
-## 详细文档
-
-- [docs/INSTALL_MAC.md](docs/INSTALL_MAC.md) — macOS / Linux 安装细节 + 镜像 / 环境变量
-- [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) — Windows 安装细节 + 故障排查
-- [CHANGELOG_V7.md](CHANGELOG_V7.md) — V7 与 V6 的差异
-- 打开网页后，左侧 **Guide** 页有内置交互式手册
-
----
-
-## V7 亮点
-
-- **零依赖 1 行安装**：自动识别 OS / 架构，缺 R / git / python3 自动按系统装；首次启动一次性把 EMP 装好。
-- **Windows / macOS / Linux 全平台**：CRAN 官方 `.pkg` / `.exe` 与 Linux 仓库源自动选择；Apple Silicon / arm64 Windows 原生支持。
-- **幂等**：日常启动只装缺失项；`--repair` 强制重装。
-- **完全可降级**：`EMP_AUTO_INSTALL=0` 让脚本只诊断不安装（CI / 受限环境）。
-- **完整保留 V6 全部能力**：ChIP-seq / RNA-seq GSEA / AI 解读 / Code Lab LLM / 多组学导入 等不缩水。
 
 ## 成功标志
 
-- 网页：**http://127.0.0.1:8080**（默认 **Import** 页）  
-- API：**http://127.0.0.1:8000/api/health** → `"status":"ok"`
-
----
-
-## V6 亮点（V7 全部继承）
-
-- **ChIP-seq**：BAM → MACS2/3 peaks → ChIPseeker 注释 → 与 RNA-seq / 蛋白组交叉分析  
-- **RNA-seq GSEA + GO 细分**：GO BP/CC/MF、KEGG、Reactome rank-based GSEA  
-- **AI 结果解读 v2.1**：CNS 级证据锚定写作模板与 LLM prompt  
-- **Code Lab LLM**：多模型自动回退 + 本地规则优化兜底  
-- **可视化增强**：热图尺寸可调、PCA/PCoA 防出框 publication 主题  
-- **分平台安装 + Guide 页 + i18n + Run All + Course 教学**（继承 v5.0.0 全部能力）  
-
-完整用户指南：[docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md)
-
----
-
-## R 包 only（已有 R 4.3.3+ 的研究者）
-
-```r
-# 安装依赖（CRAN + Bioc + EMP 一键）
-install.packages("remotes")
-remotes::install_github("xielab2017/EasyMultiProfiler-Web", upgrade = "never",
-                        dependencies = TRUE,
-                        build_vignettes = FALSE)
-```
-
-启动浏览器版：
-
-```r
-EasyMultiProfiler::run_web()
-```
-
-或仍用我们维护的 Bioconductor 包：
-
-```r
-if (!requireNamespace("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
-BiocManager::install("EasyMultiProfiler")
-```
-
----
-
-## 仓库结构
-
-```
-EasyMultiProfiler-Web/
-├── DESCRIPTION                # R 包元数据（v7.0.0）
-├── R/                          # EMP R 包源码
-├── webapp/
-│   ├── backend/                # Plumber API + R helpers
-│   ├── frontend/               # 静态网页
-│   └── scripts/
-│       ├── install/            # V7 自动安装：_platform.sh, install_r.{sh,ps1}, install_system_deps.{sh,ps1}
-│       ├── bootstrap_and_start.{sh,ps1}
-│       ├── install_from_github.{sh,ps1}
-│       ├── launch_emp_web.{sh,ps1}
-│       ├── start_local.sh
-│       └── windows_r_utils.ps1
-├── docs/                       # 用户/安装/技术文档
-└── tests/                      # 16S / RNA-seq / Clinical 示例数据
-```
+- 前端打开 **Course** / **Export**，可见 GitHub 同步卡片  
+- `GET /api/github/assignments` 返回 4 条轨道与周次  
+- 学生绑定仓库后，同步可在 GitHub 看到新 commit  
 
 ---
 
@@ -145,4 +224,5 @@ Artistic-2.0（与 Bioconductor 一致）。
 
 ## Citation
 
-引用前请参考：https://github.com/xielab2017/EasyMultiProfiler-Web#citation
+请参考仓库主页与 EasyMultiProfiler / Bioconductor 引用说明：  
+https://github.com/xielab2017/EasyMultiProfiler-Web

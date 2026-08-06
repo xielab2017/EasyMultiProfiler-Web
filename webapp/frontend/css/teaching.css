@@ -521,3 +521,134 @@
   width: 100%;
   margin-top: 4px;
 }
+
+/* GitHub course sync (Export page) */
+#github-sync-card .gh-student-chip {
+  margin: 8px 0 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.gh-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--clr-border);
+}
+
+.gh-panel.hidden {
+  display: none;
+}
+
+.gh-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.gh-sync-grid {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .gh-sync-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gh-sync-grid label {
+  position: relative;
+  z-index: 1;
+}
+
+.gh-sync-grid select,
+.gh-select {
+  max-width: 100%;
+  width: 100%;
+  min-height: 40px;
+  position: relative;
+  z-index: 5;
+  pointer-events: auto;
+  background: var(--clr-surface, #fff);
+  color: var(--clr-text, #0f172a);
+  border: 1px solid var(--clr-border, #cbd5e1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.gh-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gh-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.92rem;
+  color: var(--clr-text);
+}
+
+.gh-form-grid input,
+.gh-form-grid select {
+  width: 100%;
+}
+
+.gh-check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.gh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gh-sync-history {
+  margin-top: 12px;
+}
+
+.gh-sync-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gh-sync-list li {
+  padding: 10px 12px;
+  border: 1px solid var(--clr-border);
+  border-radius: 8px;
+  background: var(--clr-surface);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+}
+
+.gh-sync-meta {
+  font-size: 0.8rem;
+  color: var(--clr-muted);
+  min-width: 11rem;
+}
+
+.gh-path-preview {
+  margin: 4px 0 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+
+.gh-path-preview code {
+  font-size: 0.86em;
+}
+

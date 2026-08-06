@@ -1,17 +1,15 @@
 @echo off
-REM ───────────────────────────────────────────────────────────────────────
-REM install.cmd — Windows CMD / PowerShell double-click entry point.
+REM install.cmd - Windows CMD / PowerShell double-click entry point.
 REM Auto-detects whether PowerShell is available, then delegates to the
 REM proper V7 bootstrap.
 REM
 REM Run this from:
-REM   • Windows CMD          : install.cmd
-REM   • PowerShell           : .\install.cmd
-REM   • File Explorer double-click : install.cmd
+REM   - Windows CMD          : install.cmd
+REM   - PowerShell           : .\install.cmd
+REM   - File Explorer double-click : install.cmd
 REM
 REM The CMD window stays open after the bootstrap finishes (or fails) so
 REM you can see the log. Press any key to close it.
-REM ───────────────────────────────────────────────────────────────────────
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "SCRIPT_DIR=%~dp0"
@@ -28,9 +26,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo  [install.cmd] EasyMultiProfiler Web v7 — one-line installer
+echo  [install.cmd] EasyMultiProfiler Web v7 - one-line installer
 echo  [install.cmd] Repo: %SCRIPT_DIR%
-echo  [install.cmd] Detected PowerShell — handing off to bootstrap_and_start.ps1
+echo  [install.cmd] Detected PowerShell - handing off to bootstrap_and_start.ps1
 echo  [install.cmd] (CMD window will stay open after the bootstrap finishes.)
 echo.
 
@@ -43,7 +41,8 @@ if %PS_EXIT% NEQ 0 (
   echo    See the messages above for what went wrong.
 ) else (
   echo  [install.cmd] bootstrap finished. The web server is running in the background.
-  echo    Open http://127.0.0.1:8080 in your browser if it did not open automatically.
+  echo    Open http://127.0.0.1:8080 in the browser if it did not open automatically.
+  echo    Stop: double-click Stop-EMP-Web-Windows.bat
 )
 echo.
 echo  Press any key to close this window...

@@ -419,8 +419,16 @@ safe_api <- function(expr, res) {
   result <- tryCatch(
     expr,
     error = function(e) {
-      if (!is.null(res)) res$status <- 500
-      list(success = FALSE, error = conditionMessage(e))
+      message <- conditionMessage(e)
+      if (!is.null(res)) {
+        lower <- tolower(message)
+        res$status <- if (grepl("access denied|ownership|allowed root|outside allowed|not allowed|invalid session_id|invalid project_id|invalid job_id", lower)) 403 else if (
+          grepl("still running|wait before sync|busy or incomplete|conflict|homework sync blocked", lower)
+        ) 409 else if (
+          grepl("validation|metadata|sample|group|invalid|required|unsupported", lower)
+        ) 400 else 500
+      }
+      list(success = FALSE, error = message)
     }
   )
   dt <- as.numeric(difftime(Sys.time(), t0, units = "secs")) * 1000

@@ -12,12 +12,33 @@ if [[ ! -f "${CFG_FILE}" ]]; then
 # EasyMultiProfiler runtime configuration
 API_PORT=8000
 WEB_PORT=8080
+# Bind all interfaces for LAN + Tailscale. Use 127.0.0.1 for loopback-only.
+API_HOST=0.0.0.0
+WEB_HOST=0.0.0.0
+# LAN/Tailscale: reflect private/Tailscale Origins; start_local.sh auto-fills EMP_API_TOKEN.
+EMP_CORS_ORIGIN=reflect-private
+# EMP_API_TOKEN=
+# Local path import roots. Use ':' between roots on macOS/Linux and ';' on Windows.
+# Empty uses the repository tests directory so the Agent Hub smoke workflow works safely.
+EMP_ALLOWED_ROOTS=
+# Agent integrations must not expose arbitrary R execution.
+EMP_ENABLE_USER_R=false
 # Optional: custom R library path
 # R_LIBS_USER=
 EOF
   echo "Created runtime config: ${CFG_FILE}"
 else
   echo "Runtime config exists: ${CFG_FILE}"
+  # Soft-migrate older loopback-only configs toward LAN/Tailscale defaults
+  # without overwriting user overrides when already set.
+  if ! grep -q '^API_HOST=' "${CFG_FILE}" 2>/dev/null; then
+    printf '\nAPI_HOST=0.0.0.0\n' >> "${CFG_FILE}"
+    echo "Added API_HOST=0.0.0.0 to ${CFG_FILE}"
+  fi
+  if ! grep -q '^WEB_HOST=' "${CFG_FILE}" 2>/dev/null; then
+    printf 'WEB_HOST=0.0.0.0\n' >> "${CFG_FILE}"
+    echo "Added WEB_HOST=0.0.0.0 to ${CFG_FILE}"
+  fi
 fi
 
 CAMPUS_EXAMPLE="${CFG_DIR}/campus_llm.json.example"

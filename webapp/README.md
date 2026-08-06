@@ -1,54 +1,38 @@
-# EasyMultiProfiler Webapp
+# EasyMultiProfiler Webapp — V9.0.0_Education (preview)
 
-This folder contains the non-Shiny web interface for EasyMultiProfiler.
+Browser UI + Plumber API for EasyMultiProfiler. This preview branch adds course weekly sync to GitHub.
 
 ## Run locally
 
-### One-line install (recommended)
+### One-line install (Education preview)
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v5.0.2/webapp/scripts/install_from_github.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.0_Education/webapp/scripts/install_from_github.sh)"
 ```
 
-This command does everything automatically:
+Windows PowerShell:
 
-1. Download project from GitHub
-2. Install required dependencies
-3. Start services and open the web page
+```powershell
+irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.0_Education/webapp/scripts/install_from_github.ps1 | iex
+```
 
 Open:
 
 - Frontend: http://127.0.0.1:8080
 - API health: http://127.0.0.1:8000/api/health
 
-Stop services:
+Stop (same ports/PIDs as start):
 
-```bash
-webapp/scripts/stop_local.sh
-```
+| Platform | Double-click / command |
+|----------|------------------------|
+| **macOS** | `Stop-EMP-Web-Mac.command` (repo root), or `bash webapp/scripts/stop_local.sh` |
+| **Windows** | `Stop-EMP-Web-Windows.bat` (repo root), or `webapp/scripts/stop_local_windows.ps1` |
 
-## Verify operation
+## Education features
 
-Run the end-to-end smoke workflow:
+- Course cases with weekly assignment slots (`data/course_assignments.json`)
+- Student ID + password login
+- Bind personal GitHub repo + PAT
+- Sync weekly / final project runs from the **Export** page
 
-```bash
-webapp/scripts/smoke_local.sh
-```
-
-The smoke test creates a temporary session and verifies:
-
-- Session creation and data import.
-- Summary, inspector, assay/metadata/RDS/EMPT exports.
-- Generic preparation, alpha, dimension, correlation, barplot, boxplot, heatmap, structure, alpha plot, PCA scatter, differential, and volcano operations.
-- Transcriptomics, metagenomics, metabolomics, and microbiome 16S workflow validation.
-- 16S sample-row matrix import, Sankey plot, network plot, and taxonomy preparation.
-
-## Upload formats
-
-The importer accepts both common matrix orientations:
-
-- Features as rows and samples as columns.
-- Samples as rows and features as columns, when the first column is a sample ID column or matches the metadata sample IDs.
-
-For 16S/taxonomy data, nonnumeric upload columns such as `absolute-filepath` are ignored during automatic transposition.
-
+See the root [README.md](../README.md) and [docs/RELEASE_NOTES_v9.0.0_Education.md](../docs/RELEASE_NOTES_v9.0.0_Education.md).

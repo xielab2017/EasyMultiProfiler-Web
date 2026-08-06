@@ -76,5 +76,6 @@ fi
 echo ""
 echo "════════════════════════════════════════════════════════"
 echo "  EasyMultiProfiler Web is running at: ${URL}"
-echo "  Stop with: bash webapp/scripts/stop_local.sh"
+echo "  Stop: double-click Stop-EMP-Web-Mac.command"
+echo "    or: bash webapp/scripts/stop_local.sh"
 echo "════════════════════════════════════════════════════════"

@@ -1,7 +1,7 @@
 /**
  * Recommended filter / normalize / analysis defaults per omics pipeline.
  */
-import { t } from "./locale.js?v=2026-07-16-multi-demo";
+import { t } from "./locale.js?v=2026-07-22-multiomics-v1";
 
 export function omicsLabel(key) {
   const map = {
@@ -11,6 +11,8 @@ export function omicsLabel(key) {
     metabolomics: "omics.label.metabolomics",
     chipseq: "omics.label.chipseq",
     clinical: "omics.label.clinical",
+    multiomics: "omics.label.multiomics",
+    customize: "omics.label.customize",
   };
   return t(map[key] || "") || key;
 }
@@ -85,12 +87,14 @@ export const OMICS_RECOMMENDED = {
     "vol-use-padj": "true",
   },
   chipseq: {
-    "chip-genome": "hs",
+    "chip-genome": "mm",
     "chip-prefer-macs": "auto",
-    "chip-macs-preset": "chipseq_tf",
-    "chip-format": "BAM",
-    "chip-cutoff-type": "q",
+    "chip-macs-preset": "cutrun_tf_p05",
+    "chip-format": "BAMPE",
+    "chip-cutoff-type": "p",
+    "chip-pvalue": "0.05",
     "chip-qvalue": "0.01",
+    "chip-gsize": "1.87e9",
     "chip-keep-dup": "auto",
     "chip-score-cutoff": "5",
     "chip-co-score-cutoff": "10",
@@ -121,6 +125,16 @@ function setField(id, value) {
  */
 export function applyOmicsDefaults(omics, opts = {}) {
   const key = omics || document.getElementById("omics-pipeline")?.value || "transcriptomics";
+  // multiomics / customize / all: no single-track defaults — leave UI as-is
+  if (key === "all" || key === "multiomics" || key === "customize") {
+    const label = omicsLabel(key) || key;
+    if (!opts.silent) {
+      window.dispatchEvent(new CustomEvent("emp:toast", {
+        detail: { msg: t("defaults.appliedFull", null, { label, n: 0 }), type: "success" },
+      }));
+    }
+    return { omics: key, applied: 0, label };
+  }
   const map = OMICS_RECOMMENDED[key] || OMICS_RECOMMENDED.transcriptomics;
   let applied = 0;
   for (const [id, val] of Object.entries(map)) {
@@ -147,6 +161,10 @@ export function omicsDefaultsHint(omics) {
       return t("defaults.hint.metabolomics");
     case "chipseq":
       return t("defaults.hint.chipseq");
+    case "multiomics":
+    case "customize":
+    case "all":
+      return t("defaults.hint.multiomics");
     default:
       return t("defaults.hint.generic");
   }

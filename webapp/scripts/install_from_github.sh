@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# V7 one-line installer.
+# V9.0.0_Education one-line installer (preview).
 #
-#   curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/v7.0.0/webapp/scripts/install_from_github.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.0_Education/webapp/scripts/install_from_github.sh | bash
 #
 # Steps:
 #   1. Verify / install git (needed for the clone).
-#   2. Clone the repo at the requested branch (default v7.0.0).
+#   2. Clone the repo at the requested branch (default V9.0.0_Education).
 #   3. Hand off to bootstrap_and_start.sh — which will:
 #        - install git + python3 if missing
 #        - install R if missing
@@ -15,7 +15,7 @@ set -euo pipefail
 
 REPO_URL="${1:-${EMP_REPO_URL:-https://github.com/xielab2017/EasyMultiProfiler-Web.git}}"
 TARGET_DIR="${2:-${EMP_TARGET_DIR:-EasyMultiProfiler-Web}}"
-BRANCH="${BRANCH:-${EMP_BRANCH:-v7.0.0}}"
+BRANCH="${BRANCH:-${EMP_BRANCH:-V9.0.0_Education}}"
 
 # Bootstrap git itself so even a barebones box can run this script.
 if ! command -v git >/dev/null 2>&1; then

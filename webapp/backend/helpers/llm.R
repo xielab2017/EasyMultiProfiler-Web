@@ -133,16 +133,18 @@
   )
 }
 
-.llm_campus_optimize_once <- function(cfg, model, code, workflow, tab, instruction, ui_context = NULL) {
+.llm_campus_optimize_once <- function(cfg, model, code, workflow, tab, instruction, ui_context = NULL,
+                                       external_code = NULL) {
   cfg <- .llm_campus_merge_cfg(cfg)
   cfg$model <- model
   timeout <- suppressWarnings(as.numeric(cfg$timeout))
   if (!is.finite(timeout) || timeout <= 0) timeout <- 120
   cfg$timeout <- timeout
-  .llm_optimize_once("campus", cfg, code, workflow, tab, instruction, ui_context)
+  .llm_optimize_once("campus", cfg, code, workflow, tab, instruction, ui_context, external_code)
 }
 
-.llm_campus_optimize <- function(cfg, code, workflow = NULL, tab = NULL, instruction = NULL, ui_context = NULL) {
+.llm_campus_optimize <- function(cfg, code, workflow = NULL, tab = NULL, instruction = NULL,
+                                 ui_context = NULL, external_code = NULL) {
   cfg <- .llm_campus_merge_cfg(cfg)
   if (!nzchar(trimws(.llm_chr(cfg$api_key)))) {
     stop(paste(
@@ -162,7 +164,9 @@
   for (model in models) {
     if (!nzchar(model)) next
     out <- tryCatch(
-      .llm_campus_optimize_once(cfg, model, code, workflow, tab, instruction %||% "", ui_context),
+      .llm_campus_optimize_once(
+        cfg, model, code, workflow, tab, instruction %||% "", ui_context, external_code
+      ),
       error = function(e) {
         msg <- conditionMessage(e)
         errors <<- c(errors, sprintf("%s: %s", model, msg))
@@ -365,7 +369,8 @@
   tryCatch(.llm_pure_r_or_stop(text), error = function(e) NULL)
 }
 
-.llm_openrouter_fusion_prompt <- function(code, workflow, tab, instruction, ui_context, candidates) {
+.llm_openrouter_fusion_prompt <- function(code, workflow, tab, instruction, ui_context, candidates,
+                                          external_code = NULL) {
   blocks <- vapply(seq_along(candidates), function(i) {
     c <- candidates[[i]]
     paste0(
@@ -373,22 +378,36 @@
       c$code
     )
   }, character(1))
+  external_raw <- paste(as.character(external_code %||% ""), collapse = "\n")
+  has_external <- nzchar(trimws(external_raw)) &&
+    !identical(trimws(external_raw), trimws(paste(as.character(code), collapse = "\n")))
   paste(
     "You are fusing multiple LLM-generated R script optimizations into ONE best final script.",
     "Return ONLY executable R code, with no markdown fences and no explanation.",
     "Preserve the student's analysis intent; keep changes minimal but incorporate the strongest ideas from every candidate.",
     "The result must be pure R compatible with POST /api/user_r/run.",
+    "Base the final script on the SYSTEM ORIGINAL EMP script patterns (session_id, experiment, EMP APIs, emp_pub_theme).",
+    if (has_external) paste(
+      "Also honor EXTERNAL script fusion: extract core analysis/plot intent from the external script,",
+      "merge into EMP scaffolding, and do not blindly replace the system script."
+    ) else "",
     sprintf("Workflow: %s; Tab: %s.", .llm_chr(workflow, "unknown"), .llm_chr(tab, "unknown")),
     if (nzchar(trimws(.llm_chr(instruction)))) paste("User instruction:", instruction) else "",
     "Original R code:",
     .llm_truncate_code(code),
+    if (has_external) paste(
+      "External script to fuse (reference only):",
+      .llm_truncate_code(external_raw),
+      sep = "\n"
+    ) else "",
     "Candidate optimized scripts:",
     paste(blocks, collapse = "\n\n"),
     sep = "\n\n"
   )
 }
 
-.llm_openrouter_optimize_once <- function(cfg, model, code, workflow, tab, instruction, ui_context = NULL) {
+.llm_openrouter_optimize_once <- function(cfg, model, code, workflow, tab, instruction, ui_context = NULL,
+                                          external_code = NULL) {
   cfg <- .llm_openrouter_merge_cfg(cfg)
   cfg$model <- model
   cfg$single_model_only <- isFALSE(cfg$fusion_mode)
@@ -396,10 +415,11 @@
   if (!is.finite(timeout) || timeout <= 0) timeout <- 90
   if (.llm_openrouter_is_reasoning_model(model)) timeout <- max(timeout, 180)
   cfg$timeout <- timeout
-  .llm_optimize_once("openrouter", cfg, code, workflow, tab, instruction, ui_context)
+  .llm_optimize_once("openrouter", cfg, code, workflow, tab, instruction, ui_context, external_code)
 }
 
-.llm_openrouter_optimize <- function(cfg, code, workflow = NULL, tab = NULL, instruction = NULL, ui_context = NULL) {
+.llm_openrouter_optimize <- function(cfg, code, workflow = NULL, tab = NULL, instruction = NULL,
+                                     ui_context = NULL, external_code = NULL) {
   cfg <- .llm_openrouter_merge_cfg(cfg)
   if (!nzchar(trimws(.llm_chr(cfg$api_key)))) {
     stop(paste(
@@ -417,7 +437,9 @@
     cfg$fusion_mode <- FALSE
     cfg$single_model_only <- TRUE
     out <- tryCatch(
-      .llm_openrouter_optimize_once(cfg, explicit, code, workflow, tab, instruction %||% "", ui_context),
+      .llm_openrouter_optimize_once(
+        cfg, explicit, code, workflow, tab, instruction %||% "", ui_context, external_code
+      ),
       error = function(e) {
         stop(paste(
           sprintf("OpenRouter single-model failed for %s.", explicit),
@@ -445,7 +467,9 @@
   for (model in models) {
     if (!nzchar(model)) next
     out <- tryCatch(
-      .llm_openrouter_optimize_once(cfg, model, code, workflow, tab, instruction %||% "", ui_context),
+      .llm_openrouter_optimize_once(
+        cfg, model, code, workflow, tab, instruction %||% "", ui_context, external_code
+      ),
       error = function(e) {
         errors <<- c(errors, sprintf("%s: %s", model, conditionMessage(e)))
         NULL
@@ -480,7 +504,7 @@
     max(45, 30L * length(candidates))
   )
   fusion_prompt <- .llm_openrouter_fusion_prompt(
-    code, workflow, tab, instruction %||% "", ui_context, candidates
+    code, workflow, tab, instruction %||% "", ui_context, candidates, external_code
   )
   fused <- tryCatch(
     .llm_openai_chat_call(
@@ -628,13 +652,36 @@
   )
 }
 
-.llm_prompt <- function(code, workflow, tab, instruction, ui_context = NULL) {
-  code <- .llm_truncate_code(code)
+.llm_prompt <- function(code, workflow, tab, instruction, ui_context = NULL, external_code = NULL) {
+  code_raw <- paste(as.character(code), collapse = "\n")
+  external_raw <- paste(as.character(external_code %||% ""), collapse = "\n")
+  has_external <- nzchar(trimws(external_raw)) &&
+    !identical(trimws(external_raw), trimws(code_raw))
+  code <- .llm_truncate_code(code_raw)
   ctx_lines <- character(0)
   if (!is.null(ui_context) && length(ui_context)) {
     ctx_lines <- vapply(names(ui_context), function(k) {
       paste0("- ", k, ": ", paste(as.character(ui_context[[k]]), collapse = ", "))
     }, character(1))
+  }
+  fusion_block <- if (has_external) {
+    paste(
+      "EXTERNAL / CANDIDATE SCRIPT FUSION MODE:",
+      "The optimized editor may contain an EXTERNAL analysis or plotting script from another tool, notebook, or website.",
+      "Do NOT blindly replace the EMP system script with that external script.",
+      "Instead:",
+      "1. Extract the core analysis intent, statistical methods, feature selection, and visualization ideas from the EXTERNAL script.",
+      "2. Merge those ideas into the SYSTEM ORIGINAL EMP script patterns below.",
+      "3. Preserve the EMP runtime contract for POST /api/user_r/run: keep session_id and experiment (character name), EMP APIs, emp_pub_theme()/emp_pub_palette()/emp_set_color_panel(), and existing helpers.",
+      "4. Adapt foreign objects/libraries to EMP session-aware objects when possible; do not invent unavailable data frames or install packages.",
+      "5. Do not drop required EMP scaffolding (session lookups, experiment name usage, publication theme helpers).",
+      "6. Prefer integrating methods and viz into the EMP structure over copying foreign I/O paths or non-R code.",
+      "External script to fuse (reference only — rewrite into EMP-compatible form):",
+      .llm_truncate_code(external_raw),
+      sep = "\n"
+    )
+  } else {
+    ""
   }
   paste(
     "You are an expert bioinformatics engineer optimizing EasyMultiProfiler Code Lab R scripts.",
@@ -647,10 +694,16 @@
     "Prefer ggrepel for crowded labels; ensure axis titles, legend, and readable base_size (10-12).",
     "If producing a plot, make the last expression a ggplot object, a base64 PNG string, or list(plot = <base64_png>).",
     "For clinical standalone: use run_clinical_systematic_summary() and cohort_filter; do not manually read CSVs.",
+    if (has_external) {
+      "When an external script is provided, fuse its core intent into the system original script — never drop EMP scaffolding."
+    } else {
+      ""
+    },
     sprintf("Workflow: %s; Tab: %s.", .llm_chr(workflow, "unknown"), .llm_chr(tab, "unknown")),
     if (length(ctx_lines)) paste("Current UI / analysis context:\n", paste(ctx_lines, collapse = "\n")) else "",
     if (nzchar(trimws(.llm_chr(instruction)))) paste("User instruction:", instruction) else "",
-    "Original R code:",
+    fusion_block,
+    "System original R code (base to preserve / extend):",
     code,
     sep = "\n\n"
   )
@@ -980,7 +1033,8 @@
   stop(paste(c("OpenAI-compatible chat/completions failed.", errors), collapse = "\n"))
 }
 
-.llm_optimize_once <- function(provider, cfg, code, workflow, tab, instruction, ui_context = NULL) {
+.llm_optimize_once <- function(provider, cfg, code, workflow, tab, instruction, ui_context = NULL,
+                               external_code = NULL) {
   if (identical(tolower(trimws(.llm_chr(provider))), "campus")) {
     cfg <- .llm_campus_merge_cfg(cfg)
   }
@@ -989,7 +1043,7 @@
   }
   d <- .llm_provider_defaults(provider, cfg)
   provider <- d$provider
-  prompt <- .llm_prompt(code, workflow, tab, instruction, ui_context)
+  prompt <- .llm_prompt(code, workflow, tab, instruction, ui_context, external_code)
   key <- trimws(.llm_chr(cfg$api_key))
   timeout <- suppressWarnings(as.numeric(cfg$timeout %||% 90))
   if (is.na(timeout) || timeout <= 0) timeout <- 90
@@ -1004,6 +1058,7 @@
       provider = cfg$remote_provider %||% "auto",
       model = d$model,
       source_code = code,
+      external_code = external_code,
       workflow = workflow,
       tab = tab,
       instruction = instruction,
@@ -1073,18 +1128,23 @@
   stop(sprintf("Unsupported LLM provider: %s", provider))
 }
 
-optimize_r_with_llm <- function(provider, cfg, code, workflow = NULL, tab = NULL, instruction = NULL, ui_context = NULL) {
+optimize_r_with_llm <- function(provider, cfg, code, workflow = NULL, tab = NULL, instruction = NULL,
+                               ui_context = NULL, external_code = NULL) {
   code <- paste(as.character(code), collapse = "\n")
   if (!nzchar(trimws(code))) stop("source_code is empty")
+  external_code <- paste(as.character(external_code %||% ""), collapse = "\n")
+  if (!nzchar(trimws(external_code)) || identical(trimws(external_code), trimws(code))) {
+    external_code <- NULL
+  }
   provider <- tolower(trimws(.llm_chr(provider, "chatgpt")))
   cfg <- cfg %||% list()
   errors <- character(0)
   result <- tryCatch({
     if (identical(provider, "campus")) {
-      return(.llm_campus_optimize(cfg, code, workflow, tab, instruction, ui_context))
+      return(.llm_campus_optimize(cfg, code, workflow, tab, instruction, ui_context, external_code))
     }
     if (identical(provider, "openrouter")) {
-      return(.llm_openrouter_optimize(cfg, code, workflow, tab, instruction, ui_context))
+      return(.llm_openrouter_optimize(cfg, code, workflow, tab, instruction, ui_context, external_code))
     }
     providers <- cfg$providers %||% provider
     if (identical(provider, "auto")) {
@@ -1103,7 +1163,9 @@ optimize_r_with_llm <- function(provider, cfg, code, workflow = NULL, tab = NULL
         attempt_cfg$fast_fail <- TRUE
       }
       out <- tryCatch(
-        .llm_optimize_once(p, attempt_cfg, code, workflow, tab, instruction %||% "", ui_context),
+        .llm_optimize_once(
+          p, attempt_cfg, code, workflow, tab, instruction %||% "", ui_context, external_code
+        ),
         error = function(e) {
           errors <<- c(errors, sprintf("%s: %s", p, conditionMessage(e)))
           NULL
@@ -1345,6 +1407,7 @@ plumber_llm_optimize_r_post <- function(req, res) {
   safe_api({ # nolint: object_usage_linter
     b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
     cfg <- b$config %||% list()
+    external <- b$external_code %||% b$optimized_code %||% b$candidate_code %||% NULL
     optimize_r_with_llm(
       provider = b$provider %||% cfg$provider %||% "chatgpt",
       cfg = cfg,
@@ -1352,7 +1415,8 @@ plumber_llm_optimize_r_post <- function(req, res) {
       workflow = b$workflow %||% NULL,
       tab = b$tab %||% NULL,
       instruction = b$instruction %||% NULL,
-      ui_context = b$ui_context %||% NULL
+      ui_context = b$ui_context %||% NULL,
+      external_code = external
     )
   }, res)
 }

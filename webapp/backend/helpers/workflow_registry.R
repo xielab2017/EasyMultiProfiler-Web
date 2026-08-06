@@ -61,6 +61,38 @@ get_workflow_registry <- function() {
         list(id = "integration", name = "Integration", steps = c("Peak-to-gene linkage", "Cross analysis with RNAseq / proteomics differential results")),
         list(id = "export", name = "Export", steps = c("narrowPeak/broadPeak/annotation tables", "Session artifacts and overlap gene sets"))
       )
+    ),
+    clinical = list(
+      label = "Clinical & Phenotype",
+      description = "Session-level clinical/phenotype tables and joint analysis with loaded omics experiments.",
+      stages = list(
+        list(id = "import", name = "Import", steps = c("Upload clinical raw/meta table", "Optional merge into experiment colData")),
+        list(id = "summary", name = "Summary", steps = c("Three-line table", "Systematic clinical summary")),
+        list(id = "analysis", name = "Analysis", steps = c("Trait correlation / fit-line", "Marker diagnostic models")),
+        list(id = "integration", name = "Integration", steps = c("Multi-omics + clinical joint analysis", "Cross-omics bridges")),
+        list(id = "export", name = "Export", steps = c("Clinical tables", "Session artifacts"))
+      )
+    ),
+    multiomics = list(
+      label = "Multi-omics analysis",
+      description = "Cross-omics workflow spanning transcriptomics, microbiome, metabolomics, and clinical integration.",
+      stages = list(
+        list(id = "import", name = "Import", steps = c("Load multiple omics assays", "Align sample IDs across tracks")),
+        list(id = "preparation", name = "Preparation", steps = c("Per-omics QC and normalization", "Shared sample filtering")),
+        list(id = "analysis", name = "Analysis", steps = c("Within-omics differential analysis", "Cross-omics correlation")),
+        list(id = "integration", name = "Integration", steps = c("Multi-omics + clinical joint analysis", "Network / pathway bridges")),
+        list(id = "visualization", name = "Visualization", steps = c("Multi-panel summaries", "Cross-omics heatmaps")),
+        list(id = "export", name = "Export", steps = c("Joint result tables", "Session RDS"))
+      )
+    ),
+    customize = list(
+      label = "Customize",
+      description = "User-defined course track with no tab filtering; sync folder uses a custom slug under the week.",
+      stages = list(
+        list(id = "import", name = "Import", steps = c("Load any supported assay", "Optional clinical table")),
+        list(id = "analysis", name = "Analysis", steps = c("Choose modules as needed")),
+        list(id = "export", name = "Export", steps = c("Results and teaching artifacts"))
+      )
     )
   )
 }

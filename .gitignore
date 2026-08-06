@@ -7,3 +7,4 @@
 webapp/config/runtime.env
 webapp/config/campus_llm.json
 webapp/config/openrouter_llm.json
+webapp/frontend/js/runtime_auth.local.js

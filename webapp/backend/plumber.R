@@ -11,8 +11,11 @@ library(base64enc)
 # Source helpers (absolute paths set at startup via env var or inferred)
 .BACKEND_DIR <- Sys.getenv("BACKEND_DIR", unset = "/app")
 
+source(file.path(.BACKEND_DIR, "helpers/storage.R"))
 source(file.path(.BACKEND_DIR, "helpers/session.R"))
 source(file.path(.BACKEND_DIR, "helpers/utils.R"))
+source(file.path(.BACKEND_DIR, "helpers/auth.R"))
+source(file.path(.BACKEND_DIR, "helpers/projects.R"))
 source(file.path(.BACKEND_DIR, "helpers/plot_theme.R"))
 source(file.path(.BACKEND_DIR, "helpers/import.R"))
 source(file.path(.BACKEND_DIR, "helpers/analysis.R"))
@@ -26,20 +29,26 @@ source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/clinical.R"))
 source(file.path(.BACKEND_DIR, "helpers/jobs.R"))
+source(file.path(.BACKEND_DIR, "helpers/agent_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_exec.R"))
 source(file.path(.BACKEND_DIR, "helpers/llm.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_evolution.R"))
 source(file.path(.BACKEND_DIR, "helpers/ai_copilot.R"))
 source(file.path(.BACKEND_DIR, "helpers/teaching.R"))
+source(file.path(.BACKEND_DIR, "helpers/github_sync.R"))
 source(file.path(.BACKEND_DIR, "helpers/demo_data.R"))
 Sys.setenv(EMP_BACKEND_DIR = .BACKEND_DIR)
 
 #* @filter cors
 #* @serializer unboxedJSON
 function(req, res) {
-  res$setHeader("Access-Control-Allow-Origin",  "*")
+  allowed <- emp_resolve_cors_origin(req)
+  if (nzchar(allowed)) {
+    res$setHeader("Access-Control-Allow-Origin", allowed)
+    if (!identical(allowed, "*")) res$setHeader("Vary", "Origin")
+  }
   res$setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
-  res$setHeader("Access-Control-Allow-Headers", "Content-Type,X-Session-Id,X-Teaching-Token")
+  res$setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type,X-Session-Id,X-Teaching-Token,X-Student-Token")
   if (req$REQUEST_METHOD == "OPTIONS") {
     res$status <- 200
     return(list())
@@ -47,9 +56,63 @@ function(req, res) {
   plumber::forward()
 }
 
+#* @filter auth
+#* @serializer unboxedJSON
+function(req, res) {
+  path <- as.character(req$PATH_INFO %||% "")
+  if (emp_public_api_path(path)) return(plumber::forward())
+  tryCatch({
+    principal <- emp_authenticate_request(req)
+    emp_authorize_request_resources(req, principal)
+    plumber::forward()
+  }, error = function(e) {
+    message <- conditionMessage(e)
+    is_auth <- grepl("authentication required", message, ignore.case = TRUE)
+    res$status <- if (is_auth) 401 else 403
+    if (is_auth) res$setHeader("WWW-Authenticate", "Bearer")
+    list(success = FALSE, error = message)
+  })
+}
+
+# Reject oversized single-shot BAM multipart BEFORE plumber loads the body into
+# an R raw vector (R long-vector limit ~2GiB → cryptic 500 Internal Server Error).
+#* @filter chipBamSizeGuard
+#* @serializer unboxedJSON
+function(req, res) {
+  path <- as.character(req$PATH_INFO %||% "")
+  if (identical(req$REQUEST_METHOD, "POST") &&
+      grepl("/api/workflows/chipseq/bams/upload$", path)) {
+    cl_raw <- req$HTTP_CONTENT_LENGTH %||% req$CONTENT_LENGTH %||% NA
+    cl <- suppressWarnings(as.numeric(cl_raw)[1])
+    max_b <- tryCatch(CHIP_BAM_SINGLESHOT_MAX_BYTES, error = function(e) 1800 * 1024 * 1024)
+    if (is.finite(cl) && is.finite(max_b) && cl > max_b) {
+      res$status <- 413
+      message(sprintf("[chipseq] reject singleshot BAM upload Content-Length=%s max=%s", cl, max_b))
+      return(list(
+        success = FALSE,
+        error = paste0(
+          "BAM 文件过大（约 ", round(cl / (1024^3), 2), " GiB），超过 R/plumber 单次上传上限。",
+          " 请刷新页面后重试（前端会自动分片上传），或改用服务器路径注册。",
+          " File exceeds single-shot multipart limit; use chunked upload or server-path register."
+        ),
+        max_singleshot_bytes = max_b,
+        content_length = cl
+      ))
+    }
+  }
+  plumber::forward()
+}
+
 # ══════════════════════════════════════════════════════════
 # SESSION
 # ══════════════════════════════════════════════════════════
+
+#* Agent-facing API capabilities and compatibility contract
+#* @get /api/capabilities
+#* @serializer unboxedJSON
+function(res) {
+  safe_api({ emp_agent_capabilities() }, res)
+}
 
 #* List all supported omics workflows
 #* @get /api/workflows
@@ -72,10 +135,11 @@ function(workflow_id, res) {
 #* Create a new analysis session
 #* @post /api/session
 #* @serializer unboxedJSON
-function(res) {
+function(req, res) {
   safe_api({
-    id <- create_session()
-    list(success = TRUE, session_id = id)
+    body <- emp_json_request_body(req)
+    id <- emp_create_owned_session(emp_request_principal(req), body$project_id %||% NULL)
+    list(success = TRUE, session_id = id, endpoint_id = emp_endpoint_id())
   }, res)
 }
 
@@ -85,6 +149,7 @@ function(res) {
 function(session_id, res) {
   safe_api({
     delete_session(session_id)
+    emp_delete_session_ownership(session_id)
     list(success = TRUE)
   }, res)
 }
@@ -103,17 +168,133 @@ function(session_id, res) {
   }, res)
 }
 
+#* Create an owned persistent project
+#* @post /api/projects
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    body <- emp_json_request_body(req)
+    list(success = TRUE, project = emp_create_project(emp_request_principal(req), body$name %||% NULL))
+  }, res)
+}
+
+#* Get an owned persistent project
+#* @get /api/projects/<project_id>
+#* @serializer unboxedJSON
+function(project_id, req, res) {
+  safe_api({
+    project <- emp_assert_project_owner(project_id, emp_request_principal(req))
+    list(success = TRUE, project = project)
+  }, res)
+}
+
+#* Create a session bound to a persistent project
+#* @post /api/projects/<project_id>/sessions
+#* @serializer unboxedJSON
+function(project_id, req, res) {
+  safe_api({
+    list(success = TRUE, session = emp_create_project_session(project_id, emp_request_principal(req)))
+  }, res)
+}
+
+#* Get a reproducibility manifest for an owned session
+#* @get /api/session/<session_id>/manifest
+#* @serializer unboxedJSON
+function(session_id, req, res) {
+  safe_api({
+    list(success = TRUE, manifest = emp_session_manifest(session_id, emp_request_principal(req)))
+  }, res)
+}
+
 # ══════════════════════════════════════════════════════════
 # IMPORT
 # ══════════════════════════════════════════════════════════
+
+#* Validate server-local input paths without creating a session
+#* @post /api/import/path/preview
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    body <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    emp_path_import_preview(
+      data_path = body$data_path %||% "",
+      metadata_path = body$metadata_path %||% NULL,
+      data_type = body$data_type %||% "normal",
+      tax_sep = body$tax_sep %||% ";"
+    )
+  }, res)
+}
+
+#* Import server-local files from EMP_ALLOWED_ROOTS
+#* @post /api/import/path
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    body <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    result <- emp_path_import(
+      data_path = body$data_path %||% "",
+      metadata_path = body$metadata_path %||% NULL,
+      experiment_name = body$experiment_name %||% "experiment",
+      data_type = body$data_type %||% "normal",
+      assay_name = body$assay_name %||% "counts",
+      start_level = body$start_level %||% "Species",
+      tax_sep = body$tax_sep %||% ";",
+      session_id = body$session_id %||% NULL,
+      owner_id = emp_request_principal(req),
+      project_id = body$project_id %||% NULL
+    )
+    emp_record_session_import(
+      result$session_id,
+      result$input_files %||% NULL,
+      result$experiment %||% body$experiment_name %||% "experiment",
+      body$data_type %||% "normal"
+    )
+    result
+  }, res)
+}
+
+# Coerce Plumber multipart / form scalars to a single non-empty string (or NULL).
+# Text fields may arrive as character(0), NA, or list(value=<raw>, parsed=list(), ...).
+# On Plumber 1.3 multipart, text parts often have empty parsed=list() and the
+# actual bytes only in $value — never prefer an empty parsed list over $value.
+.form_scalar <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (is.list(x)) {
+    if (is.raw(x$value) && length(x$value) > 0) {
+      x <- rawToChar(x$value)
+    } else if (is.character(x$parsed) || is.numeric(x$parsed) || is.logical(x$parsed)) {
+      x <- x$parsed
+    } else if (is.raw(x$parsed) && length(x$parsed) > 0) {
+      x <- rawToChar(x$parsed)
+    } else if (length(x) >= 1L && (is.character(x[[1]]) || is.numeric(x[[1]]) || is.raw(x[[1]]))) {
+      x <- x[[1]]
+      if (is.raw(x)) x <- rawToChar(x)
+    } else {
+      return(NULL)
+    }
+  }
+  if (is.raw(x)) x <- rawToChar(x)
+  if (is.factor(x)) x <- as.character(x)
+  if (!is.character(x) && !is.numeric(x) && !is.logical(x)) return(NULL)
+  x <- trimws(as.character(x))
+  if (length(x) != 1L || is.na(x) || !nzchar(x)) return(NULL)
+  x
+}
+
+.safe_filename <- function(x, fallback = "") {
+  x <- .form_scalar(x)
+  if (is.null(x)) return(fallback)
+  x
+}
 
 # Helper: save a Plumber multipart file entry to a temp file, return path.
 # Plumber 1.3+ multipart parts look like list(value=<raw>, filename=..., parsed=...).
 # After combine_keys (or when only nested parsers succeed), the handler may also
 # receive: raw vectors, data.frames, or named list(filename = <raw|df>).
+# Note: on some R builds nzchar(NA) is TRUE; never feed NA into if (nzchar(...)).
 .save_upload <- function(file_entry, suffix = ".tmp") {
   if (is.null(file_entry)) return(NULL)
-  if (is.character(file_entry) && length(file_entry) == 1L && file.exists(file_entry)) {
+  if (is.character(file_entry) && length(file_entry) == 1L && !is.na(file_entry) && file.exists(file_entry)) {
     return(file_entry)
   }
 
@@ -121,19 +302,24 @@ function(session_id, res) {
     if (is.null(raw_bytes) || !length(raw_bytes)) return(NULL)
     if (is.character(raw_bytes)) raw_bytes <- charToRaw(paste(raw_bytes, collapse = "\n"))
     if (!is.raw(raw_bytes)) return(NULL)
+    orig <- .safe_filename(orig, "")
     ext <- if (nzchar(orig)) paste0(".", tools::file_ext(orig)) else suffix
-    if (!nzchar(ext) || ext == ".") ext <- suffix
+    if (!is.character(ext) || length(ext) != 1L || is.na(ext) || !nzchar(ext) || identical(ext, ".")) {
+      ext <- suffix
+    }
     tmp <- tempfile(fileext = ext)
     writeBin(raw_bytes, tmp)
     tmp
   }
 
   write_df <- function(df, orig = "") {
+    orig <- .safe_filename(orig, "")
     ext <- if (nzchar(orig) && grepl("\\.[A-Za-z0-9]+$", orig)) {
       paste0(".", tools::file_ext(orig))
     } else {
       ".csv"
     }
+    if (!is.character(ext) || length(ext) != 1L || is.na(ext) || !nzchar(ext)) ext <- ".csv"
     tmp <- tempfile(fileext = ext)
     utils::write.csv(df, tmp, row.names = FALSE)
     tmp
@@ -143,20 +329,21 @@ function(session_id, res) {
   if (is.data.frame(file_entry)) return(write_df(file_entry))
 
   if (is.list(file_entry)) {
-    if (!is.null(file_entry$datapath) && nzchar(file_entry$datapath) && file.exists(file_entry$datapath)) {
-      return(file_entry$datapath)
+    datapath <- .safe_filename(file_entry$datapath, "")
+    if (nzchar(datapath) && file.exists(datapath)) {
+      return(datapath)
     }
 
     # Classic plumber multipart part
     if (!is.null(file_entry$value) || !is.null(file_entry$filename) || !is.null(file_entry$parsed)) {
-      orig <- as.character(file_entry$filename %||% file_entry$name %||% "")
+      orig <- .safe_filename(file_entry$filename %||% file_entry$name %||% "", "")
       if (is.raw(file_entry$value) && length(file_entry$value) > 0) {
         return(write_raw(file_entry$value, orig))
       }
       parsed <- file_entry$parsed
       if (is.raw(parsed) && length(parsed) > 0) return(write_raw(parsed, orig))
       if (is.data.frame(parsed)) return(write_df(parsed, orig))
-      if (is.character(parsed) && length(parsed) == 1L && file.exists(parsed)) return(parsed)
+      if (is.character(parsed) && length(parsed) == 1L && !is.na(parsed) && file.exists(parsed)) return(parsed)
     }
 
     # Named list from combine_keys: list("file.csv" = <raw|df>)
@@ -189,22 +376,40 @@ function(req, res,
          assay_name      = "counts",
          start_level     = "Species",
          tax_sep         = ";",
-         session_id      = NULL) {
+         session_id      = NULL,
+         project_id      = NULL) {
   safe_api({
     body      <- req$body
+    # Prefer multipart body fields: Plumber keeps function-arg defaults when
+    # @parser multi does not inject named text parts into formal arguments.
+    form_get <- function(name, arg = NULL) {
+      .form_scalar(body[[name]]) %||% .form_scalar(arg)
+    }
+
     # Plumber multipart: file is a list with $value (raw bytes)
     data_file <- .save_upload(body$data_file, ".csv")
     if (is.null(data_file)) stop("data_file is required")
 
     meta_file <- .save_upload(body$metadata_file, ".csv")
 
+    # Multipart text fields can be NA / character(0) / list(value=...); normalize first.
+    session_id <- form_get("session_id", session_id)
+    project_id <- form_get("project_id", project_id)
+    experiment_name <- form_get("experiment_name", experiment_name) %||% "experiment"
+    data_type <- form_get("data_type", data_type) %||% "normal"
+    assay_name <- form_get("assay_name", assay_name) %||% "counts"
+    start_level <- form_get("start_level", start_level) %||% "Species"
+    tax_sep <- form_get("tax_sep", tax_sep) %||% ";"
+
     # Create session if not provided; otherwise ensure storage dir still exists
     # (browser may keep an old session_id after /tmp was cleared on server restart).
-    if (is.null(session_id) || session_id == "") {
-      session_id <- create_session()
+    if (is.null(session_id)) {
+      session_id <- emp_create_owned_session(emp_request_principal(req), project_id)
     } else {
+      emp_assert_session_owner(session_id, emp_request_principal(req))
       ensure_session_dir(session_id)
     }
+    emp_register_session_owner(session_id, emp_request_principal(req), project_id)
 
     # Check if MAE already exists → add experiment
     mae_exists <- file.exists(mae_path(session_id))
@@ -305,43 +510,16 @@ function(req, res,
       stop("ChIP-seq uses BAM/SAM upload on the Analysis page (ChIP-seq tab), not count matrix import.")
     }
 
-    if (mae_exists) {
-      mae <- load_mae(session_id)
-      if (experiment_name %in% names(mae)) {
-        stop(sprintf(
-          "Experiment name '%s' already exists. Choose a unique name to add another omics dataset.",
-          experiment_name
-        ))
-      }
-      mae <- add_experiment_to_mae(mae, data_file, meta_file,
-                                    experiment_name, data_type,
-                                    assay_name, start_level, tax_sep)
-      import_mode <- "omics_add"
-    } else {
-      mae <- build_mae(data_file, meta_file,
-                       experiment_name, data_type,
-                       assay_name, start_level, tax_sep)
-      import_mode <- "omics_new"
-    }
-
-    save_mae(session_id, mae)
-    tryCatch({
-      save_raw_empt(session_id, experiment_name, .promote_to_empt(mae, experiment_name))
-    }, error = function(e) NULL)
-    register_experiment_meta(session_id, experiment_name, data_type)
-    write_experiments_meta(session_id, mae)
-
-    # Summarise
-    ex <- mae[[experiment_name]]
-    list(success         = TRUE,
-         session_id      = session_id,
-         import_mode     = import_mode,
-         experiment_name = experiment_name,
-         samples         = ncol(ex),
-         features        = nrow(ex),
-         assay           = assay_name,
-         omics           = data_type_to_omics(data_type),
-         experiment_count = length(mae))
+    import_omics_files(
+      data_file = data_file,
+      metadata_file = meta_file,
+      experiment_name = experiment_name,
+      data_type = data_type,
+      assay_name = assay_name,
+      start_level = start_level,
+      tax_sep = tax_sep,
+      session_id = session_id
+    )
   }, res)
 }
 
@@ -379,9 +557,61 @@ function(req, res) {
       session_id = session_id,
       dataset_id = dataset_id,
       experiment_name = b$experiment_name %||% NULL,
-      assay_name = b$assay_name %||% NULL
+      assay_name = b$assay_name %||% NULL,
+      owner_id = emp_request_principal(req),
+      project_id = b$project_id %||% NULL
     )
     out
+  }, res)
+}
+
+#* Import a pre-computed DE / marker result table into session diff_raw_* cache
+#* Multipart: data_file + experiment_name (+ optional session_id)
+#* @post /api/import/diff_raw
+#* @parser multi
+#* @parser octet
+#* @parser form
+#* @parser csv
+#* @parser text
+#* @serializer unboxedJSON
+function(req, res,
+         experiment_name = "diff_import",
+         session_id = NULL,
+         method = "imported",
+         group_var = "imported",
+         ref_group = "ref",
+         test_group = "test",
+         project_id = NULL) {
+  safe_api({
+    body <- req$body
+    form_get <- function(name, arg = NULL) {
+      .form_scalar(body[[name]]) %||% .form_scalar(arg)
+    }
+    data_file <- .save_upload(body$data_file, ".csv")
+    if (is.null(data_file)) stop("data_file is required")
+    session_id <- form_get("session_id", session_id)
+    project_id <- form_get("project_id", project_id)
+    experiment_name <- form_get("experiment_name", experiment_name) %||% "diff_import"
+    method <- form_get("method", method) %||% "imported"
+    group_var <- form_get("group_var", group_var) %||% "imported"
+    ref_group <- form_get("ref_group", ref_group) %||% "ref"
+    test_group <- form_get("test_group", test_group) %||% "test"
+    if (is.null(session_id)) {
+      session_id <- emp_create_owned_session(emp_request_principal(req), project_id)
+    } else {
+      emp_assert_session_owner(session_id, emp_request_principal(req))
+      ensure_session_dir(session_id)
+    }
+    emp_register_session_owner(session_id, emp_request_principal(req), project_id)
+    import_diff_raw_table(
+      session_id = session_id,
+      experiment = experiment_name,
+      file_path = data_file,
+      method = method,
+      group_var = group_var,
+      ref_group = ref_group,
+      test_group = test_group
+    )
   }, res)
 }
 
@@ -859,6 +1089,20 @@ function(req, res) {
   }, res)
 }
 
+#* Transcriptomics preprocessing policy
+#* @post /api/workflows/transcriptomics/preprocess
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody)
+    tx_preprocess(
+      session_id = b$session_id %||% NULL,
+      experiment = b$experiment %||% NULL,
+      method = b$method %||% "deseq2"
+    )
+  }, res)
+}
+
 #* Transcriptomics differential analysis
 #* @post /api/workflows/transcriptomics/analyze/differential
 #* @serializer unboxedJSON
@@ -969,9 +1213,10 @@ function(req, res) {
 #* List uploaded / registered BAM/SAM files (treatment vs control groups)
 #* @get /api/workflows/chipseq/bams/list
 #* @serializer unboxedJSON
-function(session_id = NULL, res) {
+function(req, session_id = NULL, res) {
   safe_api({
-  chip_list_bams(session_id)
+    emp_assert_session_owner(session_id, emp_request_principal(req))
+    chip_list_bams(session_id)
   }, res)
 }
 
@@ -985,13 +1230,112 @@ function(session_id = NULL, res) {
 #* @serializer unboxedJSON
 function(req, res, session_id = NULL, group = "t") {
   safe_api({
-    if (is.null(session_id) || session_id == "") session_id <- create_session()
-    else ensure_session_dir(session_id)
     body <- req$body
+    if (is.null(body) || (is.list(body) && !length(body))) {
+      stop(paste0(
+        "无法解析上传内容（可能是文件超过 ~2GiB 导致 plumber multipart 崩溃）。",
+        " 请刷新页面使用分片上传，或改用服务器路径注册。",
+        " Multipart body missing/unparsed; use chunked BAM upload."
+      ))
+    }
+    form_get <- function(name, arg = NULL) {
+      .form_scalar(body[[name]]) %||% .form_scalar(arg)
+    }
+    session_id <- form_get("session_id", session_id)
+    grp <- form_get("group", group) %||% "t"
+
+    if (is.null(session_id)) {
+      session_id <- emp_create_owned_session(emp_request_principal(req))
+    } else {
+      emp_assert_session_owner(session_id, emp_request_principal(req))
+      ensure_session_dir(session_id)
+    }
+    emp_register_session_owner(session_id, emp_request_principal(req))
+
     f <- .save_upload(body$bam_file %||% body$file %||% body$data_file)
     if (is.null(f)) stop("bam_file is required (multipart field: bam_file).")
-    orig <- if (is.list(body$bam_file)) body$bam_file$filename %||% body$bam_file$name else ""
-    chip_upload_bam(session_id, f, original_name = orig, group = group)
+    bam_entry <- body$bam_file %||% body$file %||% body$data_file
+    orig <- ""
+    if (is.list(bam_entry)) {
+      orig <- .safe_filename(bam_entry$filename %||% bam_entry$name %||% "", "")
+    }
+    if (!nzchar(orig)) orig <- basename(f)
+    message(sprintf("[chipseq] BAM upload start session=%s file=%s group=%s bytes=%s",
+                    session_id, orig, grp,
+                    tryCatch(as.character(file.info(f)$size %||% "?"), error = function(e) "?")))
+    out <- chip_upload_bam(session_id, f, original_name = orig, group = grp)
+    message(sprintf("[chipseq] BAM upload done session=%s file=%s", session_id, orig))
+    out$session_id <- session_id
+    out
+  }, res)
+}
+
+#* Init chunked BAM upload (for files ≳1.8GiB that break plumber multipart)
+#* @post /api/workflows/chipseq/bams/upload_init
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- tryCatch(jsonlite::fromJSON(req$postBody, simplifyVector = FALSE), error = function(e) list())
+    session_id <- .form_scalar(b$session_id)
+    if (is.null(session_id)) {
+      session_id <- emp_create_owned_session(emp_request_principal(req))
+    } else {
+      emp_assert_session_owner(session_id, emp_request_principal(req))
+      ensure_session_dir(session_id)
+    }
+    emp_register_session_owner(session_id, emp_request_principal(req))
+    out <- chip_bam_upload_init(
+      session_id = session_id,
+      original_name = .form_scalar(b$filename) %||% .form_scalar(b$original_name) %||% "alignment.bam",
+      group = .form_scalar(b$group) %||% "t",
+      total_bytes = b$total_bytes %||% b$size %||% NULL
+    )
+    out$session_id <- session_id
+    out
+  }, res)
+}
+
+#* Append one BAM upload chunk (keep each multipart body well under 2GiB)
+#* @post /api/workflows/chipseq/bams/upload_chunk
+#* @parser multi
+#* @parser octet
+#* @parser form
+#* @parser text
+#* @serializer unboxedJSON
+function(req, res, session_id = NULL, upload_id = NULL, chunk_index = NULL) {
+  safe_api({
+    body <- req$body
+    form_get <- function(name, arg = NULL) {
+      .form_scalar(body[[name]]) %||% .form_scalar(arg)
+    }
+    session_id <- form_get("session_id", session_id)
+    upload_id <- form_get("upload_id", upload_id)
+    chunk_index <- form_get("chunk_index", chunk_index)
+    if (is.null(session_id) || is.null(upload_id)) {
+      stop("session_id and upload_id are required for chunk upload.")
+    }
+    emp_assert_session_owner(session_id, emp_request_principal(req))
+    f <- .save_upload(body$chunk %||% body$bam_file %||% body$file %||% body$data_file)
+    if (is.null(f)) stop("chunk file part is required (multipart field: chunk).")
+    chip_bam_upload_chunk(session_id, upload_id, f, chunk_index = chunk_index)
+  }, res)
+}
+
+#* Finalize chunked BAM upload and register in manifest
+#* @post /api/workflows/chipseq/bams/upload_complete
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- tryCatch(jsonlite::fromJSON(req$postBody, simplifyVector = FALSE), error = function(e) list())
+    session_id <- .form_scalar(b$session_id)
+    upload_id <- .form_scalar(b$upload_id)
+    if (is.null(session_id) || is.null(upload_id)) {
+      stop("session_id and upload_id are required.")
+    }
+    emp_assert_session_owner(session_id, emp_request_principal(req))
+    out <- chip_bam_upload_complete(session_id, upload_id)
+    out$session_id <- session_id
+    out
   }, res)
 }
 
@@ -1042,21 +1386,32 @@ function(req, res,
          genome      = "hs",
          preset      = "chipseq_tf") {
   safe_api({
-    session_id <- as.character(session_id %||% "")[1]
-    if (!nzchar(session_id)) session_id <- create_session()
-    else ensure_session_dir(session_id)
-    genome <- as.character(genome %||% "hs")[1]
-    preset <- as.character(preset %||% "chipseq_tf")[1]
     body <- req$body
+    form_get <- function(name, arg = NULL) {
+      .form_scalar(body[[name]]) %||% .form_scalar(arg)
+    }
+    session_id <- form_get("session_id", session_id)
+    genome <- form_get("genome", genome) %||% "hs"
+    preset <- form_get("preset", preset) %||% "chipseq_tf"
+
+    if (is.null(session_id)) {
+      session_id <- emp_create_owned_session(emp_request_principal(req))
+    } else {
+      emp_assert_session_owner(session_id, emp_request_principal(req))
+      ensure_session_dir(session_id)
+    }
+    emp_register_session_owner(session_id, emp_request_principal(req))
+
     peak_entry <- body$peak_file %||% body$data_file %||% body$file
     peak_path <- .save_upload(peak_entry, ".bed")
     if (is.null(peak_path) || !file.exists(peak_path)) {
       stop("peak_file is required (multipart field: peak_file, .bed/.narrowPeak/.broadPeak/.gff)")
     }
-    orig <- if (is.list(peak_entry)) {
-      peak_entry$filename %||% peak_entry$name %||% basename(peak_path)
-    } else basename(peak_path)
-    orig <- as.character(orig %||% basename(peak_path))[1]
+    orig <- ""
+    if (is.list(peak_entry)) {
+      orig <- .safe_filename(peak_entry$filename %||% peak_entry$name %||% "", "")
+    }
+    if (!nzchar(orig)) orig <- basename(peak_path)
     out <- chip_upload_peaks(
       session_id    = session_id,
       src_path      = peak_path,
@@ -1066,6 +1421,35 @@ function(req, res,
     )
     out$session_id <- session_id
     out
+  }, res)
+}
+
+#* List registered peak files (uploads + MACS + ops derivatives)
+#* @get /api/workflows/chipseq/peaks/list
+#* @serializer unboxedJSON
+function(req, res, session_id = NULL) {
+  safe_api({
+    sid <- .form_scalar(session_id) %||% .form_scalar(req$args$query$session_id)
+    if (is.null(sid) || !nzchar(sid)) stop("session_id is required")
+    emp_assert_session_owner(sid, emp_request_principal(req))
+    chip_list_peaks(sid)
+  }, res)
+}
+
+#* Select active peak file from registry (sets last_peaks)
+#* @post /api/workflows/chipseq/peaks/select
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
+    emp_assert_session_owner(sid, emp_request_principal(req))
+    chip_select_peak(
+      session_id = sid,
+      peak_id = .form_scalar(b$peak_id) %||% .form_scalar(b$id),
+      peak_file = .form_scalar(b$peak_file) %||% .form_scalar(b$path)
+    )
   }, res)
 }
 
@@ -1096,23 +1480,26 @@ function(res) {
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
-    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
     out <- chip_call_peaks(
-      session_id = b$session_id %||% NULL,
-      treatment_bam = b$treatment_bam %||% NULL,
-      control_bam = b$control_bam %||% NULL,
+      session_id = sid,
+      treatment_bam = .form_scalar(b$treatment_bam),
+      control_bam = .form_scalar(b$control_bam),
       treatment_bams = b$treatment_bams %||% NULL,
       control_bams = b$control_bams %||% NULL,
       use_manifest = isTRUE(b$use_manifest),
-      genome = b$genome %||% "hs",
-      run_id = b$run_id %||% NULL,
+      genome = .form_scalar(b$genome) %||% "hs",
+      run_id = .form_scalar(b$run_id),
       qvalue = b$qvalue %||% 0.01,
       pvalue = b$pvalue %||% NULL,
-      format = b$format %||% NULL,
-      preset = b$preset %||% NULL,
+      format = .form_scalar(b$format),
+      preset = .form_scalar(b$preset),
+      gsize = .form_scalar(b$gsize),
       broad = isTRUE(b$broad),
       broad_cutoff = b$broad_cutoff %||% NULL,
-      keep_dup = b$keep_dup %||% "auto",
+      keep_dup = .form_scalar(b$keep_dup) %||% "auto",
       nomodel = isTRUE(b$nomodel),
       shift = b$shift %||% NULL,
       extsize = b$extsize %||% NULL,
@@ -1125,11 +1512,11 @@ function(req, res) {
       nolambda = isTRUE(b$nolambda),
       slocal = b$slocal %||% NULL,
       llocal = b$llocal %||% NULL,
-      scale_to = b$scale_to %||% NULL,
+      scale_to = .form_scalar(b$scale_to),
       cutoff_analysis = isTRUE(b$cutoff_analysis),
       save_bdg = isTRUE(b$save_bdg),
-      prefer_macs = b$prefer_macs %||% "auto",
-      extra_args = b$extra_args %||% NULL
+      prefer_macs = .form_scalar(b$prefer_macs) %||% "auto",
+      extra_args = .form_scalar(b$extra_args)
     )
     out
   }, res)
@@ -1140,14 +1527,25 @@ function(req, res) {
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
-    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
     chip_annotate_peaks(
-      session_id = b$session_id %||% NULL,
-      peak_file = b$peak_file %||% NULL,
-      txdb = b$txdb %||% "TxDb.Hsapiens.UCSC.hg38.knownGene",
-      anno_db = b$anno_db %||% "org.Hs.eg.db",
+      session_id = sid,
+      peak_file = .form_scalar(b$peak_file),
+      genome = .form_scalar(b$genome) %||% "hs",
+      txdb = .form_scalar(b$txdb),
+      anno_db = .form_scalar(b$anno_db),
       tss_upstream = b$tss_upstream %||% -3000,
-      tss_downstream = b$tss_downstream %||% 3000
+      tss_downstream = b$tss_downstream %||% 3000,
+      level = .form_scalar(b$level) %||% "transcript",
+      overlap = .form_scalar(b$overlap) %||% "TSS",
+      flank_distance = b$flank_distance %||% 5000,
+      add_flank_gene_info = isTRUE(b$add_flank_gene_info),
+      same_strand = isTRUE(b$same_strand),
+      ignore_overlap = isTRUE(b$ignore_overlap),
+      ignore_upstream = isTRUE(b$ignore_upstream),
+      ignore_downstream = isTRUE(b$ignore_downstream)
     )
   }, res)
 }
@@ -1157,14 +1555,27 @@ function(req, res) {
 #* @serializer unboxedJSON
 function(req, res) {
   safe_api({
-    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
     chip_annotate_peaks_full(
-      session_id = b$session_id %||% NULL,
-      peak_file = b$peak_file %||% NULL,
-      genome = b$genome %||% "hs",
+      session_id = sid,
+      peak_file = .form_scalar(b$peak_file),
+      genome = .form_scalar(b$genome) %||% "hs",
+      txdb = .form_scalar(b$txdb),
+      anno_db = .form_scalar(b$anno_db),
       tss_upstream = b$tss_upstream %||% -3000,
       tss_downstream = b$tss_downstream %||% 3000,
-      score_cutoff = b$score_cutoff %||% 5
+      score_cutoff = b$score_cutoff %||% 5,
+      level = .form_scalar(b$level) %||% "transcript",
+      overlap = .form_scalar(b$overlap) %||% "TSS",
+      flank_distance = b$flank_distance %||% 5000,
+      add_flank_gene_info = isTRUE(b$add_flank_gene_info),
+      same_strand = isTRUE(b$same_strand),
+      ignore_overlap = isTRUE(b$ignore_overlap),
+      ignore_upstream = isTRUE(b$ignore_upstream),
+      ignore_downstream = isTRUE(b$ignore_downstream),
+      do_enrichment = if (is.null(b$do_enrichment)) TRUE else isTRUE(b$do_enrichment)
     )
   }, res)
 }
@@ -1176,10 +1587,10 @@ function(req, res) {
   safe_api({
     b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
     chip_rnaseq_coanalysis(
-      session_id = b$session_id %||% NULL,
-      rnaseq_experiment = b$rnaseq_experiment %||% NULL,
-      peak_annotation_csv = b$peak_annotation_csv %||% NULL,
-      genome = b$genome %||% "hs",
+      session_id = .form_scalar(b$session_id),
+      rnaseq_experiment = .form_scalar(b$rnaseq_experiment),
+      peak_annotation_csv = .form_scalar(b$peak_annotation_csv),
+      genome = .form_scalar(b$genome) %||% "hs",
       score_cutoff = b$score_cutoff %||% 10,
       min_total_counts = b$min_total_counts %||% 100,
       rnaseq_p_cutoff = b$rnaseq_p_cutoff %||% 0.05,
@@ -1195,14 +1606,249 @@ function(req, res) {
   safe_api({
     b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
     chip_cross_integrate(
-      session_id = b$session_id %||% NULL,
-      peak_annotation_csv = b$peak_annotation_csv %||% NULL,
-      rnaseq_experiment = b$rnaseq_experiment %||% NULL,
-      proteomics_experiment = b$proteomics_experiment %||% NULL,
+      session_id = .form_scalar(b$session_id),
+      peak_annotation_csv = .form_scalar(b$peak_annotation_csv),
+      rnaseq_experiment = .form_scalar(b$rnaseq_experiment),
+      proteomics_experiment = .form_scalar(b$proteomics_experiment),
       rnaseq_p_cutoff = b$rnaseq_p_cutoff %||% 0.05,
       rnaseq_fc_cutoff = b$rnaseq_fc_cutoff %||% 1.0,
       proteomics_p_cutoff = b$proteomics_p_cutoff %||% 0.05,
       proteomics_fc_cutoff = b$proteomics_fc_cutoff %||% 0.5
+    )
+  }, res)
+}
+
+#* ChIP × 16S / metagenomics co-analysis (peak genes × DE taxa / KO)
+#* @post /api/workflows/chipseq/analyze/microbiome_coanalysis
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    chip_microbiome_coanalysis(
+      session_id = .form_scalar(b$session_id),
+      peak_annotation_csv = .form_scalar(b$peak_annotation_csv),
+      m16s_experiment = .form_scalar(b$m16s_experiment),
+      mgx_experiment = .form_scalar(b$mgx_experiment),
+      p_cutoff = b$p_cutoff %||% 0.05,
+      genome = .form_scalar(b$genome) %||% "hs"
+    )
+  }, res)
+}
+
+#* ChIP × metabolomics co-analysis
+#* @post /api/workflows/chipseq/analyze/metabolomics_coanalysis
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    chip_metabolomics_coanalysis(
+      session_id = .form_scalar(b$session_id),
+      peak_annotation_csv = .form_scalar(b$peak_annotation_csv),
+      mbx_experiment = .form_scalar(b$mbx_experiment),
+      p_cutoff = b$p_cutoff %||% 0.05,
+      genome = .form_scalar(b$genome) %||% "hs"
+    )
+  }, res)
+}
+
+#* ChIP × clinical co-analysis (peak gene set vs clinical variables)
+#* @post /api/workflows/chipseq/analyze/clinical_coanalysis
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    chip_clinical_coanalysis(
+      session_id = .form_scalar(b$session_id),
+      peak_annotation_csv = .form_scalar(b$peak_annotation_csv),
+      clinical_source = .form_scalar(b$clinical_source) %||% "standalone",
+      companion_experiment = .form_scalar(b$companion_experiment),
+      p_cutoff = b$p_cutoff %||% 0.05
+    )
+  }, res)
+}
+
+#* Recipe packs catalog (one-click ChIP + joint modules)
+#* @get /api/workflows/chipseq/recipes/packs
+#* @serializer unboxedJSON
+function(res) {
+  safe_api({
+    backend <- Sys.getenv("EMP_BACKEND_DIR", Sys.getenv("BACKEND_DIR", unset = ""))
+    if (!nzchar(backend)) backend <- .BACKEND_DIR
+    path <- normalizePath(
+      file.path(backend, "..", "data", "chipseq_recipe_packs.json"),
+      mustWork = FALSE
+    )
+    if (!file.exists(path)) {
+      alt <- normalizePath(file.path(backend, "data", "chipseq_recipe_packs.json"), mustWork = FALSE)
+      if (file.exists(alt)) path <- alt
+    }
+    if (!file.exists(path)) stop("chipseq_recipe_packs.json not found.")
+    packs <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+    list(success = TRUE, packs = packs, path = path)
+  }, res)
+}
+
+#* Download a ChIP-seq result table (CSV) from the session chipseq directory
+#* @get /api/workflows/chipseq/tables/download
+#* @serializer unboxedJSON
+function(session_id = "", file_path = "", res) {
+  safe_api({
+    path <- chip_resolve_table_file(session_id, file_path)
+    txt <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+    list(
+      success = TRUE,
+      filename = basename(path),
+      content = txt
+    )
+  }, res)
+}
+
+#* ChIP-seq / CUT&Tag / Histone peak downstream analysis catalog (Excel-derived checklist)
+#* @get /api/workflows/chipseq/downstream/catalog
+#* @serializer unboxedJSON
+function(res) {
+  safe_api({
+    backend <- Sys.getenv("EMP_BACKEND_DIR", Sys.getenv("BACKEND_DIR", unset = ""))
+    if (!nzchar(backend)) backend <- .BACKEND_DIR
+    path <- normalizePath(
+      file.path(backend, "..", "data", "chipseq_downstream_catalog.json"),
+      mustWork = FALSE
+    )
+    if (!file.exists(path)) {
+      # Docker / alternate layouts: try repo-relative from backend helpers parent.
+      alt <- normalizePath(
+        file.path(backend, "data", "chipseq_downstream_catalog.json"),
+        mustWork = FALSE
+      )
+      if (file.exists(alt)) path <- alt
+    }
+    if (!file.exists(path)) stop("chipseq_downstream_catalog.json not found.")
+    catalog <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+    list(success = TRUE, catalog = catalog, path = path)
+  }, res)
+}
+
+#* Peak QC summary (chrom counts, width/score stats) for session last_peaks or explicit path
+#* @post /api/workflows/chipseq/peak_qc
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
+    emp_assert_session_owner(sid, emp_request_principal(req))
+    chip_peak_qc(
+      session_id = sid,
+      peak_file = .form_scalar(b$peak_file)
+    )
+  }, res)
+}
+
+#* Detect HOMER / DiffBind / deepTools availability
+#* @get /api/workflows/chipseq/tools/status
+#* @serializer unboxedJSON
+function(res) {
+  safe_api({
+    chip_tools_status()
+  }, res)
+}
+
+#* HOMER findMotifsGenome motif enrichment
+#* @post /api/workflows/chipseq/analyze/homer
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
+    emp_assert_session_owner(sid, emp_request_principal(req))
+    chip_homer_motifs(
+      session_id = sid,
+      peak_file = .form_scalar(b$peak_file),
+      genome = .form_scalar(b$genome),
+      size = b$size %||% 200,
+      motif_length = .form_scalar(b$motif_length) %||% "8,10,12",
+      annotate = isTRUE(b$annotate),
+      max_peaks = b$max_peaks %||% 20000L,
+      auto_install = isTRUE(b$auto_install),
+      noknown = isTRUE(b$noknown)
+    )
+  }, res)
+}
+
+#* DiffBind differential binding
+#* @post /api/workflows/chipseq/analyze/diffbind
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
+    emp_assert_session_owner(sid, emp_request_principal(req))
+    chip_diffbind(
+      session_id = sid,
+      peak_file = .form_scalar(b$peak_file),
+      genome = .form_scalar(b$genome),
+      fdr = b$fdr %||% 0.05,
+      top_n = b$top_n %||% 200L,
+      method = .form_scalar(b$method) %||% "DESeq2",
+      summit_size = b$summit_size %||% 200L
+    )
+  }, res)
+}
+
+#* deepTools coverage / heatmap / correlation (mode=coverage|heatmap|corr)
+#* @post /api/workflows/chipseq/analyze/deeptools
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
+    emp_assert_session_owner(sid, emp_request_principal(req))
+    chip_deeptools(
+      session_id = sid,
+      mode = .form_scalar(b$mode) %||% "heatmap",
+      peak_file = .form_scalar(b$peak_file),
+      genome = .form_scalar(b$genome),
+      bin_size = b$bin_size %||% 50L,
+      before_region = b$before_region %||% 1000L,
+      after_region = b$after_region %||% 1000L,
+      normalize_using = .form_scalar(b$normalize_using) %||% "RPKM"
+    )
+  }, res)
+}
+
+#* Peak set operations (blacklist/merge/summit/overlap/idr/promoter/enhancer/SE/...)
+#* @post /api/workflows/chipseq/analyze/peaks_ops
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
+    emp_assert_session_owner(sid, emp_request_principal(req))
+    op <- .form_scalar(b$op)
+    if (is.null(op) || !nzchar(op)) stop("op is required")
+    chip_peaks_ops(
+      session_id = sid,
+      op = op,
+      peak_file = .form_scalar(b$peak_file),
+      peak_b = .form_scalar(b$peak_b) %||% .form_scalar(b$peak_file_b),
+      peak_c = .form_scalar(b$peak_c),
+      peak_a2 = .form_scalar(b$peak_a2),
+      peak_b2 = .form_scalar(b$peak_b2),
+      peak_c2 = .form_scalar(b$peak_c2),
+      genome = .form_scalar(b$genome),
+      blacklist_file = .form_scalar(b$blacklist_file),
+      merge_gap = b$merge_gap %||% NULL,
+      summit_size = b$summit_size %||% NULL,
+      promoter_window = b$promoter_window %||% NULL,
+      stitch_gap = b$stitch_gap %||% NULL,
+      min_width = b$min_width %||% NULL,
+      min_re = b$min_re %||% NULL,
+      exclude_promoter = if (is.null(b$exclude_promoter)) TRUE else isTRUE(b$exclude_promoter),
+      mark_names = if (is.null(b$mark_names)) NULL else unlist(b$mark_names)
     )
   }, res)
 }
@@ -1461,6 +2107,7 @@ function(job_id, res) {
       res$status <- 404
       return(list(success = FALSE, error = st$error))
     }
+    st$pid <- NULL
     list(success = TRUE, job = st)
   }, res)
 }
@@ -1505,6 +2152,19 @@ function(job_id, res) {
          n_rows  = nrow(result_df),
          columns = names(result_df),
          data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+  }, res)
+}
+
+#* Request cancellation of a running asynchronous job
+#* @post /api/jobs/<job_id>/cancel
+#* @serializer unboxedJSON
+function(job_id, req, res) {
+  safe_api({
+    emp_assert_job_owner(job_id, emp_request_principal(req))
+    result <- cancel_job(job_id)
+    if (identical(result$status, "not_found")) res$status <- 404
+    if (identical(result$status, "not_cancellable")) res$status <- 409
+    list(success = result$status %in% c("cancel_requested", "cancelled", "already_finished"), cancellation = result)
   }, res)
 }
 
@@ -1806,7 +2466,8 @@ function(req, res) {
     job_id <- submit_job(
       kind = "orgdb_install",
       fn   = "install_orgdb",
-      args = list(orgdb = orgdb)
+      args = list(orgdb = orgdb),
+      owner_id = emp_request_principal(req)
     )
     list(success = TRUE, job_id = job_id, orgdb = orgdb)
   }, res)
@@ -2359,13 +3020,15 @@ function(req, res) {
     source     <- b$source %||% "current"
     color_panel <- b$color_panel %||% NULL
     custom_colors <- b$custom_colors %||% NULL
+    include_levels <- unique(c(b$reference_level %||% character(), b$test_level %||% character()))
     width  <- emp_viz_scale_num(b$width %||% 8, 8)
     height <- emp_viz_scale_num(b$height %||% 6, 6)
 
     out <- make_alpha_plot(session_id, experiment, group, metric, source,
                            width = width, height = height,
                            color_panel = color_panel,
-                           custom_colors = custom_colors)
+                           custom_colors = custom_colors,
+                           include_levels = include_levels)
     .viz_api_plot_response(out)
   }, res)
 }
@@ -2867,6 +3530,10 @@ function(req, res) {
 #* @post /api/user_r/run
 #* @serializer unboxedJSON
 function(req, res) {
+  if (!tolower(trimws(Sys.getenv("EMP_ENABLE_USER_R", unset = "true"))) %in% c("1", "true", "yes", "on")) {
+    res$status <- 403
+    return(list(success = FALSE, error = "User R execution is disabled"))
+  }
   plumber_user_r_post(req, res)
 }
 
@@ -2874,6 +3541,10 @@ function(req, res) {
 #* @post /api/exec/user_r
 #* @serializer unboxedJSON
 function(req, res) {
+  if (!tolower(trimws(Sys.getenv("EMP_ENABLE_USER_R", unset = "true"))) %in% c("1", "true", "yes", "on")) {
+    res$status <- 403
+    return(list(success = FALSE, error = "User R execution is disabled"))
+  }
   plumber_user_r_post(req, res)
 }
 
@@ -3033,6 +3704,73 @@ function(req, res) {
 #* @serializer unboxedJSON
 function(req, res) {
   plumber_teaching_report_get(req, res)
+}
+
+# ══════════════════════════════════════════════════════════
+# GITHUB COURSE SYNC (student login + weekly / project push)
+# ══════════════════════════════════════════════════════════
+
+#* List course assignment slots (weekly + project) by track
+#* @get /api/github/assignments
+#* @serializer unboxedJSON
+function(res) {
+  plumber_github_assignments_get(res)
+}
+
+#* Register student (学号 + 口令)
+#* @post /api/github/register
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_register_post(req, res)
+}
+
+#* Student login
+#* @post /api/github/login
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_login_post(req, res)
+}
+
+#* Student logout
+#* @post /api/github/logout
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_logout_post(req, res)
+}
+
+#* Current student + GitHub bind status
+#* @get /api/github/status
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_status_get(req, res)
+}
+
+#* Bind GitHub repo + PAT
+#* @post /api/github/bind
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_bind_post(req, res)
+}
+
+#* Unbind GitHub repo
+#* @post /api/github/unbind
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_unbind_post(req, res)
+}
+
+#* Sync current analysis / teaching artifacts to weekly or project slot
+#* @post /api/github/sync
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_sync_post(req, res)
+}
+
+#* Local sync history for logged-in student
+#* @get /api/github/syncs
+#* @serializer unboxedJSON
+function(req, res) {
+  plumber_github_syncs_get(req, res)
 }
 
 # ══════════════════════════════════════════════════════════

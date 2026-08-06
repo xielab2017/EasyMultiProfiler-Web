@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">EasyMultiProfiler Web V9.0.0 Education architecture</title>
+  <desc id="desc">Education edition flow: course weeks, student login, EMP analysis, GitHub sync with run history.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#06101e"/>
+      <stop offset="0.5" stop-color="#0e2138"/>
+      <stop offset="1" stop-color="#0a161f"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" x2="1">
+      <stop offset="0" stop-color="#3ee7ff"/>
+      <stop offset="1" stop-color="#47f5b2"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" x2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="1" stop-color="#ff9d6c"/>
+    </linearGradient>
+    <linearGradient id="lime" x1="0" x2="1">
+      <stop offset="0" stop-color="#a6ff8a"/>
+      <stop offset="1" stop-color="#48e7d1"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowCyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#48e7d1"/>
+    </marker>
+    <style>
+      .label{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#e8f7ff;font-weight:700}
+      .labelSm{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#e8f7ff;font-weight:600}
+      .small{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#b8d2e3}
+      .tiny{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#9eb6c6}
+      .mono{font-family:"JetBrains Mono",Consolas,Menlo,monospace;fill:#cdf3ff}
+      .panel{fill:rgba(10,24,40,.72);stroke:rgba(151,219,255,.32);stroke-width:1.4}
+      .panelHot{fill:rgba(36,28,18,.78);stroke:rgba(255,190,100,.5);stroke-width:1.4}
+      .panelCore{fill:rgba(6,18,28,.86);stroke:rgba(72,231,209,.6);stroke-width:1.6;filter:url(#glow)}
+      .item{fill:rgba(8,22,38,.85);stroke:rgba(151,219,255,.32);stroke-width:1}
+      .itemHot{fill:rgba(40,24,18,.9);stroke:rgba(255,184,108,.5);stroke-width:1.2}
+      .arrow{stroke:url(#cyan);stroke-width:2.4;fill:none;filter:url(#softGlow)}
+    </style>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <g opacity=".18">
+    <path d="M0 100 H1280 M0 200 H1280 M0 300 H1280 M0 400 H1280 M0 500 H1280 M0 600 H1280" stroke="#6fbed6" stroke-width="1"/>
+    <path d="M128 0 V720 M256 0 V720 M384 0 V720 M512 0 V720 M640 0 V720 M768 0 V720 M896 0 V720 M1024 0 V720 M1152 0 V720" stroke="#6fbed6" stroke-width="1"/>
+  </g>
+
+  <!-- Header -->
+  <text x="60" y="52" class="label" font-size="32">EasyMultiProfiler Web V9.0.0_Education</text>
+  <text x="60" y="82" class="small" font-size="15">Course weeks -&gt; student login -&gt; EMP analysis -&gt; GitHub sync (new run each time, history kept)</text>
+  <rect x="1048" y="28" width="172" height="42" rx="21" fill="rgba(255,224,138,.12)" stroke="#ffe08a" stroke-width="1.4"/>
+  <text x="1134" y="56" class="label" font-size="16" text-anchor="middle" fill="#ffe8b0">PREVIEW</text>
+
+  <!-- Install / education strip -->
+  <rect class="panelHot" x="60" y="108" width="1160" height="52" rx="14"/>
+  <text x="84" y="140" class="label" font-size="17" fill="#ffe8b0">Education flow:</text>
+  <text x="248" y="140" class="mono" font-size="15">register (student ID)  -&gt;  bind GitHub PAT  -&gt;  pick week/project  -&gt;  sync run</text>
+
+  <!-- Col 1 -->
+  <rect class="panel" x="60" y="184" width="270" height="430" rx="14"/>
+  <text x="80" y="220" class="label" font-size="20">1. Course &amp; Weeks</text>
+  <rect class="item" x="80" y="240" width="230" height="48" rx="10"/>
+  <text x="96" y="270" class="small" font-size="13">16S / RNA / ChIP peaks / Metab / MGX</text>
+  <rect class="item" x="80" y="300" width="230" height="48" rx="10"/>
+  <text x="96" y="330" class="small" font-size="14">Week 1-5 task cards + quiz</text>
+  <rect class="item" x="80" y="360" width="230" height="48" rx="10"/>
+  <text x="96" y="390" class="small" font-size="14">Learning Trace &amp; journal</text>
+  <rect class="itemHot" x="80" y="420" width="230" height="48" rx="10"/>
+  <text x="96" y="450" class="small" font-size="14" fill="#ffe0c2">Final project slot</text>
+  <text x="80" y="510" class="tiny" font-size="13">Config: course_assignments.json</text>
+  <text x="80" y="535" class="tiny" font-size="13">Maps to teaching_cases tasks</text>
+
+  <!-- Col 2 -->
+  <rect class="panel" x="356" y="184" width="270" height="430" rx="14"/>
+  <text x="376" y="220" class="label" font-size="20">2. Student Identity</text>
+  <rect class="item" x="376" y="240" width="230" height="48" rx="10"/>
+  <text x="392" y="270" class="small" font-size="14">Student ID + password</text>
+  <rect class="item" x="376" y="300" width="230" height="48" rx="10"/>
+  <text x="392" y="330" class="small" font-size="14">X-Student-Token session</text>
+  <rect class="itemHot" x="376" y="360" width="230" height="48" rx="10"/>
+  <text x="392" y="390" class="small" font-size="14" fill="#ffe0c2">Bind GitHub repo + PAT</text>
+  <rect class="item" x="376" y="420" width="230" height="48" rx="10"/>
+  <text x="392" y="450" class="small" font-size="14">PAT AES-encrypted on server</text>
+  <text x="376" y="510" class="tiny" font-size="13">API: /api/github/register|login</text>
+  <text x="376" y="535" class="tiny" font-size="13">API: /api/github/bind|status</text>
+
+  <!-- Col 3 -->
+  <rect class="panel" x="652" y="184" width="270" height="430" rx="14"/>
+  <text x="672" y="220" class="label" font-size="20">3. Analyze in EMP-Web</text>
+  <rect class="item" x="672" y="240" width="230" height="48" rx="10"/>
+  <text x="688" y="270" class="small" font-size="13">Import types + peak BED sample</text>
+  <rect class="item" x="672" y="300" width="230" height="48" rx="10"/>
+  <text x="688" y="330" class="small" font-size="14">Visualize / Clinical / Run All</text>
+  <rect class="item" x="672" y="360" width="230" height="48" rx="10"/>
+  <text x="688" y="390" class="small" font-size="14">Code Lab + AI Copilot</text>
+  <rect class="item" x="672" y="420" width="230" height="48" rx="10"/>
+  <text x="688" y="450" class="small" font-size="14">CSV / plots / teaching report</text>
+  <text x="672" y="510" class="tiny" font-size="13">Inherits V7 one-line install</text>
+  <text x="672" y="535" class="tiny" font-size="13">R + EasyMultiProfiler backend</text>
+
+  <!-- Col 4 -->
+  <rect class="panelCore" x="948" y="184" width="272" height="430" rx="14"/>
+  <text x="968" y="220" class="label" font-size="20">4. Sync to GitHub</text>
+  <rect class="itemHot" x="968" y="240" width="232" height="48" rx="10"/>
+  <text x="984" y="270" class="small" font-size="14" fill="#ffe0c2">Pick week / project</text>
+  <rect class="item" x="968" y="300" width="232" height="48" rx="10"/>
+  <text x="984" y="330" class="small" font-size="14">New run each sync</text>
+  <rect class="item" x="968" y="360" width="232" height="48" rx="10"/>
+  <text x="984" y="390" class="small" font-size="14">LATEST pointer update</text>
+  <rect class="item" x="968" y="420" width="232" height="48" rx="10"/>
+  <text x="984" y="450" class="small" font-size="14">Commit link in UI</text>
+  <text x="968" y="505" class="tiny" font-size="12">EMP2026/Week_01/</text>
+  <text x="968" y="528" class="tiny" font-size="12">{track}/weekly/runs/...</text>
+  <text x="968" y="560" class="tiny" font-size="13">API: /api/github/sync</text>
+
+  <!-- Arrows -->
+  <path class="arrow" d="M330 400 H348" marker-end="url(#arrowCyan)"/>
+  <path class="arrow" d="M626 400 H644" marker-end="url(#arrowCyan)"/>
+  <path class="arrow" d="M922 400 H940" marker-end="url(#arrowCyan)"/>
+
+  <text x="640" y="670" text-anchor="middle" class="tiny" font-size="13">Preview branch V9.0.0_Education  |  https://github.com/xielab2017/EasyMultiProfiler-Web</text>
+</svg>

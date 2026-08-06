@@ -112,6 +112,25 @@ Prepare 页点击 **「推荐参数（当前组学）」** 可手动重新套用
 | **Clinical** | 临床表型 |
 | **Export** | CSV / RDS / 课程 Markdown 报告 |
 
+### 4.1 Demo：临床 × 16S（三线表 + 全流程关联）
+
+应用内 **Guide** 页亦有完整逐步说明（中英）。摘要如下：
+
+1. **加载**：Data → Course Demo 先 **Clinical Phenotypes**，再 **16S Microbiome**（或上传 `Clinical-test.csv` + 16S 表）；实验选 `m16s_course`，进入 **Clinical**。
+2. **三线表**：策略 One-click 三线表 → 检测临床变量 → 运行；约 44 行基线表（如 height P≈0.023）。
+3. **系统统计**：基线 + Within（同队列前后）+ Between（UC vs IBS 的 Δ）。
+4. **关联**：Feature × Trait correlation；ID 对齐约 132/132，Spearman 探索性结果。
+
+ID 提示：临床 `AK/BK`=UC 前后、`CJ/DJ`=IBS；16S `K_*`/`J_*`；系统对齐例 `AK_XYL_F_0001` ↔ `K_XYL_F_0001_01`。若见 **No colData**，说明尚未导入临床表。
+
+### 4.2 Demo：16S Microbiome（全模块）
+
+应用内 Guide 折叠卡「16S Microbiome」。摘要：导入 `m16s_course`（132×470）→ Filter → Taxonomy Genus top40（勿同一步 rclr）→ Alpha → rclr → wilcox / RF → 可视化；Run All ≈4.4 s。Network 阈值建议 0.3。
+
+### 4.3 Demo：RNA-seq（全模块）
+
+应用内 Guide 折叠卡「RNA-seq」。摘要：导入 `rnaseq_course`（24×19150，6 个 Group）→ Filter≈14245 → log → PCA / DESeq2（DMSO vs T4400；padj DEG 常 0，名义 p ≈23↑/2↓）→ GO≈40 / GSEA≈21 → Run All ≈35 s（~2.1 MB zip）。重负载后若 API 断连请重启。
+
 ---
 
 ## 5. v5.0.2 新特性摘要
@@ -134,7 +153,7 @@ A：不能。Mac 用 `.sh` / `.command`；Windows 用 `.ps1` / `.bat`。
 A：使用 Web 版不需要写 R，但本机须安装 R（≥ 4.3.3）作为后端；脚本会自动装 EMP 及依赖包。
 
 **Q：8080 打不开？**  
-A：Mac：`bash webapp/scripts/stop_local.sh` 后重启。Windows：`Restart-EMP-Web.bat`。
+A：Mac：双击 `Stop-EMP-Web-Mac.command`（或 `bash webapp/scripts/stop_local.sh`）后重启。Windows：`Stop-EMP-Web-Windows.bat` 或 `Restart-EMP-Web.bat`。
 
 **Q：如何配置 AI？**  
 A：Code Lab 或系统环境变量配置 LLM Key（如 `EMP_CAMPUS_LLM_API_KEY`），重启 API。

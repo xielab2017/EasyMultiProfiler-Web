@@ -3,8 +3,8 @@
  * Drafts + edit history remain in localStorage.
  */
 import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-07-16-multi-demo";
-import { codeLabArtifactURL, execUserR, getOpenRouterVerified, optimizeRCode, probeOpenRouterModels } from "./api.js?v=2026-07-16-multi-demo";
-import { t } from "./locale.js?v=2026-07-16-multi-demo";
+import { codeLabArtifactURL, execUserR, getOpenRouterVerified, optimizeRCode, probeOpenRouterModels } from "./api.js?v=2026-07-22-script-fusion-v1";
+import { t } from "./locale.js?v=2026-07-22-script-fusion-v1";
 
 const LS_KEY = "emp_code_lab_store_v1";
 const LLM_CFG_KEY = "emp_code_lab_llm_config_v2";
@@ -1464,7 +1464,11 @@ export function applyCodeLabI18n() {
   if (llmSum) llmSum.textContent = t("codelab.llmConfig");
   setText("#code-lab-exec", "codelab.runOptShort");
   setText("#code-lab-llm-optimize", "codelab.optimize");
+  setText("#code-lab-llm-fuse", "codelab.fuseExternal");
   setText("#code-lab-llm-save", "codelab.llmSave");
+  if (taEl) taEl.placeholder = t("codelab.optPlaceholder");
+  const instEl = q("#code-lab-llm-instruction");
+  if (instEl) instEl.placeholder = t("codelab.instructionPlaceholder");
   const baseModeSel = q("#code-lab-llm-base-url-mode");
   if (baseModeSel) {
     const presetOpt = baseModeSel.querySelector('option[value="preset"]');
@@ -1609,7 +1613,8 @@ export async function initCodeLab() {
       <div class="code-lab-pane-src code-lab-pane-src--full">
         <div class="code-lab-pane-src-head">System Source vs Optimized R</div>
         <p class="code-lab-hint">
-          上方是系统生成的纯 R 原始脚本；下方是人工或 LLM 优化脚本。
+          上方是系统生成的纯 R 原始脚本；下方可粘贴外来分析/绘图脚本，或人工/LLM 优化。
+          <strong>「融合外来脚本」</strong>会把外来意图并入系统脚本。
           <strong>「运行优化脚本」</strong> → <code>POST /api/user_r/run</code>。切勿对公网暴露。
         </p>
         <div class="code-lab-clinical-row hidden" id="code-lab-clinical-row">
@@ -1626,10 +1631,10 @@ export async function initCodeLab() {
           </section>
           <section class="code-lab-code-block">
             <div class="code-lab-code-title">
-              <span>优化脚本（LLM/人工修改后运行）</span>
+              <span>优化脚本（可粘贴外来脚本；LLM 将融合进系统代码）</span>
               <button type="button" class="btn btn-outline" id="code-lab-run-source">运行原始脚本</button>
             </div>
-            <textarea class="code-lab-editor" id="code-lab-editor" spellcheck="false" autocomplete="off"></textarea>
+            <textarea class="code-lab-editor" id="code-lab-editor" spellcheck="false" autocomplete="off" placeholder="可粘贴外部分析/绘图脚本。LLM 会提取核心意图并并入系统原始脚本，而非整段替换。"></textarea>
           </section>
         </div>
         <details class="code-lab-llm-wrap" id="code-lab-llm-wrap">
@@ -1705,10 +1710,11 @@ export async function initCodeLab() {
             </div>
           </details>
           <label class="code-lab-llm-instruction">优化要求
-            <textarea id="code-lab-llm-instruction" placeholder="例如：保留纯 R 兼容，优化配色、图例、字体大小，并让最后一行返回 ggplot"></textarea>
+            <textarea id="code-lab-llm-instruction" placeholder="例如：融合外来脚本的差异分析与火山图思路；保留 session_id/experiment；用 emp_pub_theme 出图"></textarea>
           </label>
           <div class="code-lab-llm-actions">
             <button type="button" class="btn btn-primary" id="code-lab-llm-optimize">用 LLM 优化原始脚本</button>
+            <button type="button" class="btn btn-outline" id="code-lab-llm-fuse">融合外来脚本</button>
             <span class="code-lab-llm-status" id="code-lab-llm-status"></span>
           </div>
         </details>
@@ -1857,70 +1863,109 @@ function collectUiContext() {
   return Object.keys(ctx).length ? ctx : null;
 }
 
-  rootEl.querySelector("#code-lab-llm-optimize").addEventListener("click", async (e) => {
-    e.stopPropagation();
-    if (!state.workflow || !state.tab) return;
-    const { provider, config } = collectLlmConfig();
-    const instruction = rootEl.querySelector("#code-lab-llm-instruction")?.value || "";
-    setLlmStatus("正在请求 LLM 优化，结果会写入优化脚本区…", "wait");
-    try {
-      const res = await optimizeRCode({
-        provider,
-        config,
+/** Optimized-pane content when it differs from system source (external / draft). */
+function externalCodeForOptimize() {
+  const opt = taEl?.value ?? "";
+  const src = sourceCodeForCurrent() ?? "";
+  if (!String(opt).trim()) return null;
+  if (String(opt).trim() === String(src).trim()) return null;
+  return opt;
+}
+
+async function runLlmOptimize({ forceExternal = false } = {}) {
+  if (!state.workflow || !state.tab) return;
+  const { provider, config } = collectLlmConfig();
+  const instruction = rootEl.querySelector("#code-lab-llm-instruction")?.value || "";
+  const sourceCode = sourceCodeForCurrent();
+  const externalCode = externalCodeForOptimize();
+  if (forceExternal && !externalCode) {
+    setLlmStatus(t("codelab.fuseNeedExternal"), "error");
+    return;
+  }
+  const fuseMode = !!externalCode;
+  setLlmStatus(
+    fuseMode
+      ? "正在请求 LLM：以系统原始脚本为基座，融合优化区外来脚本…"
+      : "正在请求 LLM 优化，结果会写入优化脚本区…",
+    "wait"
+  );
+  try {
+    const res = await optimizeRCode({
+      provider,
+      config,
+      workflow: state.workflow,
+      tab: state.tab,
+      source_code: sourceCode,
+      external_code: externalCode,
+      instruction: fuseMode
+        ? [
+            instruction,
+            "请将优化区中的外来脚本核心分析/绘图意图融合进系统原始脚本；",
+            "保留 EMP session_id、experiment、emp_pub_theme 与 /api/user_r/run 约定，不要整段替换系统脚手架。",
+          ].filter(Boolean).join(" ")
+        : instruction,
+      ui_context: collectUiContext(),
+    });
+    const code = res.optimized_code || res.code || "";
+    if (!code.trim()) throw new Error("LLM 未返回可用 R 代码");
+    lastLlmOptimizeMeta = {
+      provider: res.provider || provider,
+      model: res.model || config.model,
+      fusion_models: (res.mode === "fusion" || res.mode === "fusion_fallback")
+        && Array.isArray(res.fusion_models) && res.fusion_models.length
+        ? res.fusion_models
+        : null,
+      mode: res.mode || null,
+      external_fused: fuseMode,
+    };
+    const fusionUsed = lastLlmOptimizeMeta.mode === "fusion"
+      || lastLlmOptimizeMeta.mode === "fusion_fallback";
+    if (!res.fallback && fusionUsed && lastLlmOptimizeMeta.fusion_models?.length) {
+      recordFusionLearn(lastLlmOptimizeMeta.fusion_models, 2);
+      if (provider === "openrouter" && llmConfigEls.openrouter_models) {
+        llmConfigEls.openrouter_models.value = resolveOpenRouterFusionModels(
+          lastLlmOptimizeMeta.fusion_models
+        ).join(", ");
+      }
+    }
+    setOptimizedCode(code, fuseMode ? `llm-fuse:${res.provider || res.model || provider}` : `llm:${res.provider || res.model || provider}`);
+    const modelHint = res.model ? `，模型 ${res.model}` : "";
+    const requestedHint = res.requested_model && res.requested_model !== res.model
+      ? `（请求 ${res.requested_model}）`
+      : "";
+    const fusionHint = fusionUsed && lastLlmOptimizeMeta.fusion_models?.length
+      ? `，融合 ${lastLlmOptimizeMeta.fusion_models.join(" + ")}`
+      : "";
+    const externalHint = fuseMode ? "；已融合外来脚本意图" : "";
+    const fallbackHint = res.fallback
+      ? "（LLM 不可达，已使用本地规则润色，请人工检查）"
+      : "";
+    const learnHint = fusionUsed
+      ? `；已学习 ${Object.keys(loadFusionLearnScores()).length} 个模型偏好`
+      : "";
+    setLlmStatus(`已生成优化脚本（${res.provider || provider}${modelHint}${requestedHint}${fusionHint}${externalHint}）${fallbackHint}${learnHint}，请先检查再运行。`, "ok");
+    import("./teaching.js?v=2026-06-19-course-v9")
+      .then((m) => m.traceEvent?.({
+        event_type: fuseMode ? "llm_fuse_external" : "llm_optimize",
         workflow: state.workflow,
         tab: state.tab,
-        source_code: sourceCodeForCurrent(),
-        instruction,
-        ui_context: collectUiContext(),
-      });
-      const code = res.optimized_code || res.code || "";
-      if (!code.trim()) throw new Error("LLM 未返回可用 R 代码");
-      lastLlmOptimizeMeta = {
         provider: res.provider || provider,
-        model: res.model || config.model,
-        fusion_models: (res.mode === "fusion" || res.mode === "fusion_fallback")
-          && Array.isArray(res.fusion_models) && res.fusion_models.length
-          ? res.fusion_models
-          : null,
-        mode: res.mode || null,
-      };
-      const fusionUsed = lastLlmOptimizeMeta.mode === "fusion"
-        || lastLlmOptimizeMeta.mode === "fusion_fallback";
-      if (!res.fallback && fusionUsed && lastLlmOptimizeMeta.fusion_models?.length) {
-        recordFusionLearn(lastLlmOptimizeMeta.fusion_models, 2);
-        if (provider === "openrouter" && llmConfigEls.openrouter_models) {
-          llmConfigEls.openrouter_models.value = resolveOpenRouterFusionModels(
-            lastLlmOptimizeMeta.fusion_models
-          ).join(", ");
-        }
-      }
-      setOptimizedCode(code, `llm:${res.provider || res.model || provider}`);
-      const modelHint = res.model ? `，模型 ${res.model}` : "";
-      const requestedHint = res.requested_model && res.requested_model !== res.model
-        ? `（请求 ${res.requested_model}）`
-        : "";
-      const fusionHint = fusionUsed && lastLlmOptimizeMeta.fusion_models?.length
-        ? `，融合 ${lastLlmOptimizeMeta.fusion_models.join(" + ")}`
-        : "";
-      const fallbackHint = res.fallback
-        ? "（LLM 不可达，已使用本地规则润色，请人工检查）"
-        : "";
-      const learnHint = fusionUsed
-        ? `；已学习 ${Object.keys(loadFusionLearnScores()).length} 个模型偏好`
-        : "";
-      setLlmStatus(`已生成优化脚本（${res.provider || provider}${modelHint}${requestedHint}${fusionHint}）${fallbackHint}${learnHint}，请先检查再运行。`, "ok");
-      import("./teaching.js?v=2026-06-19-course-v9")
-        .then((m) => m.traceEvent?.({
-          event_type: "llm_optimize",
-          workflow: state.workflow,
-          tab: state.tab,
-          provider: res.provider || provider,
-          model: res.model,
-        }))
-        .catch(() => {});
-    } catch (err) {
-      setLlmStatus(err.message || String(err), "error");
-    }
+        model: res.model,
+      }))
+      .catch(() => {});
+  } catch (err) {
+    setLlmStatus(err.message || String(err), "error");
+  }
+}
+
+  rootEl.querySelector("#code-lab-llm-optimize").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    await runLlmOptimize({ forceExternal: false });
+  });
+
+  rootEl.querySelector("#code-lab-llm-fuse").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    await runLlmOptimize({ forceExternal: true });
   });
 
   rootEl.querySelector("#code-lab-reset").addEventListener("click", (e) => {

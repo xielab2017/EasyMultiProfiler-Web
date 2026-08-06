@@ -1,0 +1,66 @@
+{
+  "course_code": "EMP2026",
+  "repo_root": "EMP2026",
+  "week_count": 16,
+  "projects": [
+    {
+      "id": "project_major",
+      "type": "project",
+      "title": "项目大作业",
+      "phase": "project",
+      "include": ["manifest", "assay", "coldata", "results", "plots", "teaching", "report"]
+    }
+  ],
+  "default_week_include": ["manifest", "assay", "coldata", "results", "plots", "teaching"],
+  "tracks": [
+    {
+      "id": "microbiome_16s",
+      "case_id": "course_microbiome_16s",
+      "title": "16S 微生物组",
+      "week_titles": {
+        "1": "数据导入",
+        "2": "质控与预处理",
+        "3": "多样性分析",
+        "4": "可视化",
+        "5": "解读与假设"
+      }
+    },
+    {
+      "id": "transcriptomics",
+      "case_id": "course_transcriptomics",
+      "title": "转录组 RNA-seq",
+      "week_titles": {}
+    },
+    {
+      "id": "metabolomics",
+      "case_id": "course_metabolomics",
+      "title": "代谢组",
+      "week_titles": {}
+    },
+    {
+      "id": "metagenomics",
+      "case_id": "course_metagenomics",
+      "title": "宏基因组",
+      "week_titles": {}
+    },
+    {
+      "id": "clinical",
+      "case_id": "course_clinical",
+      "title": "临床 / Clinical",
+      "week_titles": {}
+    },
+    {
+      "id": "multiomics",
+      "case_id": "course_multiomics",
+      "title": "多组学数据分析",
+      "week_titles": {}
+    },
+    {
+      "id": "customize",
+      "title": "自定义 (Customize)",
+      "custom": true,
+      "case_id": null,
+      "week_titles": {}
+    }
+  ]
+}

@@ -10,7 +10,8 @@
 # `submit_job()` launches a callr process, records pid/start, and returns the
 # job id.  `get_job_status()` reads the JSON and surfaces it to the client.
 
-JOB_DIR <- "/tmp/emp_jobs"
+JOB_DIR <- emp_storage_dir("jobs")
+.JOB_PROCESSES <- new.env(parent = emptyenv())
 
 .jobs_ensure_dir <- function() {
   dir.create(JOB_DIR, recursive = TRUE, showWarnings = FALSE)
@@ -21,9 +22,15 @@ JOB_DIR <- "/tmp/emp_jobs"
          paste0(sample(c(letters, 0:9), 8, replace = TRUE), collapse = ""))
 }
 
-.job_state_path  <- function(id) file.path(JOB_DIR, paste0(id, ".json"))
-.job_result_path <- function(id) file.path(JOB_DIR, paste0(id, ".result"))
-.job_log_path    <- function(id) file.path(JOB_DIR, paste0(id, ".log"))
+validate_job_id <- function(id) {
+  value <- trimws(as.character(id %||% ""))
+  if (length(value) != 1L || !grepl("^[0-9]{14}\\.[0-9]{3}-[a-z0-9]{8}$", value)) stop("Invalid job_id")
+  value
+}
+
+.job_state_path  <- function(id) file.path(JOB_DIR, paste0(validate_job_id(id), ".json"))
+.job_result_path <- function(id) file.path(JOB_DIR, paste0(validate_job_id(id), ".result"))
+.job_log_path    <- function(id) file.path(JOB_DIR, paste0(validate_job_id(id), ".log"))
 
 .write_state <- function(id, state) {
   .jobs_ensure_dir()
@@ -59,18 +66,30 @@ JOB_DIR <- "/tmp/emp_jobs"
   }
 }
 
-submit_job <- function(kind, fn, args = list(), session_id = NULL) {
+submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NULL, project_id = NULL) {
   if (!requireNamespace("callr", quietly = TRUE)) {
     stop("R package 'callr' is required for async jobs.")
   }
   .jobs_ensure_dir()
   id <- .job_id()
   started <- as.integer(Sys.time())
+  if (!is.null(session_id)) {
+    ownership <- tryCatch(emp_get_session_owner(session_id), error = function(e) NULL)
+    owner_id <- owner_id %||% ownership$owner_id %||% NULL
+    project_id <- project_id %||% ownership$project_id %||% NULL
+  }
+  if (emp_auth_required() && (is.null(owner_id) || !nzchar(owner_id))) {
+    stop("Job owner is required for an authenticated deployment.")
+  }
   .write_state(id, list(
     id         = id,
     kind       = kind,
     session_id = session_id,
+    endpoint_id = emp_endpoint_id(),
+    owner_id = owner_id,
+    project_id = project_id,
     status     = "queued",
+    cancellable = TRUE,
     progress   = 0L,
     message    = "Queued",
     started    = started,
@@ -94,7 +113,10 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL) {
       library(MultiAssayExperiment)
       library(jsonlite)
     })
-    for (f in list.files(file.path(backend_dir, "helpers"), pattern = "\\.R$", full.names = TRUE)) {
+    helper_files <- list.files(file.path(backend_dir, "helpers"), pattern = "\\.R$", full.names = TRUE)
+    storage_file <- helper_files[basename(helper_files) == "storage.R"]
+    helper_files <- c(storage_file, helper_files[basename(helper_files) != "storage.R"])
+    for (f in helper_files) {
       source(f, local = FALSE)
     }
 
@@ -128,11 +150,11 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL) {
       stop(e)
     })
 
-    saveRDS(result, result_path)
-
     st <- tryCatch(fromJSON(readLines(state_path, warn = FALSE),
                              simplifyVector = TRUE),
                    error = function(e) list())
+    if (st$status %in% c("cancel_requested", "cancelled")) return(invisible(NULL))
+    saveRDS(result, result_path)
     st$status   <- "done"
     st$progress <- 100L
     st$message  <- "Done"
@@ -140,7 +162,7 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL) {
     write_state(st)
   }
 
-  callr::r_bg(
+  process <- callr::r_bg(
     func = run_body,
     args = list(
       id          = id,
@@ -156,12 +178,22 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL) {
     supervise = FALSE
   )
 
+  state <- .read_state(id) %||% list(id = id)
+  state$pid <- process$get_pid()
+  state$cancellable <- TRUE
+  state$updated <- as.integer(Sys.time())
+  .write_state(id, state)
+  assign(id, process, envir = .JOB_PROCESSES)
+
   id
 }
 
 get_job_status <- function(id) {
   st <- .read_state(id)
   if (is.null(st)) return(list(error = paste0("Job not found: ", id)))
+  if (st$status %in% c("done", "error", "cancelled") && exists(id, envir = .JOB_PROCESSES, inherits = FALSE)) {
+    rm(list = id, envir = .JOB_PROCESSES)
+  }
   st
 }
 
@@ -169,6 +201,73 @@ get_job_result <- function(id) {
   p <- .job_result_path(id)
   if (!file.exists(p)) return(NULL)
   tryCatch(readRDS(p), error = function(e) NULL)
+}
+
+emp_assert_job_owner <- function(id, owner_id) {
+  st <- .read_state(id)
+  if (is.null(st)) stop("Job not found.")
+  if (is.null(st$owner_id) || !nzchar(st$owner_id)) {
+    if (identical(owner_id, "local") && !emp_auth_required()) return(invisible(st))
+    stop("Job ownership is not registered.")
+  }
+  if (!identical(st$endpoint_id %||% emp_endpoint_id(), emp_endpoint_id()) || !identical(st$owner_id, owner_id)) {
+    stop("Job access denied.")
+  }
+  invisible(st)
+}
+
+list_jobs_for_session <- function(session_id, owner_id) {
+  validate_session_id(session_id)
+  files <- list.files(JOB_DIR, pattern = "\\.json$", full.names = TRUE)
+  jobs <- lapply(files, function(path) {
+    id <- sub("\\.json$", "", basename(path))
+    tryCatch(.read_state(id), error = function(e) NULL)
+  })
+  jobs <- Filter(function(st) {
+    !is.null(st) && identical(st$session_id %||% NULL, session_id) &&
+      identical(st$endpoint_id %||% emp_endpoint_id(), emp_endpoint_id()) &&
+      identical(st$owner_id %||% NULL, owner_id)
+  }, jobs)
+  lapply(jobs, function(st) st[setdiff(names(st), "pid")])
+}
+
+cancel_job <- function(id) {
+  st <- .read_state(id)
+  if (is.null(st)) return(list(status = "not_found", job_id = id))
+  if (st$status %in% c("done", "error", "cancelled")) {
+    return(list(status = if (identical(st$status, "cancelled")) "cancelled" else "already_finished", job_id = id))
+  }
+  if (!exists(id, envir = .JOB_PROCESSES, inherits = FALSE)) {
+    return(list(status = "not_cancellable", job_id = id))
+  }
+  process <- get(id, envir = .JOB_PROCESSES, inherits = FALSE)
+  if (!isTRUE(tryCatch(process$is_alive(), error = function(e) FALSE))) {
+    rm(list = id, envir = .JOB_PROCESSES)
+    latest <- .read_state(id) %||% st
+    if (latest$status %in% c("done", "error")) return(list(status = "already_finished", job_id = id))
+    return(list(status = "not_cancellable", job_id = id))
+  }
+
+  st$status <- "cancel_requested"
+  st$message <- "Cancellation requested"
+  st$updated <- as.integer(Sys.time())
+  .write_state(id, st)
+  signalled <- isTRUE(tryCatch(process$kill(), error = function(e) FALSE))
+  if (!signalled) {
+    latest <- .read_state(id) %||% st
+    if (latest$status %in% c("done", "error")) return(list(status = "already_finished", job_id = id))
+    latest$status <- "cancel_requested"
+    .write_state(id, latest)
+    return(list(status = "cancel_requested", job_id = id))
+  }
+  st$status <- "cancelled"
+  st$message <- "Cancelled"
+  st$progress <- as.integer(st$progress %||% 0L)
+  st$updated <- as.integer(Sys.time())
+  .write_state(id, st)
+  if (exists(id, envir = .JOB_PROCESSES, inherits = FALSE)) rm(list = id, envir = .JOB_PROCESSES)
+  unlink(.job_result_path(id), force = TRUE)
+  list(status = "cancelled", job_id = id)
 }
 
 cleanup_old_jobs <- function(max_age_hours = 6) {

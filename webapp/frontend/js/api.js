@@ -35,6 +35,7 @@ function resolveApiCandidates() {
   return [...new Set(out)];
 }
 export function apiBase() { return resolveApiBase(); }
+export { request };
 // Backward-compatible export – a handful of call-sites read `API` as a
 // string to build URLs (e.g. download links).  Keep it reactive via a
 // string-wrapping object that delegates to the resolver on every call.
@@ -53,34 +54,259 @@ function headers(extra = {}) {
   const h = { "Content-Type": "application/json", ...extra };
   const sid = sessionId();
   if (sid) h["X-Session-Id"] = sid;
+  const token = (
+    (typeof window !== "undefined" && window.EMP_API_TOKEN) ||
+    (typeof localStorage !== "undefined" && localStorage.getItem("emp_api_token")) ||
+    ""
+  ).trim();
+  if (token) h["Authorization"] = `Bearer ${token}`;
+  const studentToken = (
+    typeof localStorage !== "undefined" && localStorage.getItem("emp_student_token")
+  ) || "";
+  if (studentToken) h["X-Student-Token"] = studentToken;
   return h;
 }
 
-async function request(method, path, body = null, multipart = false) {
-  const opts = { method, headers: multipart ? {} : headers() };
+function normalizeApiErrorMessage(status, msg) {
+  let out = msg || `HTTP ${status}`;
+  if (status === 401 || /authentication required/i.test(String(out))) {
+    out = "Authentication required. Reload the page so runtime_auth.local.js can attach EMP_API_TOKEN, or set localStorage emp_api_token.";
+  } else if (status === 403) {
+    out = `Access denied: ${out}`;
+  } else if (
+    status === 413 ||
+    /long vectors not supported|split_by_boundary|single-shot multipart|超过.*上传上限|chunked upload/i.test(String(out))
+  ) {
+    out = String(out).trim() ||
+      "BAM 过大，R/plumber 无法一次接收整文件。请刷新页面后重试（将自动分片），或改用服务器路径注册。";
+  } else if (
+    status >= 500 &&
+    (/^500\b/i.test(String(out)) || /internal server error/i.test(String(out)))
+  ) {
+    out = `服务器错误（HTTP ${status}）。若 BAM 超过约 2GiB，请刷新页面使用分片上传。原始信息: ${out}`;
+  }
+  return out;
+}
+
+/** Timeout for large multipart uploads: 10 min base + 3 min / 100MB, cap 3 h. */
+export function uploadTimeoutMs(fileSizeBytes) {
+  const size = Math.max(0, Number(fileSizeBytes) || 0);
+  const per100 = Math.ceil(size / (100 * 1024 * 1024));
+  return Math.min(3 * 60 * 60 * 1000, Math.max(10 * 60 * 1000, 600_000 + per100 * 180_000));
+}
+
+/**
+ * Multipart POST via XHR so we can report real upload % (fetch cannot).
+ * Progress contract for callers:
+ *   - upload bytes → pct 0–90
+ *   - waiting for server after upload complete → pct 90–99, message 「服务器处理中…」
+ *   - success → pct 100
+ * Always settles the promise (resolve/reject); never leaves the caller hanging
+ * without an error if XHR fails or JSON parse blows up.
+ */
+function requestMultipartWithProgress(path, formData, opts = {}) {
+  const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
+  const timeoutMs = Math.max(30_000, Number(opts.timeoutMs) || uploadTimeoutMs(opts.fileSizeBytes));
+  const bases = resolveApiCandidates();
+  const authHeaders = headers();
+  delete authHeaders["Content-Type"]; // browser sets multipart boundary
+  const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+  const emit = (pct, message, phase) => {
+    if (!onProgress) return;
+    try { onProgress({ pct, message: message || "", phase: phase || "" }); }
+    catch (_) { /* ignore UI callback errors */ }
+  };
+
+  const tryOne = (base) => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let settled = false;
+    let waitTimer = null;
+    let waitPct = 90;
+
+    const cleanup = () => {
+      if (waitTimer) { clearInterval(waitTimer); waitTimer = null; }
+    };
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err instanceof Error ? err : new Error(String(err || "Upload failed")));
+    };
+    const ok = (data) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(data);
+    };
+
+    xhr.open("POST", `${base}${path}`, true);
+    xhr.timeout = timeoutMs;
+    for (const [k, v] of Object.entries(authHeaders)) {
+      if (v != null && v !== "") xhr.setRequestHeader(k, String(v));
+    }
+
+    xhr.upload.onprogress = (ev) => {
+      if (!ev.lengthComputable || !ev.total) {
+        emit(Math.min(88, waitPct), "Uploading…", "upload");
+        return;
+      }
+      const frac = Math.max(0, Math.min(1, ev.loaded / ev.total));
+      emit(Math.round(frac * 90), `Uploading… ${Math.round(frac * 100)}%`, "upload");
+    };
+    xhr.upload.onload = () => {
+      waitPct = 90;
+      emit(90, "服务器处理中…", "processing");
+      // Soft climb 90→99 while the server copies/registers the BAM.
+      waitTimer = setInterval(() => {
+        waitPct = Math.min(99, waitPct + 0.35);
+        emit(waitPct, "服务器处理中…", "processing");
+      }, 400);
+    };
+
+    xhr.onerror = () => fail(new Error(`Network error uploading to ${base}`));
+    xhr.ontimeout = () => fail(new Error(
+      `Upload timed out after ${Math.round(timeoutMs / 60000)} min. Try a smaller file, check disk space, or use server-path register instead of browser upload.`
+    ));
+    xhr.onabort = () => fail(new Error("Upload aborted"));
+
+    xhr.onload = () => {
+      cleanup();
+      const totalMs = Math.round(
+        ((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0)
+      );
+      const status = xhr.status;
+      const raw = xhr.responseText || "";
+      let data = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch (parseErr) {
+        const snippet = String(raw).replace(/\s+/g, " ").slice(0, 240);
+        if (status >= 200 && status < 300) {
+          fail(new Error(
+            `Server returned non-JSON response (HTTP ${status}). ${String(parseErr.message || parseErr)} ${snippet}`
+          ));
+          return;
+        }
+        fail(new Error(normalizeApiErrorMessage(
+          status,
+          snippet ? `HTTP ${status}: ${snippet}` : `HTTP ${status}`
+        )));
+        return;
+      }
+      if (status < 200 || status >= 300 || (data && data.success === false)) {
+        const msg = normalizeApiErrorMessage(
+          status,
+          (data && (data.error || data.message)) || (raw ? raw.slice(0, 240) : `HTTP ${status}`)
+        );
+        const err = new Error(msg);
+        err.total_ms = totalMs;
+        if (data && data.backend_ms != null) err.backend_ms = data.backend_ms;
+        fail(err);
+        return;
+      }
+      if (!data || typeof data !== "object") data = { success: true };
+      data._total_ms = totalMs;
+      emit(100, "Done", "done");
+      try {
+        window.dispatchEvent(new CustomEvent("emp:timing", {
+          detail: { path, method: "POST", total_ms: totalMs,
+                    backend_ms: data.backend_ms, ok: true },
+        }));
+      } catch (_) { /* no-op */ }
+      ok(data);
+    };
+
+    try {
+      xhr.send(formData);
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+  return (async () => {
+    let lastErr = null;
+    for (const base of bases) {
+      try {
+        return await tryOne(base);
+      } catch (e) {
+        lastErr = e;
+        // Only retry other candidates on network / reachability failures.
+        const msg = String(e && e.message || e);
+        if (!/Network error|Failed to fetch|Cannot reach|timed out/i.test(msg)) throw e;
+      }
+    }
+    const tried = bases.join(", ");
+    throw lastErr || new Error(
+      `Cannot reach EMP API (${tried}). Start the backend with: bash webapp/scripts/start_local.sh`
+    );
+  })();
+}
+
+async function request(method, path, body = null, multipart = false, optsExtra = {}) {
+  const authHeaders = headers();
+  if (multipart) {
+    // Let the browser set multipart boundary; keep auth + session headers.
+    delete authHeaders["Content-Type"];
+  }
+  const opts = { method, headers: authHeaders };
   if (body && !multipart) opts.body = JSON.stringify(body);
   if (body && multipart) opts.body = body; // FormData
+
+  const timeoutMs = Number(optsExtra.timeoutMs);
+  let abortTimer = null;
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0 && typeof AbortController !== "undefined") {
+    const ac = new AbortController();
+    opts.signal = ac.signal;
+    abortTimer = setTimeout(() => ac.abort(), timeoutMs);
+  }
 
   const bases = resolveApiCandidates();
   const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
   let res = null;
   let lastErr = null;
-  for (const base of bases) {
-    try {
-      res = await fetch(`${base}${path}`, opts);
-      break;
-    } catch (e) {
-      lastErr = e;
+  try {
+    for (const base of bases) {
+      try {
+        res = await fetch(`${base}${path}`, opts);
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (e && (e.name === "AbortError" || /aborted/i.test(String(e.message || e)))) {
+          throw new Error(
+            `Request timed out after ${Math.round(timeoutMs / 60000)} min (${path}). ` +
+            "Large BAM MACS/annotate jobs can take longer — retry, or check api.log / macs_callpeak.err.log."
+          );
+        }
+      }
     }
+  } finally {
+    if (abortTimer) clearTimeout(abortTimer);
   }
-  if (!res) throw lastErr || new Error("Failed to fetch");
+  if (!res) {
+    const tried = bases.join(", ");
+    throw new Error(
+      `Cannot reach EMP API (${tried}). Start the backend with: bash webapp/scripts/start_local.sh`
+    );
+  }
   const totalMs = ((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0);
   const ct = res.headers.get("content-type") || "";
 
   if (ct.includes("application/json")) {
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      const err = new Error(`Server returned invalid JSON (HTTP ${res.status}). ${String(parseErr.message || parseErr)}`);
+      err.total_ms = Math.round(totalMs);
+      throw err;
+    }
     if (!res.ok || data.success === false) {
-      const err = new Error(data.error || data.message || `HTTP ${res.status}`);
+      const msg = normalizeApiErrorMessage(
+        res.status,
+        data.error || data.message || `HTTP ${res.status}`
+      );
+      const err = new Error(msg);
       err.total_ms = Math.round(totalMs);
       err.backend_ms = data.backend_ms;
       throw err;
@@ -159,6 +385,7 @@ export async function optimizeRCode(params = {}) {
     workflow:    params.workflow ?? null,
     tab:         params.tab ?? null,
     source_code: params.source_code ?? params.code ?? "",
+    external_code: params.external_code ?? params.optimized_code ?? params.candidate_code ?? null,
     instruction: params.instruction ?? "",
     ui_context:  params.ui_context ?? null,
   });
@@ -241,26 +468,43 @@ export async function listExperiments() {
 }
 
 // ── IMPORT ────────────────────────────────────────
-export async function importData(formData) {
+/** Cache a pre-computed DE / marker CSV as session diff_raw_<experiment>.rds */
+export async function importDiffRaw(formData) {
+  if (!sessionId()) await createSession();
   const sid = sessionId();
-  if (!sid) await createSession();
+  const body = new FormData();
+  let sawSession = false;
+  for (const [key, value] of formData.entries()) {
+    if (key === "session_id") sawSession = true;
+    if (value instanceof File) {
+      body.append(
+        key,
+        new File([value], value.name || "diff.csv", {
+          type: "application/octet-stream",
+          lastModified: value.lastModified,
+        })
+      );
+    } else {
+      body.append(key, value);
+    }
+  }
+  if (!sawSession && sid) body.append("session_id", sid);
+  return request("POST", "/import/diff_raw", body, true);
+}
 
-  const url = new URL(`${API}/import`, window.location.href);
-  const params = new URLSearchParams({
-    session_id:      sessionId(),
-    experiment_name: formData.get("experiment_name") || "experiment",
-    data_type:       formData.get("data_type")       || "normal",
-    assay_name:      formData.get("assay_name")      || "counts",
-    start_level:     formData.get("start_level")     || "Species",
-    tax_sep:         formData.get("tax_sep")          || ";",
-  });
-  url.search = params.toString();
+export async function importData(formData) {
+  if (!sessionId()) await createSession();
+  const sid = sessionId();
 
   // Normalize file parts to application/octet-stream. Some browsers/Windows
   // stacks send text/csv or an empty Content-Type, which older Plumber
   // multipart configs failed to unwrap into uploadable bytes.
+  // Must go through request() so Bearer / X-Session-Id / API fallbacks apply
+  // (legacy raw fetch caused "Failed to fetch" / 401 on LAN auth builds).
   const body = new FormData();
+  let sawSession = false;
   for (const [key, value] of formData.entries()) {
+    if (key === "session_id") sawSession = true;
     if (value instanceof File) {
       body.append(
         key,
@@ -273,12 +517,9 @@ export async function importData(formData) {
       body.append(key, value);
     }
   }
+  if (!sawSession && sid) body.append("session_id", sid);
 
-  const res = await fetch(url.toString(), { method: "POST", body });
-  const data = await res.json();
-  if (!res.ok || data.success === false)
-    throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
+  return request("POST", "/import", body, true);
 }
 
 export async function listDemoDatasets() {
@@ -295,11 +536,7 @@ export async function importDemoDataset(datasetId, experimentName = null) {
 }
 
 export async function previewFile(formData) {
-  const res = await fetch(`${API}/preview`, { method: "POST", body: formData });
-  const data = await res.json();
-  if (!res.ok || data.success === false)
-    throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
+  return request("POST", "/preview", formData, true);
 }
 
 // ── SUMMARY ───────────────────────────────────────
@@ -778,31 +1015,145 @@ export async function chipValidate(experiment = null, params = {}) {
 
 export async function chipCallPeaks(params = {}) {
   const sid = sessionId();
-  return request("POST", "/workflows/chipseq/analyze/peaks", { session_id: sid, ...params });
+  // Match nginx/gateway 7200s; large treatment+control BAMs can take tens of minutes.
+  return request("POST", "/workflows/chipseq/analyze/peaks", { session_id: sid, ...params }, false, {
+    timeoutMs: 2 * 60 * 60 * 1000,
+  });
 }
 
 export async function chipAnnotate(params = {}) {
   const sid = sessionId();
-  return request("POST", "/workflows/chipseq/analyze/annotation", { session_id: sid, ...params });
+  return request("POST", "/workflows/chipseq/analyze/annotation", { session_id: sid, ...params }, false, {
+    timeoutMs: 60 * 60 * 1000,
+  });
 }
 
 export async function chipCrossOmics(params = {}) {
   const sid = sessionId();
-  return request("POST", "/workflows/chipseq/analyze/cross_omics", { session_id: sid, ...params });
+  return request("POST", "/workflows/chipseq/analyze/cross_omics", { session_id: sid, ...params }, false, {
+    timeoutMs: 60 * 60 * 1000,
+  });
+}
+
+/** Normalize upload File parts so Plumber multipart reliably unwraps bytes. */
+function asOctetStreamFile(file, fallbackName = "upload.bin") {
+  if (!(file instanceof File) && !(file instanceof Blob)) return file;
+  const name = (file instanceof File && file.name) ? file.name : fallbackName;
+  return new File([file], name, {
+    type: "application/octet-stream",
+    lastModified: file instanceof File ? file.lastModified : Date.now(),
+  });
+}
+
+export async function chipUploadPeaks(file, genome = "hs", preset = "chipseq_tf") {
+  if (!sessionId()) await createSession();
+  const sid = sessionId();
+  const fd = new FormData();
+  fd.append("session_id", sid || "");
+  fd.append("peak_file", asOctetStreamFile(file, "peaks.bed"));
+  fd.append("genome", genome);
+  fd.append("preset", preset);
+  return request("POST", "/workflows/chipseq/peaks/upload", fd, true);
+}
+
+export async function chipListPeaks() {
+  const sid = sessionId();
+  if (!sid) return { success: true, peak_files: [], active_peak_id: "", last_peaks: null };
+  return request("GET", `/workflows/chipseq/peaks/list?session_id=${encodeURIComponent(sid)}`);
+}
+
+export async function chipSelectPeak({ peak_id = null, peak_file = null } = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/peaks/select", {
+    session_id: sid,
+    peak_id,
+    peak_file,
+  });
 }
 
 export async function chipListBams() {
   const sid = sessionId();
+  if (!sid) return { files: [], n_treatment: 0, n_control: 0 };
   return request("GET", `/workflows/chipseq/bams/list?session_id=${encodeURIComponent(sid || "")}`);
 }
 
-export async function chipUploadBam(file, group = "t") {
+export async function chipUploadBam(file, group = "t", onProgress = null) {
+  // Same auth/session path as importData — missing session previously caused silent/401 failures.
+  if (!sessionId()) await createSession();
   const sid = sessionId();
+  const size = (file && typeof file.size === "number") ? file.size : 0;
+  // R/plumber multipart cannot parse bodies ≳2GiB ("long vectors not supported").
+  // Chunk anytime the file is large enough to risk memory/parser failure.
+  const CHUNK = 32 * 1024 * 1024; // 32 MiB
+  const SINGLESHOT_MAX = 1500 * 1024 * 1024; // 1.5 GiB soft cap
+  if (size > SINGLESHOT_MAX || size > CHUNK * 2) {
+    return chipUploadBamChunked(file, group, onProgress, CHUNK);
+  }
   const fd = new FormData();
-  fd.append("bam_file", file);
+  fd.append("bam_file", asOctetStreamFile(file, "alignment.bam"));
   fd.append("session_id", sid || "");
   fd.append("group", group);
-  return request("POST", "/workflows/chipseq/bams/upload", fd, true);
+  return requestMultipartWithProgress("/workflows/chipseq/bams/upload", fd, {
+    onProgress,
+    fileSizeBytes: size,
+    timeoutMs: uploadTimeoutMs(size),
+  });
+}
+
+async function chipUploadBamChunked(file, group = "t", onProgress = null, chunkSize = 32 * 1024 * 1024) {
+  const sid = sessionId();
+  const size = file.size || 0;
+  const name = (file && file.name) ? file.name : "alignment.bam";
+  const emit = (pct, message, phase) => {
+    if (!onProgress) return;
+    try { onProgress({ pct, message: message || "", phase: phase || "" }); }
+    catch (_) { /* ignore */ }
+  };
+  emit(1, "初始化分片上传…", "init");
+  const init = await request("POST", "/workflows/chipseq/bams/upload_init", {
+    session_id: sid,
+    filename: name,
+    group,
+    total_bytes: size,
+  });
+  if (init && init.session_id) {
+    try { localStorage.setItem("emp_session_id", init.session_id); } catch (_) { /* ignore */ }
+  }
+  const uploadId = init && init.upload_id;
+  if (!uploadId) throw new Error("分片上传初始化失败（无 upload_id）。");
+
+  const totalChunks = Math.max(1, Math.ceil(size / chunkSize));
+  let offset = 0;
+  for (let i = 0; i < totalChunks; i++) {
+    const end = Math.min(size, offset + chunkSize);
+    const blob = file.slice(offset, end);
+    const fd = new FormData();
+    fd.append("chunk", new File([blob], `${name}.part${i}`, { type: "application/octet-stream" }));
+    fd.append("session_id", sid || "");
+    fd.append("upload_id", uploadId);
+    fd.append("chunk_index", String(i));
+    // Map chunk bytes to 2–90%; leave 90–99 for finalize.
+    const basePct = 2 + Math.round((i / totalChunks) * 88);
+    await requestMultipartWithProgress("/workflows/chipseq/bams/upload_chunk", fd, {
+      fileSizeBytes: end - offset,
+      timeoutMs: uploadTimeoutMs(end - offset),
+      onProgress: (p) => {
+        const local = Math.max(0, Math.min(1, (p?.pct || 0) / 90));
+        const pct = Math.min(90, basePct + Math.round(local * (88 / totalChunks)));
+        emit(pct, `分片上传 ${i + 1}/${totalChunks}…`, "upload");
+      },
+    });
+    offset = end;
+    emit(Math.min(90, 2 + Math.round(((i + 1) / totalChunks) * 88)), `分片 ${i + 1}/${totalChunks} 完成`, "upload");
+  }
+
+  emit(92, "服务器合并分片…", "processing");
+  const done = await request("POST", "/workflows/chipseq/bams/upload_complete", {
+    session_id: sid,
+    upload_id: uploadId,
+  });
+  emit(100, "Done", "done");
+  return done;
 }
 
 export async function chipRegisterBams(entries) {
@@ -824,16 +1175,87 @@ export async function chipSetBamGroup(fileId, group) {
 
 export async function chipAnnotateFull(params = {}) {
   const sid = sessionId();
-  return request("POST", "/workflows/chipseq/analyze/annotation_full", { session_id: sid, ...params });
+  return request("POST", "/workflows/chipseq/analyze/annotation_full", { session_id: sid, ...params }, false, {
+    timeoutMs: 60 * 60 * 1000,
+  });
 }
 
 export async function chipRnaseqCoanalysis(params = {}) {
   const sid = sessionId();
-  return request("POST", "/workflows/chipseq/analyze/rnaseq_coanalysis", { session_id: sid, ...params });
+  return request("POST", "/workflows/chipseq/analyze/rnaseq_coanalysis", { session_id: sid, ...params }, false, {
+    timeoutMs: 60 * 60 * 1000,
+  });
+}
+
+export async function chipMicrobiomeCoanalysis(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/analyze/microbiome_coanalysis", { session_id: sid, ...params }, false, {
+    timeoutMs: 60 * 60 * 1000,
+  });
+}
+
+export async function chipMetabolomicsCoanalysis(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/analyze/metabolomics_coanalysis", { session_id: sid, ...params }, false, {
+    timeoutMs: 60 * 60 * 1000,
+  });
+}
+
+export async function chipClinicalCoanalysis(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/analyze/clinical_coanalysis", { session_id: sid, ...params }, false, {
+    timeoutMs: 60 * 60 * 1000,
+  });
+}
+
+export async function chipRecipePacks() {
+  return request("GET", "/workflows/chipseq/recipes/packs");
 }
 
 export async function chipMacsPresets() {
   return request("GET", "/workflows/chipseq/macs/presets");
+}
+
+export async function chipDownloadTable(filePath) {
+  const sid = sessionId();
+  return request(
+    "GET",
+    `/workflows/chipseq/tables/download?session_id=${encodeURIComponent(sid || "")}&file_path=${encodeURIComponent(filePath || "")}`
+  );
+}
+
+export async function chipDownstreamCatalog() {
+  return request("GET", "/workflows/chipseq/downstream/catalog");
+}
+
+export async function chipPeakQc(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/peak_qc", { session_id: sid, ...params });
+}
+
+export async function chipToolsStatus() {
+  return request("GET", "/workflows/chipseq/tools/status");
+}
+
+export async function chipHomer(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/analyze/homer", { session_id: sid, ...params });
+}
+
+export async function chipDiffBind(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/analyze/diffbind", { session_id: sid, ...params });
+}
+
+export async function chipDeepTools(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/analyze/deeptools", { session_id: sid, ...params });
+}
+
+/** Peak set ops: blacklist|merge|summit|overlap|idr|promoter|enhancer|super_enhancer|broad|bivalent|chromatin_proxy */
+export async function chipPeaksOps(params = {}) {
+  const sid = sessionId();
+  return request("POST", "/workflows/chipseq/analyze/peaks_ops", { session_id: sid, ...params });
 }
 
 // ── EXPORT ────────────────────────────────────────
@@ -935,4 +1357,41 @@ export async function teachingSaveJournal(payload) {
 
 export async function teachingReport() {
   return request("GET", "/teaching/report");
+}
+
+// ── GITHUB COURSE SYNC ────────────────────────────
+export async function githubAssignments() {
+  return request("GET", "/github/assignments");
+}
+
+export async function githubRegister(payload) {
+  return request("POST", "/github/register", payload);
+}
+
+export async function githubLogin(payload) {
+  return request("POST", "/github/login", payload);
+}
+
+export async function githubLogout() {
+  return request("POST", "/github/logout", {});
+}
+
+export async function githubStatus() {
+  return request("GET", "/github/status");
+}
+
+export async function githubBind(payload) {
+  return request("POST", "/github/bind", payload);
+}
+
+export async function githubUnbind() {
+  return request("POST", "/github/unbind", {});
+}
+
+export async function githubSync(payload) {
+  return request("POST", "/github/sync", payload);
+}
+
+export async function githubSyncs() {
+  return request("GET", "/github/syncs");
 }

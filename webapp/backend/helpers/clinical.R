@@ -12,13 +12,20 @@
 # ============================================================================
 
 .clin_norm_id <- function(x) {
+  # Align clinical (AK/BK/CJ/DJ_XYL_F_0001) with 16S (J/K_XYL_F_0001_01):
+  # - strip only short technical suffixes (_01/_02), keep patient numbers (_0001)
+  # - map longitudinal clinical prefixes to microbiome disease letter (A/BK→K, C/DJ→J)
   x <- toupper(trimws(as.character(x)))
   x <- gsub("\\.", "_", x)
   x <- sub("^X_", "", x)
   x <- sub("^X([A-Z])_", "\\1_", x)
   x <- gsub("_+", "_", x)
-  x <- sub("_[0-9]+$", "", x)
-  x <- sub("^[A-Z]([A-Z]_XYL_)", "\\1", x)
+  x <- sub("_[0-9]{1,2}$", "", x)
+  x <- sub("^A([KJ])_", "\\1_", x)
+  x <- sub("^B([KJ])_", "\\1_", x)
+  x <- sub("^C([KJ])_", "\\1_", x)
+  x <- sub("^D([KJ])_", "\\1_", x)
+  x <- sub("^[A-Z]([KJ]_XYL_)", "\\1", x)
   x
 }
 
