@@ -343,11 +343,7 @@ github_get_assignment <- function(track_id, assignment_id,
 }
 
 .github_class_homework_repo_url <- function() {
-  url <- trimws(Sys.getenv("EMP_CLASS_HOMEWORK_REPO", unset = ""))
-  if (!nzchar(url)) {
-    url <- "https://github.com/xielab2017/Bioinformatics_homework_XieLiwei"
-  }
-  url
+  trimws(Sys.getenv("EMP_CLASS_HOMEWORK_REPO", unset = ""))
 }
 
 .github_class_github_token <- function() {
@@ -355,18 +351,29 @@ github_get_assignment <- function(track_id, assignment_id,
 }
 
 github_class_config <- function() {
-  parsed <- .github_parse_repo(.github_class_homework_repo_url())
+  class_url <- .github_class_homework_repo_url()
+  if (!nzchar(class_url)) {
+    return(list(
+      class_homework_repo = "",
+      owner = NULL,
+      repo = NULL,
+      has_class_token = FALSE,
+      configured = FALSE
+    ))
+  }
+  parsed <- .github_parse_repo(class_url)
   list(
-    class_homework_repo = .github_class_homework_repo_url(),
+    class_homework_repo = class_url,
     owner = parsed$owner,
     repo = parsed$repo,
-    has_class_token = nzchar(.github_class_github_token())
+    has_class_token = nzchar(.github_class_github_token()),
+    configured = TRUE
   )
 }
 
 .github_is_class_repo_bound <- function(gh, cfg = NULL) {
   cfg <- cfg %||% github_class_config()
-  isTRUE(gh$bound) &&
+  isTRUE(cfg$configured) && isTRUE(gh$bound) &&
     identical(as.character(gh$owner %||% ""), as.character(cfg$owner)) &&
     identical(as.character(gh$repo %||% ""), as.character(cfg$repo))
 }
@@ -414,6 +421,19 @@ github_ensure_class_repo <- function(identity) {
   need_pat <- FALSE
   connection_pushed <- FALSE
   connection_error <- NULL
+
+  if (!isTRUE(cfg$configured)) {
+    bound <- isTRUE(gh$bound)
+    return(list(
+      success = TRUE,
+      class_homework_repo = "",
+      github_bound = bound,
+      auto_bound = FALSE,
+      need_pat = !bound,
+      connection_pushed = FALSE,
+      student = .github_public_profile(profile)
+    ))
+  }
 
   push_conn <- function(idty) {
     tryCatch({
@@ -637,8 +657,9 @@ github_logout_student <- function(student_token) {
 }
 
 github_bind_repo <- function(identity, repo_url, github_token, branch = NULL) {
-  # Classroom fixed destination — ignore personal repo URLs.
-  parsed <- .github_parse_repo(.github_class_homework_repo_url())
+  # Bind the repository explicitly provided by the user. A configured class
+  # repository still uses this function by passing its URL during auto-bind.
+  parsed <- .github_parse_repo(repo_url)
   token <- trimws(as.character(github_token %||% ""))
   if (!nzchar(token)) stop("请提供 GitHub Personal Access Token。")
   info <- .github_validate_token_repo(token, parsed$owner, parsed$repo)
@@ -853,7 +874,7 @@ github_status <- function(identity) {
     "EMP_WEB_VERSION",
     unset = tryCatch(
       as.character(utils::packageVersion("EasyMultiProfiler")),
-      error = function(e) "9.0.3"
+      error = function(e) "9.0.4"
     )
   )
 }

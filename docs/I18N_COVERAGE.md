@@ -1,4 +1,4 @@
-# I18N coverage (v9.0.3)
+# I18N coverage (v9.0.4)
 
 Locale modes: **自动 / Auto**, **中文**, **EN**.
 

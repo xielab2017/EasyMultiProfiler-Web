@@ -10,7 +10,7 @@
 - Promotes the Education / V9 web stack to **GitHub `main`** with internal version **9.0.3**.
 - One-line installers default to branch `main` (macOS/Linux `.sh`, Windows `.ps1`).
 - UI / API / GitHub sync report `9.0.3` via `EMP_WEB_VERSION` (default `9.0.3`).
-- Continues classroom homework sync to `xielab2017/Bioinformatics_homework_XieLiwei` when configured.
+- Supports an optional configured classroom repository; otherwise the repository field is blank and editable.
 - Includes ChIP-seq peak ops / recipe packs, RNA–ChIP co-analysis bridges, and i18n locale switching from the V9 line.
 
 ## Install

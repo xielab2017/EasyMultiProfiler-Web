@@ -8,8 +8,7 @@ const LS_ASSIGNMENT = "emp_github_assignment";
 const LS_CUSTOM_TRACK = "emp_github_custom_track";
 const LS_CUSTOM_ASG = "emp_github_custom_assignment";
 
-const DEFAULT_CLASS_REPO =
-  "https://github.com/xielab2017/Bioinformatics_homework_XieLiwei";
+const DEFAULT_REPO_URL = "";
 
 const TRACK_TITLE_KEYS = {
   microbiome_16s: "omics.microbiome_16s",
@@ -158,20 +157,20 @@ function updatePathPreview() {
   el.innerHTML = `${esc(prefix)} <code>${esc(path)}</code>`;
 }
 
-function prefillClassRepo(url) {
+function prefillRepo(url) {
   const input = $("gh-repo-url");
   if (!input) return;
-  const repoUrl = (url || DEFAULT_CLASS_REPO).trim() || DEFAULT_CLASS_REPO;
+  const repoUrl = String(url || DEFAULT_REPO_URL).trim();
   input.value = repoUrl;
-  input.readOnly = true;
-  input.setAttribute("aria-readonly", "true");
+  input.readOnly = false;
+  input.removeAttribute("aria-readonly");
   const hint = $("gh-repo-lock-hint");
-  if (hint) hint.textContent = t("github.classRepoLocked");
+  if (hint) hint.textContent = t("github.repoUrlHint");
 }
 
 function applyAuthClassRepo(res) {
-  const classRepo = res?.class_homework_repo || DEFAULT_CLASS_REPO;
-  prefillClassRepo(classRepo);
+  const repoUrl = res?.student?.github?.html_url || res?.class_homework_repo || DEFAULT_REPO_URL;
+  prefillRepo(repoUrl);
   if (res?.student) _student = res.student;
   const bound = !!(res?.github_bound || (_student?.github && _student.github.bound));
   setPanelMode(bound ? "bound" : "logged_in");
@@ -265,13 +264,13 @@ async function refreshStatus() {
     _student = null;
     setPanelMode("auth");
     renderStudentChip();
-    prefillClassRepo(DEFAULT_CLASS_REPO);
+    prefillRepo(DEFAULT_REPO_URL);
     return;
   }
   try {
     const res = await API.githubStatus();
     _student = res.student;
-    prefillClassRepo(res.class_homework_repo || DEFAULT_CLASS_REPO);
+    prefillRepo(res?.student?.github?.html_url || res.class_homework_repo || DEFAULT_REPO_URL);
     const bound = !!(res.student && res.student.github && res.student.github.bound);
     setPanelMode(bound ? "bound" : "logged_in");
     renderStudentChip();
@@ -281,7 +280,7 @@ async function refreshStatus() {
     _student = null;
     setPanelMode("auth");
     renderStudentChip();
-    prefillClassRepo(DEFAULT_CLASS_REPO);
+    prefillRepo(DEFAULT_REPO_URL);
   }
 }
 
@@ -378,9 +377,13 @@ async function onLogout() {
 }
 
 async function onBind() {
-  const repo_url = ($("gh-repo-url")?.value || "").trim() || DEFAULT_CLASS_REPO;
+  const repo_url = ($("gh-repo-url")?.value || "").trim();
   const github_token = ($("gh-pat")?.value || "").trim();
   const branch = ($("gh-branch")?.value || "").trim() || null;
+  if (!repo_url) {
+    toast(t("github.needRepoUrl"), "error");
+    return;
+  }
   if (!github_token) {
     toast(t("github.needRepoToken"), "error");
     return;
@@ -390,7 +393,7 @@ async function onBind() {
     const res = await API.githubBind({ repo_url, github_token, branch });
     _student = res.student;
     if ($("gh-pat")) $("gh-pat").value = "";
-    prefillClassRepo(repo_url);
+    prefillRepo(repo_url);
     toast(t("github.bindOk"), "success");
     setPanelMode("bound");
     renderStudentChip();
@@ -514,7 +517,7 @@ export function applyGithubSyncI18n() {
     ["btn-gh-bind", "github.bind"],
     ["btn-gh-unbind", "github.unbind"],
     ["gh-assignment-hint", "github.assignmentHint"],
-    ["gh-repo-lock-hint", "github.classRepoLocked"],
+    ["gh-repo-lock-hint", "github.repoUrlHint"],
     ["gh-token-hint", "github.tokenHint"],
   ];
   for (const [id, key] of textMap) {
@@ -609,7 +612,7 @@ export async function initGithubSync() {
   fillAssignmentSelect();
 
   applyGithubSyncI18n();
-  prefillClassRepo(DEFAULT_CLASS_REPO);
+  prefillRepo(DEFAULT_REPO_URL);
   await refreshStatus();
   window.addEventListener("emp:locale-change", () => applyGithubSyncI18n());
   if (typeof lucide !== "undefined") lucide.createIcons();

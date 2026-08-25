@@ -1,14 +1,14 @@
-# EasyMultiProfiler Web · v9.0.3
+# EasyMultiProfiler Web · v9.0.4
 
-**正式版 main · 内部版本 9.0.3** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
+**Windows 发布版 · 内部版本 9.0.4** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
 
-![](https://img.shields.io/badge/version-9.0.3-1f6feb)
+![](https://img.shields.io/badge/version-9.0.4-1f6feb)
 ![](https://img.shields.io/badge/branch-main-0e8a16)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
 > **分支**：[`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)  
-> **版本**：`9.0.3`（GitHub 默认发布线）
+> **版本**：`9.0.4`
 
 ![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
 
@@ -18,12 +18,12 @@
 
 EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API + 静态前端 + EasyMultiProfiler 核心）。
 
-**v9.0.3** 面向科研与教学场景，学生与课程用户可以：
+**v9.0.4** 面向科研与教学场景，学生与课程用户可以：
 
 1. 在 **Course** 里按 case / 周次完成微课、测验与实操  
 2. 用 **学号 + 姓名（必填）+ 自设口令** 登录课程身份  
-3. 连接到课堂统一作业仓库 **xielab2017/Bioinformatics_homework_XieLiwei**（可选课堂 Token 自动绑定，否则学生填一次 PAT）  
-4. 在 **Export** 页一键把本周作业或期末项目同步到课堂仓库（**每次新建 run，保留历史**）  
+3. 填写并连接到自己有写权限的 GitHub 作业仓库  
+4. 在 **Export** 页一键把本周作业或期末项目同步到目标仓库（**每次新建 run，保留历史**）  
 5. 需要时仍可本地下载 CSV / PDF / RDS
 
 ![Student analysis to GitHub weekly sync](docs/images/emp-web-v8-github-sync.png)
@@ -89,9 +89,9 @@ bash webapp/scripts/start_local.sh
 
 ### 准备
 
-1. 课堂统一提交仓库：`https://github.com/xielab2017/Bioinformatics_homework_XieLiwei`（可用 `EMP_CLASS_HOMEWORK_REPO` 覆盖）  
-2. 部署端可选设置 `EMP_CLASS_GITHUB_TOKEN`（对课堂仓库有 Contents 写权限）→ 登录后自动绑定，学生无需粘贴 PAT  
-3. 若未配置课堂 Token：学生准备自己的 PAT（fine-grained，对该课堂仓库 **Contents: Read and write**）  
+1. 学生在 Export 页填写自己的 GitHub 仓库 URL  
+2. 部署端也可选设置 `EMP_CLASS_HOMEWORK_REPO` 与 `EMP_CLASS_GITHUB_TOKEN`，用于指定统一仓库并自动绑定  
+3. 未配置统一仓库时，学生准备自己的 PAT（fine-grained，对目标仓库 **Contents: Read and write**）  
 4. （可选）设置 `EMP_GITHUB_SECRET_KEY`，用于加密存储 Token  
 
 ### 操作步骤
@@ -184,7 +184,7 @@ EMP2026/
 | [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Windows 安装 |
 | [docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md) | 用户操作指南 |
 | [docs/CHIP_OPS_GUIDE.md](docs/CHIP_OPS_GUIDE.md) | ChIP-seq / CUT&RUN Step1+Step2 操作路径 |
-| [docs/RELEASE_NOTES_v9.0.3.md](docs/RELEASE_NOTES_v9.0.3.md) | 本版说明 |
+| [docs/RELEASE_NOTES_v9.0.4.md](docs/RELEASE_NOTES_v9.0.4.md) | 本版说明 |
 | [CHANGELOG_V7.md](CHANGELOG_V7.md) | V7 变更 |
 
 网页内左侧 **Guide** / **Course** 也有交互说明。
@@ -200,7 +200,7 @@ EasyMultiProfiler-Web/
 ├── docs/
 │   ├── images/                 # README 配图（banner / sync / architecture PNG）
 │   ├── TECHNICAL_MODE_V9_EDUCATION.svg
-│   └── RELEASE_NOTES_v9.0.3.md
+│   └── RELEASE_NOTES_v9.0.4.md
 └── webapp/
     ├── backend/helpers/github_sync.R
     ├── data/course_assignments.json

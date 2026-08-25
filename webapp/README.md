@@ -1,4 +1,4 @@
-# EasyMultiProfiler Webapp — v9.0.3 (main)
+# EasyMultiProfiler Webapp — v9.0.4 (Windows)
 
 Browser UI + Plumber API for EasyMultiProfiler. Includes course weekly sync to GitHub.
 
@@ -35,4 +35,4 @@ Stop (same ports/PIDs as start):
 - Bind personal GitHub repo + PAT
 - Sync weekly / final project runs from the **Export** page
 
-See the root [README.md](../README.md) and [docs/RELEASE_NOTES_v9.0.3.md](../docs/RELEASE_NOTES_v9.0.3.md).
+See the root [README.md](../README.md) and [docs/RELEASE_NOTES_v9.0.4.md](../docs/RELEASE_NOTES_v9.0.4.md).

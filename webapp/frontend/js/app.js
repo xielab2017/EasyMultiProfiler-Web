@@ -24,7 +24,7 @@ import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=nav-active
 import { applyPagesI18n } from "./i18n_pages.js?v=nav-active-fix-v1";
 import { initFontScale } from "./font_scale.js?v=nav-active-fix-v1";
 import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
-import { initGithubSync } from "./github_sync.js?v=nav-active-fix-v1";
+import { initGithubSync } from "./github_sync.js?v=editable-repo-v1";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -7834,7 +7834,7 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
     document.querySelectorAll(".ai-copilot-btn-label").forEach((el) => {
       el.textContent = t("copilot.btn");
     });
-    import("./github_sync.js?v=nav-active-fix-v1").then((m) => m.applyGithubSyncI18n?.());
+    import("./github_sync.js?v=editable-repo-v1").then((m) => m.applyGithubSyncI18n?.());
     // Re-apply page bindings after other locale listeners (Code Lab, etc.).
     try {
       applyPagesI18n();
