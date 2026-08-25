@@ -1,4 +1,4 @@
-# install_r.ps1 — Download + silently install R for Windows from CRAN.
+﻿# install_r.ps1 — Download + silently install R for Windows from CRAN.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File install_r.ps1

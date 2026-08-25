@@ -1,10 +1,11 @@
-# Daily Windows launcher: V7 aware — auto-installs R + python3 if missing.
+﻿# Daily Windows launcher: V7 aware — auto-installs R + python3 if missing.
 # Usage:
 #   powershell -File webapp\scripts\launch_emp_web.ps1
 #   powershell -File webapp\scripts\launch_emp_web.ps1 -Repair
 param(
   [switch]$Repair,
   [switch]$NoPause,
+  [switch]$NoBrowser,
   [switch]$CreateDesktopShortcut
 )
 
@@ -12,6 +13,7 @@ $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\windows_r_utils.ps1"
 Initialize-EMPPaths $PSScriptRoot
 $Root = Get-EMPRepoRoot
+Import-EMPRuntimeConfig
 
 $InstallDir = Join-Path $Root "webapp\scripts\install"
 
@@ -21,7 +23,10 @@ if ($null -eq $isWinPS) {
   $isWinPS = ($env:OS -eq 'Windows_NT') -or [System.Environment]::OSVersion.Platform -eq 'Win32NT'
 }
 if (-not $isWinPS) {
-  Write-Host "[emp-install] Detected host OS: $($IsLinux ? 'linux' : ($IsMacOS ? 'macos' : 'unknown'))"
+  $hostOsName = "unknown"
+  if ($IsLinux) { $hostOsName = "linux" }
+  elseif ($IsMacOS) { $hostOsName = "macos" }
+  Write-Host "[emp-install] Detected host OS: $hostOsName"
   Write-Host "[emp-install] Handing off to launch_emp_web.sh"
   $argsLine = if ($Repair) { " --repair" } else { "" }
   & bash -c "bash '$PSScriptRoot/launch_emp_web.sh'$argsLine"
@@ -58,8 +63,14 @@ try {
   if ($Repair) {
     $needInstall = $true
   } else {
-    & $RscriptExe -e "quit(status=if (requireNamespace('EasyMultiProfiler', quietly=TRUE)) 0 else 1)" 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    # Windows PowerShell 5.1 converts harmless native stderr warnings from R
+    # into NativeCommandError when ErrorActionPreference is Stop.
+    $savedErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $RscriptExe --vanilla -e "quit(status=if (requireNamespace('EasyMultiProfiler', quietly=TRUE)) 0 else 1)" 2>$null
+    $packageCheckExit = $LASTEXITCODE
+    $ErrorActionPreference = $savedErrorActionPreference
+    if ($packageCheckExit -ne 0) {
       $needInstall = $true
       Write-Host "[launch] EasyMultiProfiler not found — first-time install (15–40 min)."
     }
@@ -67,14 +78,22 @@ try {
 
   if ($needInstall -and $env:EMP_SKIP_INSTALL -ne "1") {
     $installR = Join-Path $Root "webapp\scripts\install_runtime.R"
+    $savedErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & $RscriptExe $installR
-    if ($LASTEXITCODE -ne 0) { throw "install_runtime.R failed (exit $LASTEXITCODE)." }
+    $installExit = $LASTEXITCODE
+    $ErrorActionPreference = $savedErrorActionPreference
+    if ($installExit -ne 0) { throw "install_runtime.R failed (exit $installExit)." }
   }
 
-  & "$PSScriptRoot\start_local_windows.ps1"
+  if ($NoBrowser) {
+    & "$PSScriptRoot\start_local_windows.ps1" -NoBrowser
+  } else {
+    & "$PSScriptRoot\start_local_windows.ps1"
+  }
   Write-Host ""
   Write-Host "Frontend + backend are running in the background."
-  Write-Host "Close this window to keep them running."
+  Write-Host "You may close this window; the services will keep running."
   Write-Host "Stop: double-click Stop-EMP-Web-Windows.bat"
   Write-Host "  or: powershell -File webapp\scripts\stop_local_windows.ps1"
 
@@ -84,9 +103,12 @@ try {
   }
 }
 catch {
+  $failureMessage = $_.Exception.Message
+  if (-not $failureMessage) { $failureMessage = ($_ | Out-String).Trim() }
+  if (-not $failureMessage) { $failureMessage = "Unknown PowerShell error." }
   Write-Host ""
   Write-Host "========================================================"
-  Write-Host "  Start failed: $($_.Exception.Message)"
+  Write-Host "  Start failed: $failureMessage"
   Write-Host "  Try: Run-EMP-Web-Windows.bat -Repair"
   Write-Host "  Or:  Repair-and-Start-EMP-Web.bat"
   Write-Host "  Or:  Start-EMP-Panel.bat  (button UI)"

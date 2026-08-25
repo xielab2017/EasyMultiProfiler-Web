@@ -1,4 +1,4 @@
-# emp_control_panel.ps1 — Windows click-to-start panel (API + frontend together).
+﻿# emp_control_panel.ps1 — Windows click-to-start panel (API + frontend together).
 # Double-click companion: Start-EMP-Panel.bat  or  create desktop shortcut.
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms
@@ -7,6 +7,7 @@ Add-Type -AssemblyName System.Drawing
 . "$PSScriptRoot\windows_r_utils.ps1"
 Initialize-EMPPaths $PSScriptRoot
 $Root = Get-EMPRepoRoot
+Import-EMPRuntimeConfig
 $ApiPort = if ($env:API_PORT) { $env:API_PORT } else { "8000" }
 $WebPort = if ($env:WEB_PORT) { $env:WEB_PORT } else { "8080" }
 
@@ -86,7 +87,7 @@ $btnStart.Add_Click({
     $launch = Join-Path $PSScriptRoot "launch_emp_web.ps1"
     # Separate process so the button UI stays alive while R/Python boot.
     $p = Start-Process -FilePath "powershell.exe" `
-      -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $launch, "-NoPause", "-CreateDesktopShortcut") `
+      -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (ConvertTo-EMPProcessArgument $launch), "-NoPause", "-CreateDesktopShortcut") `
       -WorkingDirectory $Root `
       -Wait `
       -PassThru `

@@ -1,34 +1,26 @@
-# Note: $ErrorActionPreference is intentionally NOT set to "Stop" here.
-# This script is called from bootstrap_and_start.ps1 which already wraps
-# each step in error handling; we want clear Write-Error messages here
-# without throwing on the first hiccup.
+﻿# Starts the Plumber backend and static frontend on Windows.
+param(
+  [switch]$NoBrowser,
+  [ValidateRange(10, 600)][int]$StartupTimeoutSeconds = 180
+)
+
+$ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot\windows_r_utils.ps1"
 Initialize-EMPPaths $PSScriptRoot
 $Root = Get-EMPRepoRoot
-
-$RuntimeConfig = Join-Path $Root "webapp\config\runtime.env"
-if (Test-Path $RuntimeConfig) {
-  Get-Content $RuntimeConfig | ForEach-Object {
-    $line = $_.Trim()
-    if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) { return }
-    $parts = $line.Split("=", 2)
-    $name = $parts[0].Trim()
-    if ($name -and -not [Environment]::GetEnvironmentVariable($name, "Process")) {
-      [Environment]::SetEnvironmentVariable($name, $parts[1].Trim(), "Process")
-    }
-  }
-}
+Import-EMPRuntimeConfig
 
 $ApiPort = if ($env:API_PORT) { $env:API_PORT } else { "8000" }
 $WebPort = if ($env:WEB_PORT) { $env:WEB_PORT } else { "8080" }
-$ApiHost = if ($env:API_HOST) { $env:API_HOST } else { "0.0.0.0" }
-$WebHost = if ($env:WEB_HOST) { $env:WEB_HOST } else { "0.0.0.0" }
+$ApiHost = if ($env:API_HOST) { $env:API_HOST } else { "127.0.0.1" }
+$WebHost = if ($env:WEB_HOST) { $env:WEB_HOST } else { "127.0.0.1" }
 $EmpAllowedRoots = if ($env:EMP_ALLOWED_ROOTS) { $env:EMP_ALLOWED_ROOTS } else { Join-Path $Root "tests" }
 $EmpEnableUserR = if ($env:EMP_ENABLE_USER_R) { $env:EMP_ENABLE_USER_R } else { "false" }
 $EmpCorsOrigin = if ($env:EMP_CORS_ORIGIN) { $env:EMP_CORS_ORIGIN } else { "reflect-private" }
 $EmpApiToken = if ($env:EMP_API_TOKEN) { $env:EMP_API_TOKEN } else { "" }
 $RunDir = Join-Path $Root ".local_run"
+$EmpDataDir = if ($env:EMP_DATA_DIR) { $env:EMP_DATA_DIR } else { Join-Path $RunDir "data" }
 $AuthJs = Join-Path $Root "webapp\frontend\js\runtime_auth.local.js"
 
 function Test-EmpLoopbackHost([string]$HostName) {
@@ -61,10 +53,11 @@ if (-not (Test-EmpLoopbackHost $ApiHost)) {
   if (Test-Path $AuthJs) { Remove-Item $AuthJs -Force -ErrorAction SilentlyContinue }
 }
 
-# Refresh PATH for any install that happened in a different PowerShell window
-# or via winget in this session.
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-            [System.Environment]::GetEnvironmentVariable("Path","User")
+# Refresh PATH for installs made in another window while preserving overrides
+# already supplied by runtime.env or by the caller.
+$machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+$userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+$env:Path = (@($env:Path, $machinePath, $userPath) | Where-Object { $_ }) -join ";"
 
 $RscriptExe = Resolve-EMPRscriptExe
 if (-not $RscriptExe) {
@@ -96,6 +89,7 @@ $ApiPid = Join-Path $RunDir "api.pid"
 $WebPid = Join-Path $RunDir "web.pid"
 
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
+New-Item -ItemType Directory -Force -Path $EmpDataDir | Out-Null
 
 function Stop-PidFile($pidFile) {
   if (Test-Path $pidFile) {
@@ -121,7 +115,7 @@ function Show-EmpTailLog([string]$Path, [string]$Label) {
     Write-Host "--- $Label (tail) ---"
     Get-Content -Path $Path -Tail 40 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
   } else {
-    Write-Host "--- $Label: (log not created) ---"
+    Write-Host "--- ${Label}: (log not created) ---"
   }
 }
 
@@ -139,6 +133,7 @@ $env:EMP_ENABLE_USER_R = $EmpEnableUserR
 $env:EMP_API_TOKEN = $EmpApiToken
 $env:EMP_CORS_ORIGIN = $EmpCorsOrigin
 $env:EMP_ROOT = $Root
+$env:EMP_DATA_DIR = $EmpDataDir
 $env:NO_PROXY = "*"
 $env:no_proxy = "*"
 
@@ -147,8 +142,9 @@ $ApiErrLog = Join-Path $RunDir "api.err.log"
 $WebErrLog = Join-Path $RunDir "web.err.log"
 $apiScript = Join-Path $Root "webapp\backend\run_api.R"
 # Direct Start-Process (not nested powershell) so both sides stay alive after the bat exits.
+$apiArgs = @("--vanilla", (ConvertTo-EMPProcessArgument $apiScript))
 $apiProc = Start-Process -FilePath $RscriptExe `
-  -ArgumentList @($apiScript) `
+  -ArgumentList $apiArgs `
   -WorkingDirectory $Root `
   -WindowStyle Hidden `
   -RedirectStandardOutput $ApiLog `
@@ -160,9 +156,9 @@ $apiProc.Id | Out-File -FilePath $ApiPid -Encoding ascii -Force
 $webArgs = @()
 if ($PythonInfo.PrefixArgs) { $webArgs += $PythonInfo.PrefixArgs }
 $webArgs += @(
-  (Join-Path $Root "webapp\scripts\static_server.py"),
+  (ConvertTo-EMPProcessArgument (Join-Path $Root "webapp\scripts\static_server.py")),
   "$WebPort",
-  (Join-Path $Root "webapp\frontend"),
+  (ConvertTo-EMPProcessArgument (Join-Path $Root "webapp\frontend")),
   "$WebHost"
 )
 $webProc = Start-Process -FilePath $PythonInfo.Exe `
@@ -178,26 +174,26 @@ $webProc.Id | Out-File -FilePath $WebPid -Encoding ascii -Force
 # Wait until BOTH are healthy before opening the browser (R load can take 30–90s).
 $healthUrl = "http://127.0.0.1:$ApiPort/api/health"
 $webUrl = "http://127.0.0.1:$WebPort/"
-$deadline = (Get-Date).AddSeconds(120)
+$deadline = (Get-Date).AddSeconds($StartupTimeoutSeconds)
 $apiReady = $false
 $webReady = $false
 while ((Get-Date) -lt $deadline) {
-  if (-not $apiReady) { $apiReady = Test-EmpHttpOk $healthUrl }
-  if (-not $webReady) { $webReady = Test-EmpHttpOk $webUrl }
-  if ($apiReady -and $webReady) { break }
-
   $apiProc.Refresh()
   $webProc.Refresh()
-  if ($apiProc.HasExited -and -not $apiReady) {
+  if ($apiProc.HasExited) {
     Show-EmpTailLog $ApiLog "API stdout"
     Show-EmpTailLog $ApiErrLog "API stderr"
     throw "API process exited before becoming ready (exit $($apiProc.ExitCode))."
   }
-  if ($webProc.HasExited -and -not $webReady) {
+  if ($webProc.HasExited) {
     Show-EmpTailLog $WebLog "Web stdout"
     Show-EmpTailLog $WebErrLog "Web stderr"
     throw "Frontend process exited before becoming ready (exit $($webProc.ExitCode))."
   }
+
+  if (-not $apiReady) { $apiReady = Test-EmpHttpOk $healthUrl }
+  if (-not $webReady) { $webReady = Test-EmpHttpOk $webUrl }
+  if ($apiReady -and $webReady) { break }
   Start-Sleep -Seconds 1
 }
 
@@ -210,37 +206,25 @@ if (-not $apiReady -or -not $webReady) {
     Show-EmpTailLog $WebLog "Web stdout"
     Show-EmpTailLog $WebErrLog "Web stderr"
   }
-  throw "Startup incomplete after 120s. API ready=$apiReady Frontend ready=$webReady"
+  throw "Startup incomplete after ${StartupTimeoutSeconds}s. API ready=$apiReady Frontend ready=$webReady"
 }
 
 Write-Host "API health OK:      $healthUrl"
 Write-Host "Frontend OK:         $webUrl"
-Start-Process $webUrl
+if (-not $NoBrowser -and $env:EMP_NO_BROWSER -ne "1") {
+  Start-Process $webUrl
+}
 Write-Host "EasyMultiProfiler Web (本机): http://127.0.0.1:$WebPort"
 Write-Host "API health (本机):            http://127.0.0.1:$ApiPort/api/health"
-Write-Host "Bind: API $ApiHost:$ApiPort · Web $WebHost:$WebPort"
-try {
-  $lan = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
-    $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown'
-  } | Select-Object -First 1 -ExpandProperty IPAddress)
-  if ($lan) {
-    Write-Host "Frontend (局域网): http://${lan}:$WebPort"
-    Write-Host "API (局域网):      http://${lan}:$ApiPort/api/health"
-  }
-} catch {}
-$ts = Get-Command tailscale -ErrorAction SilentlyContinue
-if ($ts) {
+Write-Host "Bind: API ${ApiHost}:$ApiPort · Web ${WebHost}:$WebPort"
+if (-not (Test-EmpLoopbackHost $ApiHost) -or -not (Test-EmpLoopbackHost $WebHost)) {
   try {
-    $tsIp = (& tailscale ip -4 2>$null | Select-Object -First 1)
-    if ($tsIp) {
-      Write-Host "Frontend (Tailscale): http://${tsIp}:$WebPort"
-      Write-Host "API (Tailscale):      http://${tsIp}:$ApiPort/api/health"
-    } else {
-      Write-Host "Tailscale installed but offline. Run: tailscale up"
+    $lan = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
+      $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown'
+    } | Select-Object -First 1 -ExpandProperty IPAddress)
+    if ($lan) {
+      Write-Host "Frontend (局域网): http://${lan}:$WebPort"
+      Write-Host "API (局域网):      http://${lan}:$ApiPort/api/health"
     }
-  } catch {
-    Write-Host "Tailscale installed but offline. Run: tailscale up"
-  }
-} else {
-  Write-Host "Tailscale not found. Install from https://tailscale.com/download then: tailscale up"
+  } catch {}
 }

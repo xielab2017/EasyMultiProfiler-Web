@@ -1,22 +1,10 @@
-# Stop local API (Plumber), static web, and optional gateway started by start_local_windows.ps1 / launch_emp_web.ps1.
+﻿# Stop local API (Plumber), static web, and optional gateway started by start_local_windows.ps1 / launch_emp_web.ps1.
 $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot\windows_r_utils.ps1"
 Initialize-EMPPaths $PSScriptRoot
 $Root = Get-EMPRepoRoot
-
-$RuntimeConfig = Join-Path $Root "webapp\config\runtime.env"
-if (Test-Path $RuntimeConfig) {
-  Get-Content $RuntimeConfig | ForEach-Object {
-    $line = $_.Trim()
-    if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) { return }
-    $parts = $line.Split("=", 2)
-    $name = $parts[0].Trim()
-    if ($name -and -not [Environment]::GetEnvironmentVariable($name, "Process")) {
-      [Environment]::SetEnvironmentVariable($name, $parts[1].Trim(), "Process")
-    }
-  }
-}
+Import-EMPRuntimeConfig
 
 $RunDir = Join-Path $Root ".local_run"
 $ApiPid = Join-Path $RunDir "api.pid"

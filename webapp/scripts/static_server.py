@@ -2,8 +2,7 @@
 """Static file server with HTTP Range support (needed for <video> seeking/Safari).
 
 Usage: python3 static_server.py [port] [directory] [host]
-Defaults: port 8080, directory webapp/frontend, host 0.0.0.0
-  (bind all interfaces so LAN / Tailscale clients can reach the UI)
+Defaults: port 8080, directory webapp/frontend, host 127.0.0.1
 
 Env overrides:
   WEB_PORT, WEB_DIR, WEB_HOST
@@ -75,15 +74,23 @@ class RangeHandler(SimpleHTTPRequestHandler):
         self._range = None
 
 
+class EMPThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
 def main():
     port = int(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("WEB_PORT", "8080"))
     directory = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("WEB_DIR", "webapp/frontend")
-    host = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("WEB_HOST", "0.0.0.0")
+    host = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("WEB_HOST", "127.0.0.1")
     if not str(host).strip():
-        host = "0.0.0.0"
+        host = "127.0.0.1"
+    directory = os.path.abspath(directory)
+    if not os.path.isdir(directory):
+        raise SystemExit(f"Frontend directory not found: {directory}")
     handler = partial(RangeHandler, directory=directory)
-    httpd = ThreadingHTTPServer((host, port), handler)
-    print(f"Serving {directory} on {host}:{port} (Range enabled)")
+    httpd = EMPThreadingHTTPServer((host, port), handler)
+    print(f"Serving {directory} on {host}:{port} (Range enabled)", flush=True)
     httpd.serve_forever()
 
 

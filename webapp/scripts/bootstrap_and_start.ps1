@@ -1,4 +1,4 @@
-# bootstrap_and_start.ps1 — V7 zero-dep one-shot installer (Windows).
+﻿# bootstrap_and_start.ps1 — V7 zero-dep one-shot installer (Windows).
 #
 # Steps:
 #   1. Install git + python3 if missing          (install_system_deps.ps1)
@@ -12,7 +12,8 @@
 #   $env:EMP_SKIP_DEPS      = "1"     skip system-deps auto-install
 #   $env:EMP_R_VERSION      = "x.y.z" pin a specific R release
 param(
-  [switch]$NoStart
+  [switch]$NoStart,
+  [switch]$NoBrowser
 )
 
 $ErrorActionPreference = "Continue"  # do not abort on individual step errors; we want clean messages
@@ -22,6 +23,7 @@ $InstallDir = Join-Path $ScriptsDir "install"
 $RepoRoot   = Resolve-Path (Join-Path $ScriptsDir "..\..")
 . "$ScriptsDir\windows_r_utils.ps1"
 Initialize-EMPPaths $ScriptsDir
+Import-EMPRuntimeConfig
 
 function Write-Step { param($m) Write-Host "[bootstrap] $m" -ForegroundColor Cyan }
 function Write-Ok   { param($m) Write-Host "[emp-ok] $m" -ForegroundColor Green }
@@ -36,7 +38,10 @@ if ($null -eq $isWinPS) {
   $isWinPS = ($env:OS -eq 'Windows_NT') -or [System.Environment]::OSVersion.Platform -eq 'Win32NT'
 }
 if (-not $isWinPS) {
-  Write-Host "[emp-install] Detected host OS: $($IsLinux ? 'linux' : ($IsMacOS ? 'macos' : 'unknown'))"
+  $hostOsName = "unknown"
+  if ($IsLinux) { $hostOsName = "linux" }
+  elseif ($IsMacOS) { $hostOsName = "macos" }
+  Write-Host "[emp-install] Detected host OS: $hostOsName"
   Write-Host "[emp-install] Handing off to bootstrap_and_start.sh"
   $bashCmd = "bash '$ScriptsDir/bootstrap_and_start.sh'"
   & bash -c $bashCmd
@@ -71,10 +76,9 @@ if ($env:EMP_SKIP_DEPS -ne "1") {
 # ── 2. R interpreter ───────────────────────────────────────────────────
 if ($env:EMP_SKIP_R_INSTALL -ne "1") {
   Write-Step "Step 2/4: install R (>= 4.3.3)"
-  & "$InstallDir\install_r.ps1" @{
-    Version = $(if ($env:EMP_R_VERSION) { $env:EMP_R_VERSION } else { "4.4.2" })
-    CranMirror = $(if ($env:EMP_R_MIRROR) { $env:EMP_R_MIRROR } else { "https://cran.r-project.org" })
-  }
+  $requestedRVersion = if ($env:EMP_R_VERSION) { $env:EMP_R_VERSION } else { "4.4.2" }
+  $requestedRMirror = if ($env:EMP_R_MIRROR) { $env:EMP_R_MIRROR } else { "https://cran.r-project.org" }
+  & "$InstallDir\install_r.ps1" -Version $requestedRVersion -CranMirror $requestedRMirror
   if ($LASTEXITCODE -ne 0) {
     Write-Err "install_r.ps1 failed (exit $LASTEXITCODE). See messages above."
     exit 1
@@ -107,7 +111,11 @@ Write-Ok "R packages + EMP installed."
 # ── 4. Start services ──────────────────────────────────────────────────
 if (-not $NoStart) {
   Write-Step "Step 4/4: start API + web UI"
-  & "$ScriptsDir\start_local_windows.ps1"
+  if ($NoBrowser) {
+    & "$ScriptsDir\start_local_windows.ps1" -NoBrowser
+  } else {
+    & "$ScriptsDir\start_local_windows.ps1"
+  }
   if ($LASTEXITCODE -ne 0) {
     Write-Err "start_local_windows.ps1 failed (exit $LASTEXITCODE). See log: $(Join-Path $RepoRoot '.local_run\api.log')"
     exit 1

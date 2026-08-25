@@ -442,7 +442,10 @@ async function onSync() {
 
   const commit_message = ($("gh-commit-msg")?.value || "").trim() || null;
   const include_rds = !!$("gh-include-rds")?.checked;
-  const session_id = localStorage.getItem("emp_session_id") || null;
+  let session_id = localStorage.getItem("emp_session_id") || null;
+  // A copied/moved backend can leave an old session id in browser storage.
+  // Validate it before submission and transparently create a fresh owned
+  // session when the previous backend no longer knows it.
   const experiment = window._emp?.currentExp || null;
 
   emp_sync_inflight = true;
@@ -450,6 +453,7 @@ async function onSync() {
   setSyncButtonDisabled(true);
   setLoading(true);
   try {
+    if (session_id) session_id = await API.ensureSession();
     const res = await API.githubSync({
       track_id,
       assignment_id,

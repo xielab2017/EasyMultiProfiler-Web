@@ -1,10 +1,13 @@
-# Repair R runtime (CRAN/Bioc + EasyMultiProfiler), then start API + static frontend.
+﻿# Repair R runtime (CRAN/Bioc + EasyMultiProfiler), then start API + static frontend.
 # V7: also auto-installs R + python3 + git if missing.
+param([switch]$NoBrowser)
+
 $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot\windows_r_utils.ps1"
 Initialize-EMPPaths $PSScriptRoot
 $Root = Get-EMPRepoRoot
+Import-EMPRuntimeConfig
 $InstallDir = Join-Path $Root "webapp\scripts\install"
 
 # ── Cross-OS auto-detect ────────────────────────────────────────────────
@@ -13,7 +16,10 @@ if ($null -eq $isWinPS) {
   $isWinPS = ($env:OS -eq 'Windows_NT') -or [System.Environment]::OSVersion.Platform -eq 'Win32NT'
 }
 if (-not $isWinPS) {
-  Write-Host "[emp-install] Detected host OS: $($IsLinux ? 'linux' : ($IsMacOS ? 'macos' : 'unknown'))"
+  $hostOsName = "unknown"
+  if ($IsLinux) { $hostOsName = "linux" }
+  elseif ($IsMacOS) { $hostOsName = "macos" }
+  Write-Host "[emp-install] Detected host OS: $hostOsName"
   Write-Host "[emp-install] Handing off to launch_emp_web.sh --repair"
   & bash -c "bash '$PSScriptRoot/launch_emp_web.sh' --repair"
   exit $LASTEXITCODE
@@ -38,11 +44,19 @@ Write-Host "=== [1/3] Prerequisites ==="
 
 Write-Host "=== [2/3] Repair: install_runtime.R ==="
 $installR = Join-Path $Root "webapp\scripts\install_runtime.R"
+$savedErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $RscriptExe $installR
-if ($LASTEXITCODE -ne 0) {
-  Write-Error "install_runtime.R exited with code $LASTEXITCODE. Fix errors above, then retry."
+$installExit = $LASTEXITCODE
+$ErrorActionPreference = $savedErrorActionPreference
+if ($installExit -ne 0) {
+  throw "install_runtime.R exited with code $installExit. Fix errors above, then retry."
 }
 
 Write-Host ""
 Write-Host "=== [3/3] Start: API + web UI ==="
-& "$PSScriptRoot\start_local_windows.ps1"
+if ($NoBrowser) {
+  & "$PSScriptRoot\start_local_windows.ps1" -NoBrowser
+} else {
+  & "$PSScriptRoot\start_local_windows.ps1"
+}

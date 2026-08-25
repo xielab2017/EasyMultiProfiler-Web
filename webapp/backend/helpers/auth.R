@@ -172,6 +172,7 @@ emp_json_request_body <- function(req) {
 
 emp_authorize_request_resources <- function(req, principal) {
   path <- as.character(req$PATH_INFO %||% "")
+  method <- toupper(as.character(req$REQUEST_METHOD %||% "GET"))
   body <- emp_json_request_body(req)
 
   project_match <- regexec("^/api/projects/([^/]+)", path)
@@ -185,7 +186,19 @@ emp_authorize_request_resources <- function(req, principal) {
   session_ids <- character()
   path_parts <- strsplit(path, "/", fixed = TRUE)[[1]]
   session_ids <- c(session_ids, path_parts[grepl("^[A-Za-z0-9]{24}$", path_parts)])
-  header_session <- trimws(as.character(req$HTTP_X_SESSION_ID %||% ""))
+  # The browser keeps X-Session-Id as ambient analysis context. It must not
+  # make session-independent GitHub account routes fail when localStorage
+  # contains a session from another backend/data directory. GitHub sync still
+  # authorizes body$session_id below. Session creation must likewise be able to
+  # replace a stale browser session.
+  ignore_ambient_session <-
+    grepl("^/api/github(/|$)", path) ||
+    (identical(method, "POST") && identical(path, "/api/session"))
+  header_session <- if (ignore_ambient_session) {
+    ""
+  } else {
+    trimws(as.character(req$HTTP_X_SESSION_ID %||% ""))
+  }
   query_session <- trimws(as.character(req$args$session_id %||% ""))
   if (nzchar(header_session)) session_ids <- c(session_ids, header_session)
   if (nzchar(query_session)) session_ids <- c(session_ids, query_session)

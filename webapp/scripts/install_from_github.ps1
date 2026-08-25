@@ -1,4 +1,4 @@
-# install_from_github.ps1 — v9.0.3 one-line installer for Windows (main).
+﻿# install_from_github.ps1 — v9.0.3 one-line installer for Windows (main).
 #
 #   irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.ps1 | iex
 #

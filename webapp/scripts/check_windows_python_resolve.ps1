@@ -1,4 +1,4 @@
-# Self-check: Windows Python resolver must not return multi-token strings.
+﻿# Self-check: Windows Python resolver must not return multi-token strings.
 # Run: powershell -NoProfile -File webapp/scripts/check_windows_python_resolve.ps1
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\windows_r_utils.ps1"

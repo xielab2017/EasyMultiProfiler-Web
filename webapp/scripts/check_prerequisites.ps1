@@ -1,7 +1,8 @@
-# Check Git, Python, R for EMP-Web on Windows.
+﻿# Check Git, Python, R for EMP-Web on Windows.
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\windows_r_utils.ps1"
 Initialize-EMPPaths $PSScriptRoot
+Import-EMPRuntimeConfig
 
 Write-Host "[check] EasyMultiProfiler Web — prerequisite check (Windows)"
 
@@ -35,5 +36,13 @@ if (-not $RscriptExe) {
   exit 1
 }
 Write-Host "[check] Rscript: $RscriptExe"
+$savedErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $RscriptExe -e "if (getRversion() < '4.3.3') stop('R >= 4.3.3 required')"
+$rVersionExit = $LASTEXITCODE
+$ErrorActionPreference = $savedErrorActionPreference
+if ($rVersionExit -ne 0) {
+  Write-Host "[FAIL] R version check failed (exit $rVersionExit)."
+  exit 1
+}
 Write-Host "[check] All prerequisites OK."

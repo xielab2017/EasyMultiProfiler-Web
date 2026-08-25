@@ -1,4 +1,4 @@
-# install_system_deps.ps1 — Install git + python3 on Windows.
+﻿# install_system_deps.ps1 — Install git + python3 on Windows.
 #
 # Order of operations:
 #   1. Try `winget install` (Windows 11 / Win 10 with App Installer).

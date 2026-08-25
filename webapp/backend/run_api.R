@@ -31,13 +31,22 @@ if (dir.exists(local_r_libs)) {
   .libPaths(c(local_r_libs, .libPaths()))
   cur_r_libs <- Sys.getenv("R_LIBS", unset = "")
   if (!nzchar(cur_r_libs) || !grepl(local_r_libs, cur_r_libs, fixed = TRUE)) {
-    Sys.setenv(R_LIBS = if (nzchar(cur_r_libs)) paste(local_r_libs, cur_r_libs, sep = ":") else local_r_libs)
+    Sys.setenv(R_LIBS = if (nzchar(cur_r_libs)) paste(local_r_libs, cur_r_libs, sep = .Platform$path.sep) else local_r_libs)
   }
   cur_user <- Sys.getenv("R_LIBS_USER", unset = "")
   if (!nzchar(cur_user) || !grepl(local_r_libs, cur_user, fixed = TRUE)) {
-    Sys.setenv(R_LIBS_USER = if (nzchar(cur_user)) paste(local_r_libs, cur_user, sep = ":") else local_r_libs)
+    Sys.setenv(R_LIBS_USER = if (nzchar(cur_user)) paste(local_r_libs, cur_user, sep = .Platform$path.sep) else local_r_libs)
   }
-  if (!nzchar(Sys.getenv("EMP_ROOT", unset = ""))) Sys.setenv(EMP_ROOT = repo_root)
+}
+
+if (!nzchar(Sys.getenv("EMP_ROOT", unset = ""))) Sys.setenv(EMP_ROOT = repo_root)
+# Keep standalone Windows launches self-contained and writable. The PowerShell
+# launcher supplies the same default, but direct `Rscript run_api.R` should also
+# work without depending on LOCALAPPDATA permissions.
+if (!nzchar(Sys.getenv("EMP_DATA_DIR", unset = ""))) {
+  default_data_dir <- file.path(repo_root, ".local_run", "data")
+  if (!dir.exists(default_data_dir)) dir.create(default_data_dir, recursive = TRUE, showWarnings = FALSE)
+  if (dir.exists(default_data_dir)) Sys.setenv(EMP_DATA_DIR = default_data_dir)
 }
 
 library(plumber)

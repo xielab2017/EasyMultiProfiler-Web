@@ -50,6 +50,9 @@ function sessionId() {
   return localStorage.getItem("emp_session_id") || null;
 }
 
+let validatedSessionId = null;
+let sessionValidationPromise = null;
+
 function headers(extra = {}) {
   const h = { "Content-Type": "application/json", ...extra };
   const sid = sessionId();
@@ -282,6 +285,7 @@ function requestMultipartWithProgress(path, formData, opts = {}) {
 
 async function request(method, path, body = null, multipart = false, optsExtra = {}) {
   const authHeaders = headers();
+  if (optsExtra.skipSessionHeader) delete authHeaders["X-Session-Id"];
   if (multipart) {
     // Let the browser set multipart boundary; keep auth + session headers.
     delete authHeaders["Content-Type"];
@@ -396,9 +400,38 @@ export async function getWorkflow(workflowId) {
 }
 
 export async function createSession() {
-  const data = await request("POST", "/session");
+  // Do not send a possibly stale ambient session while asking for a new one.
+  const data = await request("POST", "/session", null, false, { skipSessionHeader: true });
   localStorage.setItem("emp_session_id", data.session_id);
+  validatedSessionId = data.session_id;
   return data.session_id;
+}
+
+export async function ensureSession() {
+  const current = sessionId();
+  if (!current) return createSession();
+  if (validatedSessionId === current) return current;
+  if (sessionValidationPromise) return sessionValidationPromise;
+
+  sessionValidationPromise = (async () => {
+    try {
+      await request("GET", `/session/${encodeURIComponent(current)}/experiments`);
+      validatedSessionId = current;
+      return current;
+    } catch (err) {
+      const message = String(err?.message || err || "");
+      const stale = /session ownership is not registered|session access denied|session not found|invalid session(?:_id)?/i.test(message);
+      if (!stale) throw err;
+      localStorage.removeItem("emp_session_id");
+      validatedSessionId = null;
+      return createSession();
+    }
+  })();
+  try {
+    return await sessionValidationPromise;
+  } finally {
+    sessionValidationPromise = null;
+  }
 }
 
 export async function deleteSession() {
@@ -406,6 +439,7 @@ export async function deleteSession() {
   if (!sid) return { success: true };
   const data = await request("DELETE", `/session/${encodeURIComponent(sid)}`);
   localStorage.removeItem("emp_session_id");
+  validatedSessionId = null;
   return data;
 }
 
@@ -1453,41 +1487,41 @@ export async function teachingReport() {
 
 // ── GITHUB COURSE SYNC ────────────────────────────
 export async function githubAssignments() {
-  return request("GET", "/github/assignments");
+  return request("GET", "/github/assignments", null, false, { skipSessionHeader: true });
 }
 
 export async function githubRegister(payload) {
-  return request("POST", "/github/register", payload);
+  return request("POST", "/github/register", payload, false, { skipSessionHeader: true });
 }
 
 export async function githubLogin(payload) {
-  return request("POST", "/github/login", payload);
+  return request("POST", "/github/login", payload, false, { skipSessionHeader: true });
 }
 
 export async function githubLogout() {
-  return request("POST", "/github/logout", {});
+  return request("POST", "/github/logout", {}, false, { skipSessionHeader: true });
 }
 
 export async function githubStatus() {
-  return request("GET", "/github/status");
+  return request("GET", "/github/status", null, false, { skipSessionHeader: true });
 }
 
 export async function githubEnsureClassRepo() {
-  return request("POST", "/github/ensure_class_repo", {});
+  return request("POST", "/github/ensure_class_repo", {}, false, { skipSessionHeader: true });
 }
 
 export async function githubBind(payload) {
-  return request("POST", "/github/bind", payload);
+  return request("POST", "/github/bind", payload, false, { skipSessionHeader: true });
 }
 
 export async function githubUnbind() {
-  return request("POST", "/github/unbind", {});
+  return request("POST", "/github/unbind", {}, false, { skipSessionHeader: true });
 }
 
 export async function githubSync(payload) {
-  return request("POST", "/github/sync", payload);
+  return request("POST", "/github/sync", payload, false, { skipSessionHeader: true });
 }
 
 export async function githubSyncs() {
-  return request("GET", "/github/syncs");
+  return request("GET", "/github/syncs", null, false, { skipSessionHeader: true });
 }
