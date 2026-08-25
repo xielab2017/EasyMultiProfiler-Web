@@ -12,9 +12,11 @@ else {
   exit 1
 }
 
-$PythonCmd = Resolve-EMPPython
-if ($PythonCmd) { Write-Host "[check] Python: $PythonCmd ($(Invoke-Expression "$PythonCmd --version" 2>&1))" }
-else {
+$PythonInfo = Resolve-EMPPython
+if ($PythonInfo) {
+  $pyVer = & $PythonInfo.Exe @($PythonInfo.PrefixArgs + @("--version")) 2>&1
+  Write-Host "[check] Python: $(Format-EMPPythonDisplay $PythonInfo) ($pyVer)"
+} else {
   Write-Host "[FAIL] Python 3 not found (the Microsoft Store 'python' stub doesn't count)."
   Write-Host "       Install: winget install -e --id Python.Python.3.12"
   Write-Host "       or set: `$env:EMPI_PYTHON = 'C:\path\to\python.exe'"

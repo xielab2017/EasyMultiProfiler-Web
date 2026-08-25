@@ -77,8 +77,8 @@ if (-not $RscriptExe) {
 }
 Write-Host "Using Rscript: $RscriptExe"
 
-$PythonCmd = Resolve-EMPPython
-if (-not $PythonCmd) {
+$PythonInfo = Resolve-EMPPython
+if (-not $PythonInfo) {
   Write-Host "[emp-error] Python 3 not found (needed to serve the web UI)." -ForegroundColor Red
   Write-Host "  Install it one of these ways, then re-run:"
   Write-Host "    winget install -e --id Python.Python.3.12"
@@ -88,7 +88,7 @@ if (-not $PythonCmd) {
   Write-Host "  Note: the Microsoft Store 'python' stub is ignored on purpose."
   exit 1
 }
-Write-Host "Using Python: $PythonCmd"
+Write-Host "Using Python: $(Format-EMPPythonDisplay $PythonInfo)"
 
 $ApiLog = Join-Path $RunDir "api.log"
 $WebLog = Join-Path $RunDir "web.log"
@@ -107,41 +107,115 @@ function Stop-PidFile($pidFile) {
   }
 }
 
+function Test-EmpHttpOk([string]$Url) {
+  try {
+    $resp = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+    return ($resp.StatusCode -eq 200)
+  } catch {
+    return $false
+  }
+}
+
+function Show-EmpTailLog([string]$Path, [string]$Label) {
+  if (Test-Path $Path) {
+    Write-Host "--- $Label (tail) ---"
+    Get-Content -Path $Path -Tail 40 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+  } else {
+    Write-Host "--- $Label: (log not created) ---"
+  }
+}
+
 Stop-PidFile $ApiPid
 Stop-PidFile $WebPid
 Stop-EMPListenersOnPorts -Ports @([int]$ApiPort, [int]$WebPort)
 
-$apiCmd = "cd `"$Root`"; `$env:API_HOST=`"$ApiHost`"; `$env:API_PORT=`"$ApiPort`"; `$env:EMP_ALLOWED_ROOTS=`"$EmpAllowedRoots`"; `$env:EMP_ENABLE_USER_R=`"$EmpEnableUserR`"; `$env:EMP_API_TOKEN=`"$EmpApiToken`"; `$env:EMP_CORS_ORIGIN=`"$EmpCorsOrigin`"; & `"$RscriptExe`" `"webapp/backend/run_api.R`" *> `"$ApiLog`""
-$apiProc = Start-Process -FilePath "powershell" -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-Command",$apiCmd -WindowStyle Hidden -PassThru
+# Inherit env into child processes (Start-Process does not take -Environment on older PS).
+$env:API_HOST = $ApiHost
+$env:API_PORT = "$ApiPort"
+$env:WEB_HOST = $WebHost
+$env:WEB_PORT = "$WebPort"
+$env:EMP_ALLOWED_ROOTS = $EmpAllowedRoots
+$env:EMP_ENABLE_USER_R = $EmpEnableUserR
+$env:EMP_API_TOKEN = $EmpApiToken
+$env:EMP_CORS_ORIGIN = $EmpCorsOrigin
+$env:EMP_ROOT = $Root
+$env:NO_PROXY = "*"
+$env:no_proxy = "*"
+
+Write-Host "Starting API + frontend together..."
+$ApiErrLog = Join-Path $RunDir "api.err.log"
+$WebErrLog = Join-Path $RunDir "web.err.log"
+$apiScript = Join-Path $Root "webapp\backend\run_api.R"
+# Direct Start-Process (not nested powershell) so both sides stay alive after the bat exits.
+$apiProc = Start-Process -FilePath $RscriptExe `
+  -ArgumentList @($apiScript) `
+  -WorkingDirectory $Root `
+  -WindowStyle Hidden `
+  -RedirectStandardOutput $ApiLog `
+  -RedirectStandardError $ApiErrLog `
+  -PassThru
+if (-not $apiProc) { throw "Failed to start API (Rscript)." }
 $apiProc.Id | Out-File -FilePath $ApiPid -Encoding ascii -Force
 
-# Bind all interfaces so LAN / Tailscale clients can reach EMP.
-$webCmd = "cd `"$Root`"; `$env:WEB_HOST=`"$WebHost`"; `$env:WEB_PORT=`"$WebPort`"; & `"$PythonCmd`" webapp/scripts/static_server.py $WebPort `"webapp/frontend`" `"$WebHost`" *> `"$WebLog`""
-$webProc = Start-Process -FilePath "powershell" -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-Command",$webCmd -WindowStyle Hidden -PassThru
+$webArgs = @()
+if ($PythonInfo.PrefixArgs) { $webArgs += $PythonInfo.PrefixArgs }
+$webArgs += @(
+  (Join-Path $Root "webapp\scripts\static_server.py"),
+  "$WebPort",
+  (Join-Path $Root "webapp\frontend"),
+  "$WebHost"
+)
+$webProc = Start-Process -FilePath $PythonInfo.Exe `
+  -ArgumentList $webArgs `
+  -WorkingDirectory $Root `
+  -WindowStyle Hidden `
+  -RedirectStandardOutput $WebLog `
+  -RedirectStandardError $WebErrLog `
+  -PassThru
+if (-not $webProc) { throw "Failed to start frontend (Python)." }
 $webProc.Id | Out-File -FilePath $WebPid -Encoding ascii -Force
 
-# R + Bioconductor load can take 30–90s on first start; wait for API before opening the browser.
+# Wait until BOTH are healthy before opening the browser (R load can take 30–90s).
 $healthUrl = "http://127.0.0.1:$ApiPort/api/health"
+$webUrl = "http://127.0.0.1:$WebPort/"
 $deadline = (Get-Date).AddSeconds(120)
 $apiReady = $false
+$webReady = $false
 while ((Get-Date) -lt $deadline) {
-  try {
-    $resp = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
-    if ($resp.StatusCode -eq 200) { $apiReady = $true; break }
-  } catch { }
-  Start-Sleep -Seconds 2
-}
-if (-not $apiReady) {
-  $recentLog = if (Test-Path $ApiLog) {
-    (Get-Content -Path $ApiLog -Tail 80 -ErrorAction SilentlyContinue) -join [Environment]::NewLine
-  } else {
-    "(API log was not created.)"
+  if (-not $apiReady) { $apiReady = Test-EmpHttpOk $healthUrl }
+  if (-not $webReady) { $webReady = Test-EmpHttpOk $webUrl }
+  if ($apiReady -and $webReady) { break }
+
+  $apiProc.Refresh()
+  $webProc.Refresh()
+  if ($apiProc.HasExited -and -not $apiReady) {
+    Show-EmpTailLog $ApiLog "API stdout"
+    Show-EmpTailLog $ApiErrLog "API stderr"
+    throw "API process exited before becoming ready (exit $($apiProc.ExitCode))."
   }
-  throw "API not ready after 120s.`nLog: $ApiLog`n$recentLog"
-} else {
-  Write-Host "API health OK: $healthUrl"
+  if ($webProc.HasExited -and -not $webReady) {
+    Show-EmpTailLog $WebLog "Web stdout"
+    Show-EmpTailLog $WebErrLog "Web stderr"
+    throw "Frontend process exited before becoming ready (exit $($webProc.ExitCode))."
+  }
+  Start-Sleep -Seconds 1
 }
-Start-Process "http://127.0.0.1:$WebPort/"
+
+if (-not $apiReady -or -not $webReady) {
+  if (-not $apiReady) {
+    Show-EmpTailLog $ApiLog "API stdout"
+    Show-EmpTailLog $ApiErrLog "API stderr"
+  }
+  if (-not $webReady) {
+    Show-EmpTailLog $WebLog "Web stdout"
+    Show-EmpTailLog $WebErrLog "Web stderr"
+  }
+  throw "Startup incomplete after 120s. API ready=$apiReady Frontend ready=$webReady"
+}
+
+Write-Host "API health OK:      $healthUrl"
+Write-Host "Frontend OK:         $webUrl"
+Start-Process $webUrl
 Write-Host "EasyMultiProfiler Web (本机): http://127.0.0.1:$WebPort"
 Write-Host "API health (本机):            http://127.0.0.1:$ApiPort/api/health"
 Write-Host "Bind: API $ApiHost:$ApiPort · Web $WebHost:$WebPort"

@@ -32,19 +32,27 @@ powershell -ExecutionPolicy Bypass -File webapp\scripts\bootstrap_and_start.ps1
 
 ---
 
-## 3. 日常启动（已装好之后）
+## 3. 日常启动（已装好之后）— 点击按钮即可
 
-**双击** `Start-EMP-Web.bat`（推荐）：
+**推荐（有启动/停止按钮的面板）：** 双击 `Start-EMP-Panel.bat`  
+→ 点 **「启动（前端 + 后端）」**，会同时拉起 API `:8000` 与网页 `:8080`，就绪后打开浏览器。
 
-- 自动检测 R / python3 是否还在，缺了再补
-- 缺 EMP 包则自动 `remotes::install_local()`
+**一键直接启动（无面板）：** 双击 `Start-EMP-Web.bat`
+
+**放到桌面：** 双击 `Create-Desktop-Start-Button.bat`  
+→ 桌面出现「启动 EasyMultiProfiler」「停止 EasyMultiProfiler」。
 
 **命令行：**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File webapp\scripts\launch_emp_web.ps1           # 智能启动
 powershell -ExecutionPolicy Bypass -File webapp\scripts\launch_emp_web.ps1 -Repair   # 重装 R 包
+powershell -ExecutionPolicy Bypass -File webapp\scripts\emp_control_panel.ps1       # 启动面板
 ```
+
+> 启动脚本会**同时**启动前端与后端；只有两端都健康才会打开浏览器。
+> 若以前只起来一端，多半是旧版把 `py -3` 当成单个命令名——当前版本已修复。
+
 
 ---
 

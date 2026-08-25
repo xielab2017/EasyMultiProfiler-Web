@@ -27,7 +27,9 @@
 |------|------|
 | **零基础一键** | PowerShell：`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force` 后执行 `irm .../install_from_github.ps1 \| iex` |
 | **首次（本地文件夹）** | 双击 **`Repair-and-Start-EMP-Web.bat`** |
-| **日常启动** | 双击 **`Start-EMP-Web.bat`** |
+| **日常启动（推荐）** | 双击 **`Start-EMP-Panel.bat`** → 点「启动（前端 + 后端）」 |
+| **一键直接启动** | 双击 **`Start-EMP-Web.bat`** |
+| **放到桌面** | 双击 **`Create-Desktop-Start-Button.bat`** |
 | **更新 / 缺包** | 再运行 **`Repair-and-Start-EMP-Web.bat`** |
 | **先装 R** | `winget install --id RProject.R -e` + Python + Git |
 

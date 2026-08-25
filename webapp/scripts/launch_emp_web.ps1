@@ -3,7 +3,9 @@
 #   powershell -File webapp\scripts\launch_emp_web.ps1
 #   powershell -File webapp\scripts\launch_emp_web.ps1 -Repair
 param(
-  [switch]$Repair
+  [switch]$Repair,
+  [switch]$NoPause,
+  [switch]$CreateDesktopShortcut
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,8 +73,15 @@ try {
 
   & "$PSScriptRoot\start_local_windows.ps1"
   Write-Host ""
-  Write-Host "Service is running in the background. Close this window to keep it running."
-  Write-Host "Stop: powershell -File webapp\scripts\stop_local_windows.ps1"
+  Write-Host "Frontend + backend are running in the background."
+  Write-Host "Close this window to keep them running."
+  Write-Host "Stop: double-click Stop-EMP-Web-Windows.bat"
+  Write-Host "  or: powershell -File webapp\scripts\stop_local_windows.ps1"
+
+  # Desktop click-to-start button (idempotent).
+  if ($CreateDesktopShortcut -or $env:EMP_CREATE_DESKTOP_SHORTCUT -ne "0") {
+    try { & "$PSScriptRoot\create_windows_shortcut.ps1" -Root $Root } catch {}
+  }
 }
 catch {
   Write-Host ""
@@ -80,9 +89,12 @@ catch {
   Write-Host "  Start failed: $($_.Exception.Message)"
   Write-Host "  Try: Run-EMP-Web-Windows.bat -Repair"
   Write-Host "  Or:  Repair-and-Start-EMP-Web.bat"
+  Write-Host "  Or:  Start-EMP-Panel.bat  (button UI)"
   Write-Host "========================================================"
   exit 1
 }
 
-Write-Host ""
-Read-Host "Press Enter to close this window"
+if (-not $NoPause -and $env:EMP_NO_PAUSE -ne "1") {
+  Write-Host ""
+  Read-Host "Press Enter to close this window"
+}

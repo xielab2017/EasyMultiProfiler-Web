@@ -114,9 +114,13 @@ if (-not $NoStart) {
   }
 }
 
+# Desktop Start/Stop buttons (click-to-start).
+try { & "$ScriptsDir\create_windows_shortcut.ps1" -Root $RepoRoot } catch {}
+
 Write-Host ""
 Write-Host "========================================================"
-Write-Host "  EasyMultiProfiler Web is running."
+Write-Host "  EasyMultiProfiler Web is running (API + frontend)."
 Write-Host "  Open: http://127.0.0.1:8080"
-Write-Host "  Stop: powershell -File webapp\scripts\stop_local_windows.ps1"
+Write-Host "  Desktop: 启动 EasyMultiProfiler.lnk  /  Start-EMP-Panel.bat"
+Write-Host "  Stop: Stop-EMP-Web-Windows.bat"
 Write-Host "========================================================"
