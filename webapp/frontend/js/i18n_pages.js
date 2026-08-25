@@ -1,7 +1,7 @@
 /**
  * Page-scoped i18n bindings for Analysis, Clinical, Visualize, Run All, Prepare extras.
  */
-import { t } from "./locale.js?v=i18n-locale-v1";
+import { t } from "./locale.js?v=nav-active-fix-v1";
 
 function $(sel, root = document) {
   return root.querySelector(sel);
@@ -154,6 +154,7 @@ function applyClinicalPage() {
       none: "clinical.padjNone",
     });
     setLastText($("#clin-btn-cor"), "clinical.runCor");
+    setLastText($("#clin-btn-cor-auto-config"), "clinical.btnAutoConfig");
     setLastText($("#clin-cor-pdf"), "common.downloadPdf");
     setText($("#clin-cor-table-wrap h3"), "clinical.topAssociations");
     applyTableHead("clin-cor-table", ["common.feature", "clinical.trait", "clinical.colR", "clinical.colP", "clinical.colPadj"]);
@@ -175,6 +176,7 @@ function applyClinicalPage() {
     const grp = $("#clin-fit-group");
     if (grp?.options[0]) grp.options[0].textContent = t("clinical.noGrouping");
     setLastText($("#clin-btn-fit"), "clinical.drawScatter");
+    setLastText($("#clin-btn-fit-auto-config"), "clinical.btnAutoConfig");
     setLastText($("#clin-fit-pdf"), "common.downloadPdf");
   }
 
@@ -186,6 +188,7 @@ function applyClinicalPage() {
     setLabelFor("clin-wgcna-traits", "clinical.wgcnaTraits");
     setLabelFor("clin-wgcna-minmod", "clinical.minModuleSize");
     setLastText($("#clin-btn-wgcna"), "clinical.runWgcna");
+    setLastText($("#clin-btn-wgcna-auto-config"), "clinical.btnAutoConfig");
     setLastText($("#clin-wgcna-pdf"), "common.downloadPdf");
     setText($("#clin-wgcna-table-wrap h3"), "clinical.wgcnaTop");
     applyTableHead("clin-wgcna-table", ["clinical.trait", "clinical.module", "clinical.colR", "clinical.colP", "clinical.colPadj"]);
@@ -446,9 +449,18 @@ function applyPrepareExtras() {
 }
 
 export function applyPagesI18n() {
-  applyClinicalPage();
-  applyAnalysisPage();
-  applyVisualizationPage();
-  applyRunAllPage();
-  applyPrepareExtras();
+  const steps = [
+    ["clinical", applyClinicalPage],
+    ["analysis", applyAnalysisPage],
+    ["visualization", applyVisualizationPage],
+    ["runall", applyRunAllPage],
+    ["prepare", applyPrepareExtras],
+  ];
+  for (const [name, fn] of steps) {
+    try {
+      fn();
+    } catch (e) {
+      console.warn(`[emp-i18n] applyPagesI18n:${name} failed`, e);
+    }
+  }
 }

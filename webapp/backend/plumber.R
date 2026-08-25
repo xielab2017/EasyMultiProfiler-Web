@@ -1339,6 +1339,24 @@ function(req, res) {
   }, res)
 }
 
+#* Abort an in-progress chunked BAM upload and delete staging files
+#* @post /api/workflows/chipseq/bams/upload_cancel
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- tryCatch(jsonlite::fromJSON(req$postBody, simplifyVector = FALSE), error = function(e) list())
+    session_id <- .form_scalar(b$session_id)
+    upload_id <- .form_scalar(b$upload_id)
+    if (is.null(session_id) || is.null(upload_id)) {
+      stop("session_id and upload_id are required.")
+    }
+    emp_assert_session_owner(session_id, emp_request_principal(req))
+    out <- chip_bam_upload_cancel(session_id, upload_id)
+    out$session_id <- session_id
+    out
+  }, res)
+}
+
 #* Register server-side BAM/SAM paths with group assignment
 #* @post /api/workflows/chipseq/bams/register
 #* @serializer unboxedJSON
@@ -1383,7 +1401,7 @@ function(req, res) {
 #* @serializer unboxedJSON
 function(req, res,
          session_id  = NULL,
-         genome      = "hs",
+         genome      = "mm",
          preset      = "chipseq_tf") {
   safe_api({
     body <- req$body
@@ -1391,7 +1409,7 @@ function(req, res,
       .form_scalar(body[[name]]) %||% .form_scalar(arg)
     }
     session_id <- form_get("session_id", session_id)
-    genome <- form_get("genome", genome) %||% "hs"
+    genome <- form_get("genome", genome) %||% "mm"
     preset <- form_get("preset", preset) %||% "chipseq_tf"
 
     if (is.null(session_id)) {
@@ -1449,6 +1467,23 @@ function(req, res) {
       session_id = sid,
       peak_id = .form_scalar(b$peak_id) %||% .form_scalar(b$id),
       peak_file = .form_scalar(b$peak_file) %||% .form_scalar(b$path)
+    )
+  }, res)
+}
+
+#* Update genome/assembly for active (or specified) peak — no re-upload
+#* @post /api/workflows/chipseq/peaks/genome
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody %||% "{}", simplifyVector = FALSE)
+    sid <- .form_scalar(b$session_id)
+    if (is.null(sid)) stop("session_id is required")
+    emp_assert_session_owner(sid, emp_request_principal(req))
+    chip_update_peak_genome(
+      session_id = sid,
+      genome = .form_scalar(b$genome) %||% "mm",
+      peak_id = .form_scalar(b$peak_id) %||% .form_scalar(b$id)
     )
   }, res)
 }

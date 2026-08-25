@@ -3,7 +3,7 @@
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
 // this value in lock-step with the one used in index.html (app.js ?v=).
-import * as API from "./api.js?v=chipseq-peak-registry-v1";
+import * as API from "./api.js?v=nav-active-fix-v1";
 import {
   initCodeLab,
   notifyCodeLabNavigate,
@@ -12,18 +12,19 @@ import {
   refreshCodeLabContext,
   openCodeLabPanel,
   applyCopilotAction,
-} from "./code_lab.js?v=2026-07-22-chipseq-downstream-v1";
+} from "./code_lab.js?v=nav-active-fix-v1";
 import {
   initTeaching,
   onTeachingPage,
   setupTeachingTraceHooks,
-} from "./teaching.js?v=i18n-locale-v1";
-import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=2026-07-22-multiomics-v1";
-import { initGuide, openGuideInstallTab } from "./guide.js?v=2026-07-23-rnaseq-final";
-import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=i18n-locale-v1";
-import { initFontScale } from "./font_scale.js?v=2026-07-16-multi-demo-v2";
+} from "./teaching.js?v=nav-active-fix-v1";
+import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=nav-active-fix-v1";
+import { initGuide, openGuideInstallTab } from "./guide.js?v=nav-active-fix-v1";
+import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=nav-active-fix-v1";
+import { applyPagesI18n } from "./i18n_pages.js?v=nav-active-fix-v1";
+import { initFontScale } from "./font_scale.js?v=nav-active-fix-v1";
 import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
-import { initGithubSync } from "./github_sync.js?v=i18n-locale-v1";
+import { initGithubSync } from "./github_sync.js?v=nav-active-fix-v1";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -72,14 +73,40 @@ export function setLoading(on) {
 //     const result = await withGlobalProgress("KEGG enrichment", job.job_id);
 // The helper polls the job, updates the bar, and returns the final result.
 const _gp = () => ({
-  wrap:  document.getElementById("global-progress"),
-  label: document.getElementById("gp-label"),
-  msg:   document.getElementById("gp-msg"),
-  pct:   document.getElementById("gp-pct"),
-  bar:   document.getElementById("gp-bar"),
+  wrap:   document.getElementById("global-progress"),
+  label:  document.getElementById("gp-label"),
+  msg:    document.getElementById("gp-msg"),
+  pct:    document.getElementById("gp-pct"),
+  bar:    document.getElementById("gp-bar"),
+  cancel: document.getElementById("gp-cancel"),
 });
 
-export function showGlobalProgress(label = "Working…") {
+/** Active cancel handler for the upload currently shown in the top strip. */
+let _gpOnCancel = null;
+
+function setGlobalProgressCancellable(onCancel) {
+  _gpOnCancel = typeof onCancel === "function" ? onCancel : null;
+  const btn = _gp().cancel;
+  if (!btn) return;
+  const on = !!_gpOnCancel;
+  btn.classList.toggle("hidden", !on);
+  btn.disabled = !on;
+  if (on) btn.textContent = t("upload.cancel");
+}
+
+function initGlobalProgressCancel() {
+  const btn = _gp().cancel;
+  if (!btn || btn.dataset.bound === "1") return;
+  btn.dataset.bound = "1";
+  btn.addEventListener("click", () => {
+    if (!_gpOnCancel) return;
+    btn.disabled = true;
+    try { _gpOnCancel(); } catch (_) { /* ignore */ }
+  });
+}
+initGlobalProgressCancel();
+
+export function showGlobalProgress(label = "Working…", opts = {}) {
   const g = _gp();
   if (!g.wrap) return;
   g.label.textContent = label;
@@ -87,6 +114,7 @@ export function showGlobalProgress(label = "Working…") {
   g.pct.textContent   = "0%";
   g.bar.style.setProperty("--pct", "0%");
   g.wrap.classList.remove("hidden");
+  setGlobalProgressCancellable(opts.onCancel || null);
 }
 
 export function updateGlobalProgress(pct, message = "") {
@@ -103,6 +131,7 @@ export function hideGlobalProgress() {
   if (!g.wrap) return;
   g.wrap.classList.add("hidden");
   g.bar.style.setProperty("--pct", "0%");
+  setGlobalProgressCancellable(null);
 }
 
 // Submit an async backend call that returns `{ job_id }`, then poll until
@@ -915,10 +944,12 @@ function navigateTo(page) {
     chipStep = "2";
   }
   // Dedicated pages: chipseq (never fold into analysis-only).
+  // Highlight the matching nav item; when on unified chipseq, also mark the
+  // hidden downstream alias so any leftover deep-links stay consistent.
   document.querySelectorAll(".nav-item").forEach(el => {
     const match = el.dataset.page === page ||
       (page === "chipseq" && el.dataset.page === "chipseq_downstream");
-    el.classList.toggle("active", match && el.dataset.page === "chipseq");
+    el.classList.toggle("active", match);
   });
   document.querySelectorAll(".page").forEach(el => el.classList.remove("active"));
   const target = document.getElementById(`page-${page}`);
@@ -1986,11 +2017,10 @@ async function probeStandaloneChipPeaks() {
   try {
     const res = await API.chipListBams();
     if (res?.last_peaks?.peak_file) {
-      window._emp.chipLastPeaks = {
+      adoptChipLastPeaks({
         ...(res.last_peaks || {}),
-        ...(window._emp.chipLastPeaks || {}),
         peak_file: res.last_peaks.peak_file,
-      };
+      });
       return window._emp.chipLastPeaks;
     }
   } catch (_) {
@@ -3716,13 +3746,18 @@ async function uploadChipBams(inputId, group, label) {
     if (!localStorage.getItem("emp_session_id")) await API.createSession();
     for (const f of files) {
       clearHideTimer();
-      showGlobalProgress(`Upload ${f.name}`);
+      const ac = new AbortController();
+      showGlobalProgress(`Upload ${f.name}`, { onCancel: () => ac.abort() });
       try {
         await API.chipUploadBam(f, group, (p) => {
           updateGlobalProgress(p?.pct ?? 0, p?.message || "");
-        });
+        }, { signal: ac.signal });
         updateGlobalProgress(100, "Done");
       } catch (e) {
+        if (API.isUploadCancelled(e)) {
+          toast(t("upload.cancelled"), "info");
+          throw e;
+        }
         updateGlobalProgress(100, `Failed: ${e.message}`);
         toast(e.message, "error");
         throw e;
@@ -3734,12 +3769,115 @@ async function uploadChipBams(inputId, group, label) {
     toast(`${label} upload complete.`, "success");
     input.value = "";
   } catch (e) {
-    showAlert("chip-profile-result", `Error: ${e.message}`, "error");
     clearHideTimer();
     hideGlobalProgress();
+    if (API.isUploadCancelled(e)) {
+      showAlert("chip-profile-result", t("upload.cancelled"), "info");
+    } else {
+      showAlert("chip-profile-result", `Error: ${e.message}`, "error");
+    }
   } finally {
     window._emp.analysisBusy = Math.max(0, (window._emp.analysisBusy || 1) - 1);
     setLoading(false);
+  }
+}
+
+/** Normalize UI / peak genome codes to chip-anno-genome values: mm | hs | hg19. */
+function chipNormalizeAnnoGenome(g) {
+  const s = String(g || "").toLowerCase().trim();
+  if (!s) return "mm";
+  if (s === "mm" || s.startsWith("mm") || s.includes("mouse")) return "mm";
+  if (s === "hg19" || s === "grch37") return "hg19";
+  if (s === "hs" || s.startsWith("hg") || s.includes("human")) return "hs";
+  return "mm";
+}
+
+function chipAssemblyForAnnoGenome(g) {
+  const key = chipNormalizeAnnoGenome(g);
+  if (key === "mm") return "mm10";
+  if (key === "hg19") return "hg19";
+  return "hg38";
+}
+
+function chipAnnoGenomeIsUserSet() {
+  return document.getElementById("chip-anno-genome")?.dataset?.userSet === "1";
+}
+
+function chipAnnoGenomeValue() {
+  return document.getElementById("chip-anno-genome")?.value || "mm";
+}
+
+/** Authoritative genome for status / session: manual Genome mapping wins when userSet. */
+function chipEffectivePeakGenome(peaks = null) {
+  if (chipAnnoGenomeIsUserSet()) return chipNormalizeAnnoGenome(chipAnnoGenomeValue());
+  const p = peaks || window._emp?.chipLastPeaks;
+  return chipNormalizeAnnoGenome(p?.genome || p?.assembly || chipAnnoGenomeValue());
+}
+
+/** Write genome onto active peak + matching chipPeakFiles entry (client session). */
+function applyChipSessionGenome(genomeCode) {
+  const key = chipNormalizeAnnoGenome(genomeCode);
+  const assembly = chipAssemblyForAnnoGenome(key);
+  window._emp = window._emp || {};
+  const peaks = window._emp.chipLastPeaks;
+  if (peaks) {
+    peaks.genome = key;
+    peaks.assembly = assembly;
+  }
+  const id = window._emp.chipActivePeakId || peaks?.id;
+  const path = peaks?.peak_file || peaks?.path;
+  const files = window._emp.chipPeakFiles;
+  if (Array.isArray(files)) {
+    for (const e of files) {
+      if ((id && e.id === id) || (path && (e.peak_file === path || e.path === path))) {
+        e.genome = key;
+        e.assembly = assembly;
+      }
+    }
+  }
+  return { genome: key, assembly };
+}
+
+/**
+ * Merge server last_peaks into client.
+ * Manual Genome mapping always wins for the active session after the user sets it.
+ */
+function adoptChipLastPeaks(serverLp, opts = {}) {
+  window._emp = window._emp || {};
+  const preferUser = opts.preferUserGenome !== false && chipAnnoGenomeIsUserSet();
+  const prev = window._emp.chipLastPeaks || {};
+  const merged = { ...prev, ...(serverLp || {}) };
+  if (preferUser) {
+    const g = chipNormalizeAnnoGenome(chipAnnoGenomeValue() || prev.genome);
+    merged.genome = g;
+    merged.assembly = chipAssemblyForAnnoGenome(g);
+  }
+  window._emp.chipLastPeaks = merged;
+  if (preferUser) applyChipSessionGenome(merged.genome);
+  return merged;
+}
+
+/** Persist Genome mapping to session peak registry (no re-upload). */
+async function persistChipPeakGenome(genomeCode = null) {
+  const g = chipNormalizeAnnoGenome(genomeCode || chipAnnoGenomeValue());
+  applyChipSessionGenome(g);
+  if (!localStorage.getItem("emp_session_id")) return null;
+  if (!window._emp?.chipLastPeaks?.peak_file) return null;
+  try {
+    const res = await API.chipSetPeakGenome({
+      genome: g,
+      peak_id: window._emp.chipActivePeakId || window._emp.chipLastPeaks?.id || null,
+    });
+    if (res?.last_peaks) adoptChipLastPeaks(res.last_peaks, { preferUserGenome: true });
+    if (Array.isArray(res?.peak_files)) {
+      window._emp.chipPeakFiles = res.peak_files;
+      applyChipSessionGenome(g);
+    }
+    if (res?.active_peak_id) window._emp.chipActivePeakId = res.active_peak_id;
+    return res;
+  } catch (_) {
+    // Client state already updated; list refresh must still respect userSet.
+    return null;
   }
 }
 
@@ -3763,7 +3901,12 @@ function refreshChipPeakStatus(displayName = null) {
   const src = (srcRaw === "preimported" || srcRaw === "upload")
     ? "uploaded peak file"
     : (srcRaw === "macs" || /narrowPeak|broadPeak|summits/i.test(name) ? "MACS output" : srcRaw);
-  const genome = peaks?.genome ? ` · genome ${peaks.genome}` : "";
+  const genomeCode = chipEffectivePeakGenome(peaks);
+  if (peaks && genomeCode) {
+    peaks.genome = genomeCode;
+    peaks.assembly = chipAssemblyForAnnoGenome(genomeCode);
+  }
+  const genome = genomeCode ? ` · genome ${genomeCode}` : "";
   const nPeaks = peaks?.n_peaks;
   const nTxt = (nPeaks != null && nPeaks !== "")
     ? ` · <strong>${escapeHtml(String(nPeaks))}</strong> peaks`
@@ -3785,15 +3928,14 @@ function syncChipAnnoFromPeakGenome(genome, opts = {}) {
   const force = opts.force === true;
   const annoG = document.getElementById("chip-anno-genome");
   // ponytail: respect manual species choice; peak metadata often stale (defaulted to hs).
+  // User's Genome mapping always wins until they change the dropdown again.
   if (!force && annoG?.dataset?.userSet === "1") {
-    syncChipAnnoGenomeDefaults(annoG.value || "mm");
+    const key = chipNormalizeAnnoGenome(annoG.value || "mm");
+    applyChipSessionGenome(key);
+    syncChipAnnoGenomeDefaults(key);
     return;
   }
-  const g = String(genome).toLowerCase();
-  let key = "mm";
-  if (g === "mm" || g.startsWith("mm") || g.includes("mouse")) key = "mm";
-  else if (g === "hg19") key = "hg19";
-  else if (g === "hs" || g.startsWith("hg") || g.includes("human")) key = "hs";
+  const key = chipNormalizeAnnoGenome(genome);
   const macsG = document.getElementById("chip-genome");
   if (annoG && annoG.value !== key && [...annoG.options].some((o) => o.value === key)) {
     annoG.value = key;
@@ -3917,10 +4059,10 @@ async function ensureChipPeaksFromSession() {
   try {
     const res = await API.chipListBams();
     if (res.last_peaks?.peak_file) {
-      window._emp.chipLastPeaks = {
+      adoptChipLastPeaks({
         ...res.last_peaks,
         source: res.last_peaks.source || "session",
-      };
+      });
       window._emp.activeDataKind = "chipseq";
       refreshChipPeakStatus();
       return window._emp.chipLastPeaks;
@@ -3987,7 +4129,7 @@ async function runChipAnnotate({ silentEmptyToast = false } = {}) {
   return res;
 }
 
-async function uploadChipPeaksFromAnalysis({ annotate = false } = {}) {
+async function uploadChipPeaksFromAnalysis() {
   const input = document.getElementById("chip-peak-file");
   const file = input?.files?.[0];
   if (!file) {
@@ -3997,18 +4139,18 @@ async function uploadChipPeaksFromAnalysis({ annotate = false } = {}) {
   setLoading(true);
   try {
     if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    // Genome at upload is optional metadata; user picks species before Annotate (Advanced §4).
     const genome = document.getElementById("chip-anno-genome")?.value
       || document.getElementById("chip-genome")?.value
       || "mm";
     const preset = document.getElementById("chip-macs-preset")?.value || "cutrun_tf_p05";
     const res = await withBusy("Uploading peak file", () => API.chipUploadPeaks(file, genome, preset));
-    const annoEl = document.getElementById("chip-anno-genome");
-    if (annoEl) delete annoEl.dataset.userSet;
-    syncChipAnnoFromPeakGenome(res.genome || genome, { force: true });
+    // Do not force-sync genome from upload response — peak metadata may default to hs and
+    // would overwrite a manual Mouse/Human choice (or the post-upload species pick).
     window._emp.chipLastPeaks = {
       peak_file: res.peak_file,
       run_dir: res.run_dir,
-      genome: res.genome || genome,
+      genome: document.getElementById("chip-anno-genome")?.value || res.genome || genome,
       assembly: res.assembly,
       preset: res.preset || preset,
       source: "upload",
@@ -4019,24 +4161,18 @@ async function uploadChipPeaksFromAnalysis({ annotate = false } = {}) {
       id: res.peak_id || res.last_peaks?.id,
     };
     window._emp.activeDataKind = "chipseq";
+    applyChipSessionGenome(document.getElementById("chip-anno-genome")?.value || genome);
     refreshChipPeakStatus(file.name);
-    await refreshChipdsLastPeaks({ forceList: true, forceGenomeSync: true });
+    await refreshChipdsLastPeaks({ forceList: true, preserveGenomeSelects: true });
     await refreshExperimentList();
     if (globalExp && [...globalExp.options].some((o) => o.value === CHIP_STANDALONE_TOKEN)) {
       globalExp.value = CHIP_STANDALONE_TOKEN;
     }
     input.value = "";
-    if (annotate) {
-      showAlert("chip-profile-result",
-        `✓ Peak file uploaded (${file.name}). Running ChIPseeker annotation…`,
-        "success");
-      await runChipAnnotate({ silentEmptyToast: true });
-    } else {
-      showAlert("chip-profile-result",
-        `✓ Peak file uploaded (${file.name}). Ready for ChIPseeker — click Annotate in section 4 (or use Upload & Annotate).`,
-        "success");
-      toast("Peaks ready for direct ChIPseeker analysis.", "success");
-    }
+    showAlert("chip-profile-result",
+      `✓ Peak file uploaded (${file.name}). Next: Advanced → ChIPseeker — choose genome/species, then Annotate.`,
+      "success");
+    toast(t("chip.toast.uploadOk") || "Peaks uploaded. Choose genome, then Annotate.", "success");
     return true;
   } catch (e) {
     showAlert("chip-profile-result", `Error: ${e.message}`, "error");
@@ -4077,13 +4213,18 @@ async function onChipFolderPicked(ev) {
     if (!localStorage.getItem("emp_session_id")) await API.createSession();
     for (const f of bamLike) {
       clearHideTimer();
-      showGlobalProgress(`Upload ${f.name}`);
+      const ac = new AbortController();
+      showGlobalProgress(`Upload ${f.name}`, { onCancel: () => ac.abort() });
       try {
         await API.chipUploadBam(f, "t", (p) => {
           updateGlobalProgress(p?.pct ?? 0, p?.message || "");
-        });
+        }, { signal: ac.signal });
         updateGlobalProgress(100, "Done");
       } catch (e) {
+        if (API.isUploadCancelled(e)) {
+          toast(t("upload.cancelled"), "info");
+          throw e;
+        }
         updateGlobalProgress(100, `Failed: ${e.message}`);
         toast(e.message, "error");
         throw e;
@@ -4098,9 +4239,13 @@ async function onChipFolderPicked(ev) {
     );
     toast(`Uploaded ${bamLike.length} alignment file(s).`, "success");
   } catch (e) {
-    showAlert("chip-profile-result", `Error: ${e.message}`, "error");
     clearHideTimer();
     hideGlobalProgress();
+    if (API.isUploadCancelled(e)) {
+      showAlert("chip-profile-result", t("upload.cancelled"), "info");
+    } else {
+      showAlert("chip-profile-result", `Error: ${e.message}`, "error");
+    }
   } finally {
     window._emp.analysisBusy = Math.max(0, (window._emp.analysisBusy || 1) - 1);
     setLoading(false);
@@ -4154,7 +4299,7 @@ async function refreshChipBamTable() {
       });
     }
     if (res.last_peaks?.peak_file) {
-      window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...res.last_peaks };
+      adoptChipLastPeaks(res.last_peaks);
       refreshChipPeakStatus();
       const alreadyListed = globalExp
         && [...globalExp.options].some((o) => o.value === CHIP_STANDALONE_TOKEN);
@@ -4184,10 +4329,12 @@ document.getElementById("chip-btn-upload-control")?.addEventListener("click", ()
   uploadChipBams("chip-bam-files-control", "c", "Control");
 });
 document.getElementById("chip-btn-upload-peaks")?.addEventListener("click", () => {
-  uploadChipPeaksFromAnalysis({ annotate: false });
+  uploadChipPeaksFromAnalysis();
 });
-document.getElementById("chip-btn-upload-annotate")?.addEventListener("click", () => {
-  uploadChipPeaksFromAnalysis({ annotate: true });
+document.getElementById("chip-btn-goto-annotate")?.addEventListener("click", () => {
+  setChipWizardStep("advanced");
+  openChipseqSection("chip-section-annotate");
+  toast(t("chip.toast.gotoAnnotate") || "Choose genome/species, then Annotate (ChIPseeker).", "info");
 });
 document.getElementById("chip-btn-browse-folder")?.addEventListener("click", () => {
   browseAndUploadChipFolder();
@@ -4328,17 +4475,25 @@ document.getElementById("chip-btn-annotate")?.addEventListener("click", async ()
   } finally { setLoading(false); }
 });
 
-document.getElementById("chip-anno-genome")?.addEventListener("change", (e) => {
+document.getElementById("chip-anno-genome")?.addEventListener("change", async (e) => {
   e.target.dataset.userSet = "1";
-  syncChipAnnoGenomeDefaults(e.target.value);
-  if (window._emp.chipLastPeaks) {
-    window._emp.chipLastPeaks.genome = e.target.value;
-    window._emp.chipLastPeaks.assembly = e.target.value === "mm" ? "mm10"
-      : (e.target.value === "hg19" ? "hg19" : "hg38");
+  const g = chipNormalizeAnnoGenome(e.target.value);
+  e.target.value = g;
+  syncChipAnnoGenomeDefaults(g);
+  applyChipSessionGenome(g);
+  const macsG = document.getElementById("chip-genome");
+  if (macsG && (g === "mm" || g === "hs") && macsG.dataset?.userSet !== "1") {
+    macsG.value = g;
   }
+  // Seed HOMER/ops selects only when those controls are not manually locked.
+  try { syncChipdsGenomeSelects(g, { force: false }); } catch (_) { /* ignore */ }
   try { refreshChipPeakStatus(); } catch (_) { /* ignore */ }
+  try { renderChipdsLastPeaksBadge(window._emp.chipLastPeaks); } catch (_) { /* ignore */ }
+  await persistChipPeakGenome(g);
+  try { refreshChipPeakStatus(); } catch (_) { /* ignore */ }
+  try { renderChipdsLastPeaksBadge(window._emp.chipLastPeaks); } catch (_) { /* ignore */ }
 });
-document.getElementById("chip-genome")?.addEventListener("change", (e) => {
+document.getElementById("chip-genome")?.addEventListener("change", async (e) => {
   e.target.dataset.userSet = "1";
   const g = e.target.value === "mm" ? "mm" : "hs";
   const annoG = document.getElementById("chip-anno-genome");
@@ -4347,10 +4502,11 @@ document.getElementById("chip-genome")?.addEventListener("change", (e) => {
     annoG.dataset.userSet = "1";
     syncChipAnnoGenomeDefaults(g);
   }
-  if (window._emp.chipLastPeaks) {
-    window._emp.chipLastPeaks.genome = g;
-    window._emp.chipLastPeaks.assembly = g === "mm" ? "mm10" : "hg38";
-  }
+  applyChipSessionGenome(g);
+  try { syncChipdsGenomeSelects(g, { force: false }); } catch (_) { /* ignore */ }
+  try { refreshChipPeakStatus(); } catch (_) { /* ignore */ }
+  try { renderChipdsLastPeaksBadge(window._emp.chipLastPeaks); } catch (_) { /* ignore */ }
+  await persistChipPeakGenome(g);
 });
 
 document.getElementById("chip-btn-coanalysis")?.addEventListener("click", async () => {
@@ -4658,6 +4814,12 @@ function bindChipDownstreamFilters() {
 
 function openChipseqSection(sectionId) {
   openChipseqWorkspace({ skipNavigate: false });
+  // Annotate / RNA / cross live under the Advanced wizard panel (hidden on Step 1/2).
+  if (sectionId === "chip-section-annotate"
+      || sectionId === "chip-section-rna"
+      || sectionId === "chip-section-cross") {
+    setChipWizardStep("advanced");
+  }
   setTimeout(() => {
     const el = document.getElementById(sectionId);
     if (el) {
@@ -4886,9 +5048,10 @@ async function runChipHomerOnPage() {
     if (!localStorage.getItem("emp_session_id")) await API.createSession();
     // Refresh badge / peaks metadata only — do not clobber a manual genome choice.
     const peaks = await refreshChipdsLastPeaks({ forceList: true, preserveGenomeSelects: true });
-    const peaksUi = chipGenomeToUi(peaks?.assembly || peaks?.genome || "");
+    const peaksUi = chipGenomeToUi(chipEffectivePeakGenome(peaks));
     const genomeChosen = document.getElementById("chipds-homer-genome")?.value || peaksUi || "hg38";
-    if (peaksUi && genomeChosen && peaksUi !== genomeChosen) {
+    // Only warn when peak metadata and HOMER select disagree *and* user has not locked Genome mapping.
+    if (peaksUi && genomeChosen && peaksUi !== genomeChosen && !chipAnnoGenomeIsUserSet()) {
       toast(`峰文件基因组为 ${peaksUi}，当前选择 ${genomeChosen}，结果可能无意义`, "warning");
     }
     const res = await API.chipHomer({
@@ -5126,7 +5289,7 @@ function renderChipPeakSelectors(peakFiles, activeId, lastPeaks) {
   fillChipPeakSelectEl(document.getElementById("chipds-peak-select"), peakFiles, activeId);
   fillChipPeakSelectEl(document.getElementById("chip-deps-peak"), peakFiles, activeId);
   if (lastPeaks?.peak_file) {
-    window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...lastPeaks };
+    adoptChipLastPeaks(lastPeaks);
     window._emp.chipPeakFiles = peakFiles || [];
     window._emp.chipActivePeakId = activeId || lastPeaks.id || "";
   }
@@ -5143,7 +5306,9 @@ function renderChipdsLastPeaksBadge(peaks) {
     return;
   }
   const name = basenameSafe(path);
-  const gLabel = peaks?.assembly || chipGenomeToUi(peaks?.genome) || peaks?.genome || "";
+  const gLabel = chipAnnoGenomeIsUserSet()
+    ? chipAssemblyForAnnoGenome(chipAnnoGenomeValue())
+    : (peaks?.assembly || chipGenomeToUi(peaks?.genome) || peaks?.genome || "");
   const genome = gLabel ? ` · ${gLabel}` : "";
   const srcRaw = String(peaks?.source || "").toLowerCase();
   const src = srcRaw
@@ -5164,9 +5329,9 @@ function renderChipdsLastPeaksBadge(peaks) {
 /**
  * Refresh last_peaks badge / registry. Genome selects are synced only when:
  * - forceGenomeSync (e.g. 「使用已上传峰文件」), or
- * - last_peaks identity (peak_file path) changed, or
+ * - last_peaks identity (peak_file path) changed AND user has not overridden Genome mapping, or
  * - first load / selects not yet userSet (and preserveGenomeSelects is false).
- * Never clobbers dataset.userSet genomes unless forceGenomeSync or identity change.
+ * Manual Genome mapping always wins for the active session after the user sets it.
  */
 async function refreshChipdsLastPeaks(opts = {}) {
   const {
@@ -5189,11 +5354,7 @@ async function refreshChipdsLastPeaks(opts = {}) {
     peakFiles = Array.isArray(res?.peak_files) ? res.peak_files : [];
     activeId = res?.active_peak_id || "";
     if (res?.last_peaks?.peak_file) {
-      window._emp.chipLastPeaks = {
-        ...(window._emp.chipLastPeaks || {}),
-        ...res.last_peaks,
-      };
-      peaks = window._emp.chipLastPeaks;
+      peaks = adoptChipLastPeaks(res.last_peaks);
     }
     // 「使用已上传峰文件」: bind newest upload entry if present.
     if (preferUpload) {
@@ -5205,8 +5366,7 @@ async function refreshChipdsLastPeaks(opts = {}) {
       if (pick?.id) {
         const sel = await API.chipSelectPeak({ peak_id: pick.id });
         if (sel?.last_peaks?.peak_file) {
-          window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...sel.last_peaks };
-          peaks = window._emp.chipLastPeaks;
+          peaks = adoptChipLastPeaks(sel.last_peaks);
           activeId = sel.active_peak_id || pick.id;
           peakFiles = Array.isArray(sel.peak_files) ? sel.peak_files : peakFiles;
         }
@@ -5217,24 +5377,33 @@ async function refreshChipdsLastPeaks(opts = {}) {
   }
   window._emp.chipPeakFiles = peakFiles;
   window._emp.chipActivePeakId = activeId;
+  if (chipAnnoGenomeIsUserSet()) applyChipSessionGenome(chipAnnoGenomeValue());
   renderChipPeakSelectors(peakFiles, activeId, peaks);
   const nextIdentity = chipdsLastPeaksIdentity(peaks);
   const identityChanged = Boolean(nextIdentity && nextIdentity !== prevIdentity);
   if (nextIdentity) window._emp.chipLastPeaksIdentity = nextIdentity;
-  if (identityChanged || forceGenomeSync) {
-    const annoG = document.getElementById("chip-anno-genome");
-    if (annoG) delete annoG.dataset.userSet;
-  }
 
   renderChipdsLastPeaksBadge(peaks);
-  if (identityChanged || forceGenomeSync) {
+  if (forceGenomeSync) {
+    const annoG = document.getElementById("chip-anno-genome");
+    if (annoG) delete annoG.dataset.userSet;
     syncChipAnnoFromPeakGenome(peaks?.genome || peaks?.assembly, { force: true });
+  } else if (chipAnnoGenomeIsUserSet()) {
+    applyChipSessionGenome(chipAnnoGenomeValue());
+    syncChipAnnoFromPeakGenome(chipAnnoGenomeValue(), { force: false });
+  } else if (identityChanged && !preserveGenomeSelects) {
+    syncChipAnnoFromPeakGenome(peaks?.genome || peaks?.assembly, { force: true });
+  } else if (preserveGenomeSelects) {
+    // Upload / soft refresh: keep Genome mapping dropdown; write it onto session peaks.
+    applyChipSessionGenome(chipAnnoGenomeValue());
   }
   refreshChipPeakStatus();
 
-  const peakGenome = peaks?.assembly || peaks?.genome;
+  const peakGenome = chipEffectivePeakGenome(peaks);
   if (peakGenome) {
-    if (forceGenomeSync || identityChanged) {
+    if (forceGenomeSync) {
+      syncChipdsGenomeSelects(peakGenome, { force: true });
+    } else if (identityChanged && !preserveGenomeSelects && !chipAnnoGenomeIsUserSet()) {
       syncChipdsGenomeSelects(peakGenome, { force: true });
     } else if (!preserveGenomeSelects) {
       syncChipdsGenomeSelects(peakGenome, { force: false });
@@ -5256,21 +5425,26 @@ async function onChipPeakSelectChange(ev) {
     if (!localStorage.getItem("emp_session_id")) await API.createSession();
     const res = await API.chipSelectPeak({ peak_id: peakId });
     if (!res?.success && res?.error) throw new Error(res.error);
-    window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...(res.last_peaks || {}) };
+    window._emp.chipLastPeaks = adoptChipLastPeaks(res.last_peaks || {});
     window._emp.chipActivePeakId = res.active_peak_id || peakId;
     window._emp.chipPeakFiles = Array.isArray(res.peak_files) ? res.peak_files : (window._emp.chipPeakFiles || []);
     window._emp.chipLastPeaksIdentity = chipdsLastPeaksIdentity(window._emp.chipLastPeaks);
-    const annoG = document.getElementById("chip-anno-genome");
-    if (annoG) delete annoG.dataset.userSet;
     renderChipPeakSelectors(window._emp.chipPeakFiles, window._emp.chipActivePeakId, window._emp.chipLastPeaks);
+    // Prefer keeping manual Genome mapping across peak switches.
+    if (chipAnnoGenomeIsUserSet()) {
+      const g = chipAnnoGenomeValue();
+      applyChipSessionGenome(g);
+      await persistChipPeakGenome(g);
+    } else {
+      syncChipAnnoFromPeakGenome(
+        window._emp.chipLastPeaks?.genome || window._emp.chipLastPeaks?.assembly,
+        { force: true }
+      );
+    }
     renderChipdsLastPeaksBadge(window._emp.chipLastPeaks);
-    syncChipAnnoFromPeakGenome(
-      window._emp.chipLastPeaks?.genome || window._emp.chipLastPeaks?.assembly,
-      { force: true }
-    );
     refreshChipPeakStatus();
-    const g = window._emp.chipLastPeaks?.assembly || window._emp.chipLastPeaks?.genome;
-    if (g) syncChipdsGenomeSelects(g, { force: true });
+    const g = chipEffectivePeakGenome(window._emp.chipLastPeaks);
+    if (g) syncChipdsGenomeSelects(g, { force: !chipAnnoGenomeIsUserSet() });
     const label = chipPeakEntryLabel(window._emp.chipLastPeaks);
     if (res.warning) toast(res.warning, "warning");
     else toast(`已切换当前峰文件: ${label || basenameSafe(window._emp.chipLastPeaks?.peak_file || "")}`, "success");
@@ -5315,13 +5489,18 @@ async function runChipPeaksOpsOnPage(op) {
     if (res.last_peaks?.peak_file) {
       window._emp = window._emp || {};
       const prevId = window._emp.chipLastPeaksIdentity || chipdsLastPeaksIdentity(window._emp.chipLastPeaks);
-      window._emp.chipLastPeaks = { ...(window._emp.chipLastPeaks || {}), ...res.last_peaks };
+      adoptChipLastPeaks(res.last_peaks);
       const nextId = chipdsLastPeaksIdentity(window._emp.chipLastPeaks);
       window._emp.chipLastPeaksIdentity = nextId;
       renderChipdsLastPeaksBadge(window._emp.chipLastPeaks);
-      // New peak file from ops → align genome; otherwise keep manual choice.
+      // New peak file from ops → seed genome selects unless user already locked Genome mapping.
       if ((res.last_peaks.assembly || res.last_peaks.genome) && nextId && nextId !== prevId) {
-        syncChipdsGenomeSelects(res.last_peaks.assembly || res.last_peaks.genome, { force: true });
+        if (chipAnnoGenomeIsUserSet()) {
+          applyChipSessionGenome(chipAnnoGenomeValue());
+          await persistChipPeakGenome(chipAnnoGenomeValue());
+        } else {
+          syncChipdsGenomeSelects(res.last_peaks.assembly || res.last_peaks.genome, { force: true });
+        }
       }
     }
     renderChipdsToolPlots(res.plots || null);
@@ -5765,7 +5944,7 @@ async function runChipRecipePack(packId) {
           if (sel) sel.value = gate.rna;
           await API.chipRnaseqCoanalysis({
             rnaseq_experiment: gate.rna,
-            genome: document.getElementById("chip-anno-genome")?.value || "hs",
+            genome: document.getElementById("chip-anno-genome")?.value || "mm",
             score_cutoff: +(document.getElementById("chip-co-score-cutoff")?.value || 10),
             min_total_counts: +(document.getElementById("chip-min-counts")?.value || 100),
             rnaseq_p_cutoff: +(document.getElementById("chip-rna-p-cutoff")?.value || 0.05),
@@ -5784,12 +5963,12 @@ async function runChipRecipePack(packId) {
           await API.chipMicrobiomeCoanalysis({
             m16s_experiment: gate.m16s || null,
             mgx_experiment: gate.mgx || null,
-            genome: document.getElementById("chip-anno-genome")?.value || "hs",
+            genome: document.getElementById("chip-anno-genome")?.value || "mm",
           });
         } else if (action === "chip_metabolomics_coanalysis") {
           await API.chipMetabolomicsCoanalysis({
             mbx_experiment: gate.mbx,
-            genome: document.getElementById("chip-anno-genome")?.value || "hs",
+            genome: document.getElementById("chip-anno-genome")?.value || "mm",
           });
         } else if (action === "chip_clinical_coanalysis") {
           await API.chipClinicalCoanalysis({
@@ -7227,6 +7406,150 @@ document.getElementById("clin-btn-systematic")?.addEventListener("click", async 
   }
 });
 
+// ── Auto-select clinical traits (client-side heuristics) ───────────
+// Prefer continuous numeric vars with enough non-NA; boost common
+// phenotype names; skip ID-like / near-unique columns; cap for heatmaps.
+const CLIN_TRAIT_SKIP_RE = [
+  /^(sample|subject|patient|barcode|index|row|col|id)$/i,
+  /(^|[_-])(sample|subject|patient)?id($|[_-])/i,
+  /uuid|barcode/i,
+];
+const CLIN_TRAIT_PREFERRED_RE = [
+  /^age$/i, /^bmi$/i, /^weight$/i, /^height$/i,
+  /mayo/i, /ibs[_-]?sss/i, /disease[_-]?duration/i,
+  /crp|esr|calprotectin|fecal[_-]?cal/i,
+  /albumin|hemoglobin|hba1c|glucose/i,
+  /score|severity|activity/i,
+];
+
+function scoreClinicalTraitName(name, meta = {}, { minN = 5 } = {}) {
+  const key = String(name || "").toLowerCase();
+  if (!key) return -Infinity;
+  if (CLIN_TRAIT_SKIP_RE.some((re) => re.test(key))) return -Infinity;
+
+  const n = Number(meta.n_samples);
+  const nUnique = Number(meta.n_unique);
+  if (Number.isFinite(n) && n < minN) return -Infinity;
+  // Nearly unique per sample → likely an encoded ID.
+  if (Number.isFinite(n) && Number.isFinite(nUnique) && n >= 10
+      && nUnique >= Math.max(20, n * 0.9)) {
+    return -Infinity;
+  }
+
+  let s = 0;
+  if (Number.isFinite(n)) s += Math.min(n, 100) / 10;
+  if (Number.isFinite(nUnique) && Number.isFinite(n) && n > 0) {
+    if (nUnique <= 2) s -= 1;
+    else if (nUnique >= 8 || nUnique / n >= 0.3) s += 5;
+    else if (nUnique >= 4) s += 2;
+  }
+  for (let i = 0; i < CLIN_TRAIT_PREFERRED_RE.length; i++) {
+    if (CLIN_TRAIT_PREFERRED_RE[i].test(key)) {
+      s += 24 - i;
+      break;
+    }
+  }
+  if (/age|bmi|weight|height|mayo|ibs|duration|crp|calprotectin|albumin|score|severity|activity/
+      .test(key)) {
+    s += 6;
+  }
+  return s;
+}
+
+/** Select sensible traits in a <select> already filled with numeric options. */
+function autoConfigureClinicalTraits(selectEl, { maxTraits = 10, minN = 5 } = {}) {
+  if (!selectEl) return [];
+  const options = Array.from(selectEl.options || []).filter((o) => o.value);
+  if (!options.length) return [];
+
+  const byName = new Map((_clinVarCache || []).map((r) => [r.name, r]));
+  const ranked = options
+    .map((o) => {
+      const meta = byName.get(o.value) || {};
+      return { name: o.value, score: scoreClinicalTraitName(o.value, meta, { minN }) };
+    })
+    .filter((x) => Number.isFinite(x.score) && x.score > -Infinity)
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+
+  const pool = ranked.length
+    ? ranked
+    : options.map((o) => ({ name: o.value, score: 0 }));
+  const cap = Math.max(1, Math.min(maxTraits, pool.length));
+  const pick = pool.slice(0, cap).map((x) => x.name);
+  const pickSet = new Set(pick);
+
+  if (selectEl.multiple) {
+    Array.from(selectEl.options).forEach((o) => {
+      o.selected = pickSet.has(o.value);
+    });
+  } else if (pick[0]) {
+    selectEl.value = pick[0];
+  }
+  return pick;
+}
+
+function ensureNumericField(el, fallback, { min = null } = {}) {
+  if (!el) return;
+  const v = +el.value;
+  if (!Number.isFinite(v) || String(el.value).trim() === ""
+      || (min != null && v < min)) {
+    el.value = String(fallback);
+  }
+}
+
+async function runClinicalAutoConfig(kind) {
+  if (!Array.isArray(_clinVarCache) || !_clinVarCache.length) {
+    try { await refreshClinicalVars(); } catch (_) { /* toast below */ }
+  }
+  const selectId = kind === "wgcna" ? "clin-wgcna-traits"
+    : kind === "fitline" ? "clin-fit-trait"
+      : "clin-cor-traits";
+  const selectEl = document.getElementById(selectId);
+  if (!selectEl?.options?.length) {
+    toast(t("clinical.autoConfigNeedVars"), "error");
+    return;
+  }
+
+  setClinicalCodeStrategy(kind === "fitline" ? "fitline" : kind);
+  const maxTraits = kind === "fitline" ? 1 : 10;
+  const picked = autoConfigureClinicalTraits(selectEl, { maxTraits });
+  if (!picked.length) {
+    toast(t("clinical.autoConfigNone"), "error");
+    return;
+  }
+
+  if (kind === "cor") {
+    const method = document.getElementById("clin-cor-method");
+    if (method) method.value = "spearman";
+    ensureNumericField(document.getElementById("clin-cor-topn"), 30, { min: 5 });
+    const padj = document.getElementById("clin-cor-padj");
+    if (padj) padj.value = "BH";
+  } else if (kind === "wgcna") {
+    ensureNumericField(document.getElementById("clin-wgcna-minmod"), 30, { min: 10 });
+  }
+
+  toast(t("clinical.autoConfigToast", null, { n: picked.length }), "success");
+  refreshClinicalCodeScript();
+}
+
+document.getElementById("clin-btn-cor-auto-config")?.addEventListener("click", () => {
+  runClinicalAutoConfig("cor");
+});
+document.getElementById("clin-btn-wgcna-auto-config")?.addEventListener("click", () => {
+  runClinicalAutoConfig("wgcna");
+});
+document.getElementById("clin-btn-fit-auto-config")?.addEventListener("click", () => {
+  runClinicalAutoConfig("fitline");
+});
+
+// ponytail: client-side name/N heuristics only; upgrade = backend trait recommender.
+if (typeof window !== "undefined" && /[?&]emp_selftest=1\b/.test(String(location.search || ""))) {
+  const bmi = scoreClinicalTraitName("BMI", { n_samples: 40, n_unique: 28 });
+  const age = scoreClinicalTraitName("age", { n_samples: 40, n_unique: 25 });
+  const sid = scoreClinicalTraitName("sample_id", { n_samples: 40, n_unique: 40 });
+  console.assert(bmi > sid && age > sid, "clinical auto-trait scoring");
+}
+
 // ── (b) Feature × Trait correlation ───────────────────────────────
 document.getElementById("clin-btn-cor")?.addEventListener("click", async () => {
   setClinicalCodeStrategy("cor");
@@ -7511,7 +7834,13 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
     document.querySelectorAll(".ai-copilot-btn-label").forEach((el) => {
       el.textContent = t("copilot.btn");
     });
-    import("./github_sync.js?v=i18n-locale-v1").then((m) => m.applyGithubSyncI18n?.());
+    import("./github_sync.js?v=nav-active-fix-v1").then((m) => m.applyGithubSyncI18n?.());
+    // Re-apply page bindings after other locale listeners (Code Lab, etc.).
+    try {
+      applyPagesI18n();
+    } catch (e) {
+      console.warn("[emp-i18n] locale-change applyPagesI18n failed", e);
+    }
     if (document.getElementById("page-clinical")?.classList.contains("active")) {
       updateClinicalPrecheck();
     }

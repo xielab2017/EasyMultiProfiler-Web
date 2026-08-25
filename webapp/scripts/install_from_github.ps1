@@ -1,6 +1,6 @@
-# install_from_github.ps1 — V9.0.1_Education one-line installer for Windows (preview).
+# install_from_github.ps1 — v9.0.3 one-line installer for Windows (main).
 #
-#   irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.1_Education/webapp/scripts/install_from_github.ps1 | iex
+#   irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.ps1 | iex
 #
 # What it does:
 #   1. Detects host OS (Windows / macOS / Linux).
@@ -8,13 +8,13 @@
 #        we transparently hand off to the .sh equivalent so the same oneliner
 #        works everywhere.
 #   2. Verifies / installs git (so we can clone).
-#   3. Clones the repo at -Branch (default V9.0.1_Education).
+#   3. Clones the repo at -Branch (default main).
 #   4. Runs the bootstrap — installs python3 + R + EMP if missing,
 #      then starts the API + frontend.
 param(
   [string]$RepoUrl   = "https://github.com/xielab2017/EasyMultiProfiler-Web.git",
   [string]$TargetDir = "EasyMultiProfiler-Web",
-  [string]$Branch    = "V9.0.1_Education"
+  [string]$Branch    = "main"
 )
 
 $ErrorActionPreference = "Stop"

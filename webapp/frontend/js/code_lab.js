@@ -4,7 +4,7 @@
  */
 import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-07-16-multi-demo";
 import { codeLabArtifactURL, execUserR, getOpenRouterVerified, optimizeRCode, probeOpenRouterModels } from "./api.js?v=2026-07-22-script-fusion-v1";
-import { t } from "./locale.js?v=2026-07-22-script-fusion-v1";
+import { t } from "./locale.js?v=nav-active-fix-v1";
 
 const LS_KEY = "emp_code_lab_store_v1";
 const LLM_CFG_KEY = "emp_code_lab_llm_config_v2";
@@ -470,11 +470,11 @@ const CLINICAL_SNIPPET_LABELS = {
   cor: "Feature × trait correlation",
   fitline: "Scatter + fit line",
   wgcna: "WGCNA (async)",
-  three_line: "三线表",
-  systematic: "系统临床统计",
+  three_line: "One-click baseline table",
+  systematic: "Systematic clinical stats",
   joint: "Multi-omics joint",
   marker_model: "Multi-omics marker model",
-  reorient: "行列转换",
+  reorient: "Reorient rows/columns",
 };
 
 const CLINICAL_NO_EXPERIMENT_TABS = new Set(["overview", "three_line", "systematic", "reorient", "marker_model"]);

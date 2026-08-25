@@ -2,8 +2,9 @@
  * UI locale: Auto (browser + region hint) or manual 中文 / English.
  * Dispatches emp:locale-change when the active locale changes.
  */
-import { I18N_CATALOG } from "./i18n_catalog.js?v=i18n-locale-v1";
-import { applyDomI18n } from "./ui_dom_i18n.js?v=i18n-locale-v1";
+import { I18N_CATALOG } from "./i18n_catalog.js?v=nav-active-fix-v1";
+import { applyDomI18n } from "./ui_dom_i18n.js?v=nav-active-fix-v1";
+import { applyPagesI18n } from "./i18n_pages.js?v=nav-active-fix-v1";
 
 const LS_MODE = "emp_ui_locale_mode"; // auto | zh | en
 const LS_RESOLVED = "emp_ui_locale_resolved";
@@ -299,9 +300,9 @@ function applyCourseBanner() {
   if (!root) return;
   const loc = getLocale();
   if (loc === "en") {
-    root.innerHTML = `<strong>v9.0.1</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
+    root.innerHTML = `<strong>v9.0.3</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
   } else {
-    root.innerHTML = `<strong>v9.0.1</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
+    root.innerHTML = `<strong>v9.0.3</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
   }
   document.getElementById("btn-course-to-guide")?.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent("emp:navigate", { detail: { page: "guide" } }));
@@ -313,9 +314,28 @@ function applyDocumentLocale() {
   document.documentElement.lang = loc === "en" ? "en" : "zh-CN";
   document.documentElement.dataset.empLocale = loc;
 
-  applyDataI18nAttributes();
-  applyDomI18n();
-  applyCourseBanner();
+  // Isolate each apply step so a throw in bulk DOM labeling cannot skip
+  // page-scoped clinical / analysis / viz bindings (or the page title).
+  try {
+    applyDataI18nAttributes();
+  } catch (e) {
+    console.warn("[emp-i18n] data-i18n attrs failed", e);
+  }
+  try {
+    applyDomI18n();
+  } catch (e) {
+    console.warn("[emp-i18n] applyDomI18n failed", e);
+  }
+  try {
+    applyPagesI18n();
+  } catch (e) {
+    console.warn("[emp-i18n] applyPagesI18n failed", e);
+  }
+  try {
+    applyCourseBanner();
+  } catch (e) {
+    console.warn("[emp-i18n] course banner failed", e);
+  }
 
   document.querySelectorAll(".locale-btn").forEach((btn) => {
     const m = btn.dataset.localeMode;

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EasyMultiProfiler Web V9.0.1 Education</title>
-    <link rel="stylesheet" href="css/style.css?v=omics-demo-fold-v1">
+  <title>EasyMultiProfiler Web V9.0.3</title>
+    <link rel="stylesheet" href="css/style.css?v=nav-active-fix-v1">
     <link rel="stylesheet" href="css/code_lab.css?v=2026-07-16-multi-demo-v2">
     <link rel="stylesheet" href="css/teaching.css?v=2026-07-22-gh-week-first">
   <script>
@@ -29,6 +29,7 @@
     <span class="gp-label" id="gp-label">Working…</span>
     <span class="gp-msg"   id="gp-msg"></span>
     <span class="gp-pct"   id="gp-pct">0%</span>
+    <button type="button" class="gp-cancel hidden" id="gp-cancel" data-i18n="upload.cancel">取消</button>
   </div>
   <div class="progress-bar" id="gp-bar" style="--pct:0%"></div>
 </div>
@@ -134,7 +135,7 @@
       <div id="perf-last" class="perf-last">—</div>
     </div>
     <div id="locale-note" class="locale-note">
-      <span class="version-badge">v9.0.1</span>
+      <span class="version-badge">v9.0.3</span>
       <button type="button" class="btn-link" id="btn-help-guide" data-i18n="footer.guide">安装与使用指南</button>
       · <button type="button" class="btn-link" id="btn-help-course" data-i18n="footer.course">Course 入门</button>
       · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/main/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
@@ -195,7 +196,7 @@
   <section id="page-course" class="page active">
     <div class="card guide-course-banner">
       <p class="hint" style="margin:0">
-        <strong>v9.0.1</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
+        <strong>v9.0.3</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
         （Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」
       </p>
     </div>
@@ -220,14 +221,14 @@
     <div id="teaching-prompt-root"></div>
   </section>
 
-  <!-- ── PAGE: USER GUIDE (v9.0.1) ─────────────────────── -->
+  <!-- ── PAGE: USER GUIDE (v9.0.3) ─────────────────────── -->
   <section id="page-guide" class="page">
     <div id="guide-root"></div>
   </section>
 
   <section id="page-import" class="page">
     <div class="card welcome-card" id="welcome-card">
-      <h2>👋 欢迎使用 EasyMultiProfiler v9.0.1</h2>
+      <h2>👋 欢迎使用 EasyMultiProfiler v9.0.3</h2>
       <p class="hint">
         <strong>还没安装？</strong> 左侧点 <strong>Guide</strong> 查看 Mac / Windows 分平台安装步骤（两条路径不同，请勿混用）。
         <strong>已装好？</strong> 从 <strong>Course</strong> 学，或下方一键加载 16S / RNA-seq / Clinical 示例数据。
@@ -1561,7 +1562,7 @@
     <div class="card chip-step-panel" id="chip-step-1" data-chip-step-panel="1">
       <h3 data-i18n="chip.wizard.step1Title">Step 1 — Peak / BAM / MACS</h3>
       <p class="hint" data-i18n="chip.hint.workflow">
-        <strong>BED / narrowPeak / broadPeak</strong> are MACS2/3 peak products — upload them and run <strong>ChIPseeker directly</strong> (no BAM, no re-calling peaks).
+        <strong>BED / narrowPeak / broadPeak</strong> are MACS2/3 peak products — upload them here, then choose genome/species and run <strong>Annotate (ChIPseeker)</strong> under Advanced (no BAM, no re-calling peaks).
         Only use sections 2–3 when you still have raw BAM/SAM and need MACS first; MACS output then feeds the same ChIPseeker step.
       </p>
       <div class="btn-row" style="margin-bottom:8px">
@@ -1569,9 +1570,9 @@
           <i data-lucide="sparkles"></i> <span data-i18n="chip.btn.gotoStep2">前往 Step 2 一键配方</span>
         </button>
       </div>
-      <h4 class="chip-section-title" data-i18n="chip.section.peaksDirect">1. Peak file (MACS product) — direct ChIPseeker</h4>
+      <h4 class="chip-section-title" data-i18n="chip.section.peaksDirect">1. Peak file (MACS product) — upload</h4>
       <p class="hint" data-i18n="chip.hint.peaksDirect">
-        Upload existing <code>.bed / .narrowPeak / .broadPeak / .gff</code> (from MACS or elsewhere). Prefer <strong>Upload &amp; Annotate</strong> to run ChIPseeker in one step.
+        Upload existing <code>.bed / .narrowPeak / .broadPeak / .gff</code> (from MACS or elsewhere). Then open <strong>Advanced → ChIPseeker</strong>, choose genome/species, and run Annotate.
       </p>
       <div class="chip-sample-col chip-peak-upload">
         <div class="chip-sample-head">
@@ -1580,11 +1581,11 @@
         </div>
         <input type="file" id="chip-peak-file" accept=".bed,.narrowPeak,.broadPeak,.gff,.gff3,.txt,.csv,.tsv">
         <div class="btn-row" style="margin-top:8px">
-          <button class="btn btn-primary btn-sm" id="chip-btn-upload-annotate" type="button">
-            <i data-lucide="play"></i> <span data-i18n="chip.btn.uploadAnnotate">Upload &amp; Annotate (ChIPseeker)</span>
+          <button class="btn btn-primary btn-sm" id="chip-btn-upload-peaks" type="button">
+            <i data-lucide="upload"></i> <span data-i18n="chip.btn.uploadPeaksOnly">Upload peaks</span>
           </button>
-          <button class="btn btn-outline btn-sm" id="chip-btn-upload-peaks" type="button">
-            <i data-lucide="upload"></i> <span data-i18n="chip.btn.uploadPeaksOnly">Upload peaks only</span>
+          <button class="btn btn-outline btn-sm" id="chip-btn-goto-annotate" type="button">
+            <i data-lucide="tags"></i> <span data-i18n="chip.btn.gotoAnnotate">Next: genome &amp; Annotate</span>
           </button>
         </div>
         <div id="chip-peak-status" class="chip-peak-status hidden"></div>
@@ -1906,7 +1907,7 @@
       <div id="chip-peak-status-anno" class="chip-peak-status hidden" style="margin-bottom:10px"></div>
       <ol class="hint chip-seeker-steps" style="margin:8px 0 12px 1.2em">
         <li data-i18n="chip.step.peaks">Peak file ready (MACS product uploaded in §1, or produced by §3).</li>
-        <li data-i18n="chip.step.params">Choose genome / TxDb / OrgDb and TSS region.</li>
+        <li data-i18n="chip.step.params">Then choose Genome mapping (Mouse / Human) / TxDb / OrgDb and TSS — change after upload; no re-upload needed.</li>
         <li data-i18n="chip.step.run">Run Annotate (ChIPseeker); review pie chart and gene tables.</li>
       </ol>
       <div class="form-grid">
@@ -2318,18 +2319,18 @@
       </p>
       <div class="form-grid">
         <div class="form-group">
-          <label>当前分析策略 / Code Lab script</label>
+          <label>Current analysis strategy / Code Lab script</label>
           <select id="clin-analysis-strategy">
-            <option value="three_line">One-click 三线表</option>
-            <option value="systematic">系统临床统计</option>
+            <option value="three_line">One-click baseline table</option>
+            <option value="systematic">Systematic clinical stats</option>
             <option value="cor">Feature × Trait correlation</option>
             <option value="fitline">Scatter + regression line</option>
             <option value="wgcna">WGCNA module–trait</option>
             <option value="marker_model">Multi-omics marker model</option>
-            <option value="reorient">行列转换/纠正</option>
-            <option value="overview">变量检测/概览</option>
+            <option value="reorient">Reorient rows/columns</option>
+            <option value="overview">Variable overview</option>
           </select>
-          <small class="hint">切换后右侧 Code Lab 会同步显示对应 R 脚本。</small>
+          <small class="hint">Switching updates the Code Lab R script on the right.</small>
         </div>
         <div class="form-group">
           <label>Clinical data source</label>
@@ -2379,13 +2380,13 @@
           <option value="transpose">Force transpose once</option>
         </select>
         <button class="btn btn-outline" id="clin-btn-reorient" data-clinical-script="reorient">
-          <i data-lucide="flip-vertical-2"></i> 行列转换/纠正
+          <i data-lucide="flip-vertical-2"></i> Reorient rows/columns
         </button>
         <button class="btn btn-primary" id="clin-btn-three-line" data-clinical-script="three_line">
-          <i data-lucide="table"></i> One-click 三线表
+          <i data-lucide="table"></i> One-click baseline table
         </button>
         <button class="btn btn-outline" id="clin-btn-systematic" data-clinical-script="systematic">
-          <i data-lucide="files"></i> 系统临床统计（基线+前后变化+组间差异）
+          <i data-lucide="files"></i> Systematic clinical (baseline + change + group diff)
         </button>
         <span id="clin-vars-summary" class="hint" style="align-self:center;"></span>
       </div>
@@ -2441,6 +2442,10 @@
         </div>
       </div>
       <div class="btn-row">
+        <button type="button" class="btn btn-outline" id="clin-btn-cor-auto-config"
+                title="Auto-select sensible clinical traits and recommend defaults">
+          <i data-lucide="sparkles"></i> 系统自动筛选配置
+        </button>
         <button class="btn btn-primary" id="clin-btn-cor" data-clinical-script="cor">
           <i data-lucide="play"></i> Run correlation
         </button>
@@ -2496,6 +2501,10 @@
         </div>
       </div>
       <div class="btn-row">
+        <button type="button" class="btn btn-outline" id="clin-btn-fit-auto-config"
+                title="Auto-pick a sensible numeric clinical trait">
+          <i data-lucide="sparkles"></i> 系统自动筛选配置
+        </button>
         <button class="btn btn-primary" id="clin-btn-fit" data-clinical-script="fitline">
           <i data-lucide="trending-up"></i> Draw scatter
         </button>
@@ -2527,6 +2536,10 @@
         </div>
       </div>
       <div class="btn-row">
+        <button type="button" class="btn btn-outline" id="clin-btn-wgcna-auto-config"
+                title="Auto-select sensible clinical traits and recommend defaults">
+          <i data-lucide="sparkles"></i> 系统自动筛选配置
+        </button>
         <button class="btn btn-primary" id="clin-btn-wgcna" data-clinical-script="wgcna">
           <i data-lucide="network"></i> Run WGCNA
         </button>
@@ -3456,7 +3469,7 @@
     else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
   }
 </script>
-<script type="module" src="js/app.js?v=chip-genome-sticky-mm"></script>
+<script type="module" src="js/app.js?v=nav-active-fix-v1"></script>
 <script>
   // Initialise Lucide icons after all content is ready
   document.addEventListener("DOMContentLoaded", () => lucide.createIcons());

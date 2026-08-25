@@ -2,8 +2,7 @@
  * Maps static DOM nodes in index.html to i18n keys (bulk labeling without tagging every node).
  * attr: text | html | title | placeholder | aria | value
  */
-import { t } from "./locale.js?v=i18n-locale-v1";
-import { applyPagesI18n } from "./i18n_pages.js?v=i18n-locale-v1";
+import { t } from "./locale.js?v=nav-active-fix-v1";
 
 export const DOM_I18N = [
   { sel: "#gp-label", key: "common.working" },
@@ -129,6 +128,9 @@ export const DOM_I18N = [
   { sel: "#clin-btn-reorient", key: "clinical.btnReorient", attr: "lastText" },
   { sel: "#clin-btn-three-line", key: "clinical.btnThreeLine", attr: "lastText" },
   { sel: "#clin-btn-systematic", key: "clinical.btnSystematic", attr: "lastText" },
+  { sel: "#clin-btn-cor-auto-config", key: "clinical.btnAutoConfig", attr: "lastText" },
+  { sel: "#clin-btn-fit-auto-config", key: "clinical.btnAutoConfig", attr: "lastText" },
+  { sel: "#clin-btn-wgcna-auto-config", key: "clinical.btnAutoConfig", attr: "lastText" },
   { sel: "#clin-analysis-strategy", key: "clinical.strategy", attr: "formLabel" },
   { sel: "#clin-analysis-strategy + .hint", key: "clinical.strategyHint" },
 ];
@@ -191,6 +193,8 @@ function applyBinding({ sel, key, attr = "text", labelFor }) {
 }
 
 export function applyDomI18n() {
+  // Page-scoped bindings (clinical / analysis / …) are applied separately from
+  // locale.applyDocumentLocale so a throw here cannot leave Clinical stuck in zh.
   DOM_I18N.forEach(applyBinding);
   applyImportSelectOptions();
   applyPrepModeOptions();
@@ -202,7 +206,6 @@ export function applyDomI18n() {
   applyChipDepsStaticI18n();
   setFormGroupLabel("prep-mode", t("prep.mode"));
   setFormGroupLabel("prep-snapshot-select", t("prep.snapshot"));
-  applyPagesI18n();
 }
 
 const UPLOAD_TYPE_KEYS = {

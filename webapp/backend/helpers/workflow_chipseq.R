@@ -197,8 +197,8 @@ chip_require_string <- function(x, name) {
       peak_file = p,
       name = basename(p),
       source = src,
-      genome = "hs",
-      assembly = .chip_assembly_from_genome("hs"),
+      genome = "mm",
+      assembly = .chip_assembly_from_genome("mm"),
       n_peaks = .chip_count_peak_lines(p),
       created_at = as.character(info[p, "mtime"]),
       run_dir = dirname(p),
@@ -321,7 +321,7 @@ chip_require_string <- function(x, name) {
                                      peak_file,
                                      name = NULL,
                                      source = "upload",
-                                     genome = "hs",
+                                     genome = "mm",
                                      assembly = NULL,
                                      n_peaks = NULL,
                                      run_dir = NULL,
@@ -502,6 +502,59 @@ chip_select_peak <- function(session_id, peak_id = NULL, peak_file = NULL) {
     }),
     active_peak_id = hit$id,
     warning = if (is.finite(n) && n < 1L) .chip_empty_peaks_error(hit$peak_file, n) else NULL
+  )
+}
+
+# Update genome/assembly on active (or specified) peak without re-upload.
+# Authoritative when UI Genome mapping changes after BED is already uploaded.
+chip_update_peak_genome <- function(session_id, genome = "mm", peak_id = NULL) {
+  session_id <- chip_require_session(session_id)
+  g_in <- .chip_form_scalar(genome) %||% "mm"
+  gcfg <- chip_genome_config(g_in)
+  asm <- .chip_assembly_from_genome(g_in)
+  manifest <- .chip_ensure_peak_files_registry(session_id, persist = FALSE)
+  pid <- .chip_form_scalar(peak_id) %||% as.character(manifest$last_peaks$id %||% "")[1]
+  active_path <- .chip_path_scalar(manifest$last_peaks$peak_file %||% "")
+  updated <- FALSE
+  for (i in seq_along(manifest$peak_files %||% list())) {
+    e <- manifest$peak_files[[i]]
+    eid <- as.character(e$id %||% "")[1]
+    epath <- .chip_path_scalar(e$peak_file %||% e$path %||% "")
+    match_id <- nzchar(pid) && identical(eid, pid)
+    match_path <- !is.null(active_path) && !is.null(epath) && identical(
+      normalizePath(epath, winslash = "/", mustWork = FALSE),
+      normalizePath(active_path, winslash = "/", mustWork = FALSE)
+    )
+    if (match_id || (!nzchar(pid) && match_path)) {
+      manifest$peak_files[[i]]$genome <- gcfg$macs
+      manifest$peak_files[[i]]$assembly <- asm
+      updated <- TRUE
+      if (!nzchar(pid)) pid <- eid
+    }
+  }
+  if (!is.null(manifest$last_peaks) && is.list(manifest$last_peaks)) {
+    lp_id <- as.character(manifest$last_peaks$id %||% "")[1]
+    if (!nzchar(as.character(pid %||% "")[1]) || identical(lp_id, pid) || !nzchar(lp_id)) {
+      manifest$last_peaks$genome <- gcfg$macs
+      manifest$last_peaks$assembly <- asm
+      manifest$last_peaks$updated_at <- as.character(Sys.time())
+      updated <- TRUE
+    }
+  }
+  if (!isTRUE(updated)) {
+    stop("未找到可更新基因组的峰文件。请先上传峰文件，再选择物种。")
+  }
+  chip_save_manifest(session_id, manifest)
+  list(
+    success = TRUE,
+    genome = gcfg$macs,
+    assembly = asm,
+    last_peaks = manifest$last_peaks,
+    peak_files = lapply(manifest$peak_files %||% list(), function(e) {
+      e$label <- .chip_peak_label(e)
+      e
+    }),
+    active_peak_id = as.character(manifest$last_peaks$id %||% pid %||% "")[1]
   )
 }
 
@@ -731,11 +784,13 @@ chip_ensure_bam <- function(path, dest_dir = NULL) {
   }
 
   # .chip_system2 quotes each arg — required for Application Support paths.
+  # -p 1: bamCoverage defaults to all cores and can OOM plumber after HOMER/DiffBind.
   args <- c(
     "-b", bam_path,
     "-o", out_bw,
     "--binSize", as.character(bin_size),
-    "--normalizeUsing", as.character(normalize_using)
+    "--normalizeUsing", as.character(normalize_using),
+    "-p", "1"
   )
   st <- .chip_system2(bam_coverage_bin, args = args, stdout = TRUE, stderr = TRUE)
   log1 <- if (inherits(st, "error")) conditionMessage(st) else paste(st, collapse = "\n")
@@ -754,7 +809,8 @@ chip_ensure_bam <- function(path, dest_dir = NULL) {
     "-o", bg,
     "--outFileFormat", "bedgraph",
     "--binSize", as.character(bin_size),
-    "--normalizeUsing", as.character(normalize_using)
+    "--normalizeUsing", as.character(normalize_using),
+    "-p", "1"
   )
   st2 <- .chip_system2(bam_coverage_bin, args = args2, stdout = TRUE, stderr = TRUE)
   log2 <- if (inherits(st2, "error")) conditionMessage(st2) else paste(st2, collapse = "\n")
@@ -762,7 +818,7 @@ chip_ensure_bam <- function(path, dest_dir = NULL) {
     # Second known fallback: drop normalization (BPM/RPKM can fail on odd BAMs).
     args3 <- c(
       "-b", bam_path, "-o", out_bw, "--binSize", as.character(bin_size),
-      "--normalizeUsing", "None"
+      "--normalizeUsing", "None", "-p", "1"
     )
     st3 <- .chip_system2(bam_coverage_bin, args = args3, stdout = TRUE, stderr = TRUE)
     log3 <- if (inherits(st3, "error")) conditionMessage(st3) else paste(st3, collapse = "\n")
@@ -1107,6 +1163,18 @@ chip_bam_upload_complete <- function(session_id, upload_id) {
   out
 }
 
+chip_bam_upload_cancel <- function(session_id, upload_id) {
+  session_id <- chip_require_session(session_id)
+  upload_id <- chip_require_string(upload_id, "upload_id")
+  meta_path <- .chip_upload_meta_path(session_id, upload_id)
+  partial <- .chip_upload_partial_path(session_id, upload_id)
+  bdir <- chip_bam_dir(session_id)
+  # upload_id is alphanumeric + underscore from chip_bam_upload_init.
+  staged <- list.files(bdir, pattern = paste0("^\\.complete_", upload_id), full.names = TRUE)
+  tryCatch(unlink(c(partial, meta_path, staged)), error = function(e) invisible(NULL))
+  list(success = TRUE, cancelled = TRUE, upload_id = upload_id)
+}
+
 chip_upload_bam <- function(session_id, src_path, original_name = NULL, group = "t") {
   session_id <- chip_require_session(session_id)
   src_path <- chip_require_string(src_path, "src_path")
@@ -1231,7 +1299,7 @@ chip_list_bams <- function(session_id) {
 # register it in the manifest as `last_peaks`, so downstream annotation
 # and cross-omics analysis can run directly without re-calling.
 chip_upload_peaks <- function(session_id, src_path, original_name = NULL,
-                              genome = "hs", preset = "chipseq_tf") {
+                              genome = "mm", preset = "chipseq_tf") {
   session_id <- chip_require_session(session_id)
   src_path <- chip_require_string(src_path, "src_path")
   if (!file.exists(src_path)) stop("Uploaded peak file not found on server.")
@@ -3877,18 +3945,22 @@ chip_deeptools <- function(session_id,
   if (identical(mode, "coverage")) {
     bw_files <- character(0)
     logs <- character(0)
+    # Education/smoke: large multi-GB BAMs — floor bin size so coverage cannot OOM plumber.
+    cov_bin <- max(as.integer(bin_size), if (length(all_bams) >= 3L) 1000L else 200L)
     for (bam in all_bams) {
       stem <- tools::file_path_sans_ext(basename(bam))
       bw <- file.path(out_dir, paste0(stem, ".bw"))
       cov <- .chip_bamcoverage_to_bw(
         bam, bw, bins$bamCoverage,
-        bin_size = bin_size, normalize_using = normalize_using
+        bin_size = cov_bin, normalize_using = normalize_using
       )
       if (isTRUE(cov$success) && nzchar(cov$path %||% "") && file.exists(cov$path)) {
         bw_files <- c(bw_files, cov$path)
       } else {
         logs <- c(logs, cov$error %||% cov$log %||% paste("bamCoverage failed for", basename(bam)))
       }
+      # Release peak RAM between BAMs (plumber is single-process).
+      suppressWarnings(gc(verbose = FALSE))
     }
     if (!length(bw_files)) {
       return(list(
@@ -3910,9 +3982,9 @@ chip_deeptools <- function(session_id,
       coverage_files = bw_files,
       bigwig_files = bw_files,
       output_dir = out_dir,
-      bin_size = bin_size,
+      bin_size = cov_bin,
       normalize_using = normalize_using,
-      command_hint = "bamCoverage -b <bam> -o <bw> --binSize ... --normalizeUsing RPKM"
+      command_hint = "bamCoverage -b <bam> -o <bw> --binSize ... --normalizeUsing RPKM -p 1"
     ))
   }
 

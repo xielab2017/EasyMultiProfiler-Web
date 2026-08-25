@@ -2,7 +2,7 @@
  * Global UI font scale — proportional typography via html root rem.
  * Persists to localStorage (emp_font_scale).
  */
-import { t } from "./locale.js?v=2026-07-16-multi-demo";
+import { t } from "./locale.js?v=nav-active-fix-v1";
 
 export const FONT_SCALE_LS = "emp_font_scale";
 export const FONT_SCALE_STEPS = [0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.25];

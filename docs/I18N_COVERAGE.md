@@ -1,4 +1,4 @@
-# I18N coverage (v9.0.1 Education)
+# I18N coverage (v9.0.3)
 
 Locale modes: **自动 / Auto**, **中文**, **EN**.
 

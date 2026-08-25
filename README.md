@@ -1,14 +1,14 @@
-# EasyMultiProfiler Web · V9.0.1_Education
+# EasyMultiProfiler Web · v9.0.3
 
-**教育预览版（Preview）** — 在 V7 一键安装与多组学分析能力之上，新增 **课程按周作业 + 学号登录 + GitHub 仓库同步**。
+**正式版 main · 内部版本 9.0.3** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
 
-![](https://img.shields.io/badge/version-V9.0.1__Education-1f6feb)
-![](https://img.shields.io/badge/preview-branch-orange)
+![](https://img.shields.io/badge/version-9.0.3-1f6feb)
+![](https://img.shields.io/badge/branch-main-0e8a16)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
-> **分支**：[`V9.0.1_Education`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/V9.0.1_Education)  
-> **定位**：课堂试用 / 课程作业提交预览，**非**替代正式 `main` / `v7.0.0` 生产分支。
+> **分支**：[`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)  
+> **版本**：`9.0.3`（GitHub 默认发布线）
 
 ![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
 
@@ -18,7 +18,7 @@
 
 EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API + 静态前端 + EasyMultiProfiler 核心）。
 
-**V9.0.1_Education** 面向教学场景，让学生可以：
+**v9.0.3** 面向科研与教学场景，学生与课程用户可以：
 
 1. 在 **Course** 里按 case / 周次完成微课、测验与实操  
 2. 用 **学号 + 姓名（必填）+ 自设口令** 登录课程身份  
@@ -45,21 +45,19 @@ EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API
 
 ---
 
-## 一行命令启动（预览分支）
+## 一行命令启动（main）
 
 脚本会自动识别 OS，安装缺失的 git / python3 / R / EMP 依赖并启动网页。
 
 | Shell | 命令 |
 |------|------|
-| **macOS / Linux（bash / zsh）** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.1_Education/webapp/scripts/install_from_github.sh)"` |
-| **Windows PowerShell** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/V9.0.1_Education/webapp/scripts/install_from_github.ps1 \| iex` |
-
-> 若安装脚本仍默认拉 `v7.0.0`，请先手动 clone 本预览分支再本地启动（见下）。
+| **macOS / Linux（bash / zsh）** | `bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.sh)"` |
+| **Windows PowerShell** | `irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.ps1 \| iex` |
 
 ### 已 clone 仓库
 
 ```bash
-git clone -b V9.0.1_Education https://github.com/xielab2017/EasyMultiProfiler-Web.git
+git clone -b main https://github.com/xielab2017/EasyMultiProfiler-Web.git
 cd EasyMultiProfiler-Web
 bash install.sh                  # macOS / Linux
 # 或 Windows：install.cmd / Start-EMP-Web.bat
@@ -186,7 +184,7 @@ EMP2026/
 | [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Windows 安装 |
 | [docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md) | 用户操作指南 |
 | [docs/CHIP_OPS_GUIDE.md](docs/CHIP_OPS_GUIDE.md) | ChIP-seq / CUT&RUN Step1+Step2 操作路径 |
-| [docs/RELEASE_NOTES_v9.0.1_Education.md](docs/RELEASE_NOTES_v9.0.1_Education.md) | 本预览版说明 |
+| [docs/RELEASE_NOTES_v9.0.3.md](docs/RELEASE_NOTES_v9.0.3.md) | 本版说明 |
 | [CHANGELOG_V7.md](CHANGELOG_V7.md) | V7 变更 |
 
 网页内左侧 **Guide** / **Course** 也有交互说明。
@@ -202,7 +200,7 @@ EasyMultiProfiler-Web/
 ├── docs/
 │   ├── images/                 # README 配图（banner / sync / architecture PNG）
 │   ├── TECHNICAL_MODE_V9_EDUCATION.svg
-│   └── RELEASE_NOTES_v9.0.1_Education.md
+│   └── RELEASE_NOTES_v9.0.3.md
 └── webapp/
     ├── backend/helpers/github_sync.R
     ├── data/course_assignments.json

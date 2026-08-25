@@ -1,7 +1,7 @@
 /**
  * Recommended filter / normalize / analysis defaults per omics pipeline.
  */
-import { t } from "./locale.js?v=2026-07-22-multiomics-v1";
+import { t } from "./locale.js?v=nav-active-fix-v1";
 
 export function omicsLabel(key) {
   const map = {

@@ -104,9 +104,23 @@ export function uploadTimeoutMs(fileSizeBytes) {
  * Always settles the promise (resolve/reject); never leaves the caller hanging
  * without an error if XHR fails or JSON parse blows up.
  */
+function makeUploadCancelledError(message = "Upload cancelled") {
+  const err = new Error(message);
+  err.name = "AbortError";
+  err.code = "UPLOAD_CANCELLED";
+  return err;
+}
+
+export function isUploadCancelled(err) {
+  if (!err) return false;
+  if (err.name === "AbortError" || err.code === "UPLOAD_CANCELLED") return true;
+  return /upload (aborted|cancelled)|Upload cancelled|Upload aborted/i.test(String(err.message || err));
+}
+
 function requestMultipartWithProgress(path, formData, opts = {}) {
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   const timeoutMs = Math.max(30_000, Number(opts.timeoutMs) || uploadTimeoutMs(opts.fileSizeBytes));
+  const signal = opts.signal || null;
   const bases = resolveApiCandidates();
   const authHeaders = headers();
   delete authHeaders["Content-Type"]; // browser sets multipart boundary
@@ -119,13 +133,22 @@ function requestMultipartWithProgress(path, formData, opts = {}) {
   };
 
   const tryOne = (base) => new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(makeUploadCancelledError());
+      return;
+    }
     const xhr = new XMLHttpRequest();
     let settled = false;
     let waitTimer = null;
     let waitPct = 90;
+    let onAbort = null;
 
     const cleanup = () => {
       if (waitTimer) { clearInterval(waitTimer); waitTimer = null; }
+      if (signal && onAbort) {
+        try { signal.removeEventListener("abort", onAbort); } catch (_) { /* ignore */ }
+        onAbort = null;
+      }
     };
     const fail = (err) => {
       if (settled) return;
@@ -168,10 +191,15 @@ function requestMultipartWithProgress(path, formData, opts = {}) {
     xhr.ontimeout = () => fail(new Error(
       `Upload timed out after ${Math.round(timeoutMs / 60000)} min. Try a smaller file, check disk space, or use server-path register instead of browser upload.`
     ));
-    xhr.onabort = () => fail(new Error("Upload aborted"));
+    xhr.onabort = () => fail(makeUploadCancelledError());
 
     xhr.onload = () => {
       cleanup();
+      // Ignore late responses after the user cancelled.
+      if (signal?.aborted) {
+        fail(makeUploadCancelledError());
+        return;
+      }
       const totalMs = Math.round(
         ((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0)
       );
@@ -217,6 +245,13 @@ function requestMultipartWithProgress(path, formData, opts = {}) {
       ok(data);
     };
 
+    if (signal) {
+      onAbort = () => {
+        try { xhr.abort(); } catch (_) { /* ignore */ }
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
     try {
       xhr.send(formData);
     } catch (e) {
@@ -225,12 +260,14 @@ function requestMultipartWithProgress(path, formData, opts = {}) {
   });
 
   return (async () => {
+    if (signal?.aborted) throw makeUploadCancelledError();
     let lastErr = null;
     for (const base of bases) {
       try {
         return await tryOne(base);
       } catch (e) {
         lastErr = e;
+        if (isUploadCancelled(e) || signal?.aborted) throw makeUploadCancelledError();
         // Only retry other candidates on network / reachability failures.
         const msg = String(e && e.message || e);
         if (!/Network error|Failed to fetch|Cannot reach|timed out/i.test(msg)) throw e;
@@ -254,11 +291,25 @@ async function request(method, path, body = null, multipart = false, optsExtra =
   if (body && multipart) opts.body = body; // FormData
 
   const timeoutMs = Number(optsExtra.timeoutMs);
+  const externalSignal = optsExtra.signal || null;
   let abortTimer = null;
-  if (Number.isFinite(timeoutMs) && timeoutMs > 0 && typeof AbortController !== "undefined") {
+  let abortedByTimeout = false;
+  if (typeof AbortController !== "undefined" &&
+      ((Number.isFinite(timeoutMs) && timeoutMs > 0) || externalSignal)) {
     const ac = new AbortController();
     opts.signal = ac.signal;
-    abortTimer = setTimeout(() => ac.abort(), timeoutMs);
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      abortTimer = setTimeout(() => {
+        abortedByTimeout = true;
+        ac.abort();
+      }, timeoutMs);
+    }
+    if (externalSignal) {
+      if (externalSignal.aborted) ac.abort();
+      else {
+        externalSignal.addEventListener("abort", () => ac.abort(), { once: true });
+      }
+    }
   }
 
   const bases = resolveApiCandidates();
@@ -273,6 +324,9 @@ async function request(method, path, body = null, multipart = false, optsExtra =
       } catch (e) {
         lastErr = e;
         if (e && (e.name === "AbortError" || /aborted/i.test(String(e.message || e)))) {
+          if (externalSignal?.aborted || (!abortedByTimeout && externalSignal)) {
+            throw makeUploadCancelledError();
+          }
           throw new Error(
             `Request timed out after ${Math.round(timeoutMs / 60000)} min (${path}). ` +
             "Large BAM MACS/annotate jobs can take longer — retry, or check api.log / macs_callpeak.err.log."
@@ -406,7 +460,7 @@ export async function probeOpenRouterModels(params = {}) {
 // AI copilot: interpret an analysis result and suggest next steps. Reuses the
 // Code Lab LLM config if the student configured one; otherwise the backend
 // falls back to a deterministic offline interpretation.
-import { getLocale } from "./locale.js?v=2026-07-16-multi-demo";
+import { getLocale } from "./locale.js?v=nav-active-fix-v1";
 
 export async function aiInterpret(context = {}, opts = {}) {
   let provider = opts.provider ?? null;
@@ -1045,7 +1099,7 @@ function asOctetStreamFile(file, fallbackName = "upload.bin") {
   });
 }
 
-export async function chipUploadPeaks(file, genome = "hs", preset = "chipseq_tf") {
+export async function chipUploadPeaks(file, genome = "mm", preset = "chipseq_tf") {
   if (!sessionId()) await createSession();
   const sid = sessionId();
   const fd = new FormData();
@@ -1071,23 +1125,35 @@ export async function chipSelectPeak({ peak_id = null, peak_file = null } = {}) 
   });
 }
 
+/** Persist Genome mapping onto the active peak (no re-upload). */
+export async function chipSetPeakGenome({ genome = "mm", peak_id = null } = {}) {
+  const sid = sessionId();
+  if (!sid) throw new Error("session_id is required");
+  return request("POST", "/workflows/chipseq/peaks/genome", {
+    session_id: sid,
+    genome,
+    peak_id,
+  });
+}
+
 export async function chipListBams() {
   const sid = sessionId();
   if (!sid) return { files: [], n_treatment: 0, n_control: 0 };
   return request("GET", `/workflows/chipseq/bams/list?session_id=${encodeURIComponent(sid || "")}`);
 }
 
-export async function chipUploadBam(file, group = "t", onProgress = null) {
+export async function chipUploadBam(file, group = "t", onProgress = null, opts = {}) {
   // Same auth/session path as importData — missing session previously caused silent/401 failures.
   if (!sessionId()) await createSession();
   const sid = sessionId();
   const size = (file && typeof file.size === "number") ? file.size : 0;
+  const signal = opts?.signal || null;
   // R/plumber multipart cannot parse bodies ≳2GiB ("long vectors not supported").
   // Chunk anytime the file is large enough to risk memory/parser failure.
   const CHUNK = 32 * 1024 * 1024; // 32 MiB
   const SINGLESHOT_MAX = 1500 * 1024 * 1024; // 1.5 GiB soft cap
   if (size > SINGLESHOT_MAX || size > CHUNK * 2) {
-    return chipUploadBamChunked(file, group, onProgress, CHUNK);
+    return chipUploadBamChunked(file, group, onProgress, CHUNK, signal);
   }
   const fd = new FormData();
   fd.append("bam_file", asOctetStreamFile(file, "alignment.bam"));
@@ -1097,10 +1163,20 @@ export async function chipUploadBam(file, group = "t", onProgress = null) {
     onProgress,
     fileSizeBytes: size,
     timeoutMs: uploadTimeoutMs(size),
+    signal,
   });
 }
 
-async function chipUploadBamChunked(file, group = "t", onProgress = null, chunkSize = 32 * 1024 * 1024) {
+export async function chipCancelBamUpload(uploadId) {
+  const sid = sessionId();
+  if (!sid || !uploadId) return { success: true, cancelled: true };
+  return request("POST", "/workflows/chipseq/bams/upload_cancel", {
+    session_id: sid,
+    upload_id: uploadId,
+  });
+}
+
+async function chipUploadBamChunked(file, group = "t", onProgress = null, chunkSize = 32 * 1024 * 1024, signal = null) {
   const sid = sessionId();
   const size = file.size || 0;
   const name = (file && file.name) ? file.name : "alignment.bam";
@@ -1109,13 +1185,17 @@ async function chipUploadBamChunked(file, group = "t", onProgress = null, chunkS
     try { onProgress({ pct, message: message || "", phase: phase || "" }); }
     catch (_) { /* ignore */ }
   };
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw makeUploadCancelledError();
+  };
+  throwIfAborted();
   emit(1, "初始化分片上传…", "init");
   const init = await request("POST", "/workflows/chipseq/bams/upload_init", {
     session_id: sid,
     filename: name,
     group,
     total_bytes: size,
-  });
+  }, false, { signal });
   if (init && init.session_id) {
     try { localStorage.setItem("emp_session_id", init.session_id); } catch (_) { /* ignore */ }
   }
@@ -1124,36 +1204,48 @@ async function chipUploadBamChunked(file, group = "t", onProgress = null, chunkS
 
   const totalChunks = Math.max(1, Math.ceil(size / chunkSize));
   let offset = 0;
-  for (let i = 0; i < totalChunks; i++) {
-    const end = Math.min(size, offset + chunkSize);
-    const blob = file.slice(offset, end);
-    const fd = new FormData();
-    fd.append("chunk", new File([blob], `${name}.part${i}`, { type: "application/octet-stream" }));
-    fd.append("session_id", sid || "");
-    fd.append("upload_id", uploadId);
-    fd.append("chunk_index", String(i));
-    // Map chunk bytes to 2–90%; leave 90–99 for finalize.
-    const basePct = 2 + Math.round((i / totalChunks) * 88);
-    await requestMultipartWithProgress("/workflows/chipseq/bams/upload_chunk", fd, {
-      fileSizeBytes: end - offset,
-      timeoutMs: uploadTimeoutMs(end - offset),
-      onProgress: (p) => {
-        const local = Math.max(0, Math.min(1, (p?.pct || 0) / 90));
-        const pct = Math.min(90, basePct + Math.round(local * (88 / totalChunks)));
-        emit(pct, `分片上传 ${i + 1}/${totalChunks}…`, "upload");
-      },
-    });
-    offset = end;
-    emit(Math.min(90, 2 + Math.round(((i + 1) / totalChunks) * 88)), `分片 ${i + 1}/${totalChunks} 完成`, "upload");
-  }
+  try {
+    for (let i = 0; i < totalChunks; i++) {
+      throwIfAborted();
+      const end = Math.min(size, offset + chunkSize);
+      const blob = file.slice(offset, end);
+      const fd = new FormData();
+      fd.append("chunk", new File([blob], `${name}.part${i}`, { type: "application/octet-stream" }));
+      fd.append("session_id", sid || "");
+      fd.append("upload_id", uploadId);
+      fd.append("chunk_index", String(i));
+      // Map chunk bytes to 2–90%; leave 90–99 for finalize.
+      const basePct = 2 + Math.round((i / totalChunks) * 88);
+      await requestMultipartWithProgress("/workflows/chipseq/bams/upload_chunk", fd, {
+        fileSizeBytes: end - offset,
+        timeoutMs: uploadTimeoutMs(end - offset),
+        signal,
+        onProgress: (p) => {
+          const local = Math.max(0, Math.min(1, (p?.pct || 0) / 90));
+          const pct = Math.min(90, basePct + Math.round(local * (88 / totalChunks)));
+          emit(pct, `分片上传 ${i + 1}/${totalChunks}…`, "upload");
+        },
+      });
+      offset = end;
+      emit(Math.min(90, 2 + Math.round(((i + 1) / totalChunks) * 88)), `分片 ${i + 1}/${totalChunks} 完成`, "upload");
+    }
 
-  emit(92, "服务器合并分片…", "processing");
-  const done = await request("POST", "/workflows/chipseq/bams/upload_complete", {
-    session_id: sid,
-    upload_id: uploadId,
-  });
-  emit(100, "Done", "done");
-  return done;
+    throwIfAborted();
+    emit(92, "服务器合并分片…", "processing");
+    const done = await request("POST", "/workflows/chipseq/bams/upload_complete", {
+      session_id: sid,
+      upload_id: uploadId,
+    }, false, { signal });
+    emit(100, "Done", "done");
+    return done;
+  } catch (e) {
+    if (isUploadCancelled(e)) {
+      // Best-effort server cleanup of partial staging; never leave a half-registered BAM.
+      try { await chipCancelBamUpload(uploadId); } catch (_) { /* ignore */ }
+      throw makeUploadCancelledError();
+    }
+    throw e;
+  }
 }
 
 export async function chipRegisterBams(entries) {

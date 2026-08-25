@@ -131,6 +131,15 @@ ID 提示：临床 `AK/BK`=UC 前后、`CJ/DJ`=IBS；16S `K_*`/`J_*`；系统对
 
 应用内 Guide 折叠卡「RNA-seq」。摘要：导入 `rnaseq_course`（24×19150，6 个 Group）→ Filter≈14245 → log → PCA / DESeq2（DMSO vs T4400；padj DEG 常 0，名义 p ≈23↑/2↓）→ GO≈40 / GSEA≈21 → Run All ≈35 s（~2.1 MB zip）。重负载后若 API 断连请重启。
 
+### 4.4 Demo：ChIP-seq / CUT&RUN（Step1 + Step2）
+
+应用内 Guide 折叠卡「ChIP-seq / CUT&RUN」；完整操作说明见 [`docs/CHIP_OPS_GUIDE.md`](CHIP_OPS_GUIDE.md)。摘要：
+
+1. **Step1**：上传峰 BED（示例 `tests/ChIP/HA_summits_0.05.bed`，基因组 **mm**）→ 选活动峰 → Peak QC / blacklist / merge / summit → **Annotate**。
+2. **Step2**：配方包 — 核心/组蛋白可不需 BAM；Motif 需 HOMER；DiffBind / deepTools 需 ≥2 treatment + ≥2 control BAM（本地 `tests/ChIP/*.bam`，勿提交）。
+3. **联合包**：先在 Data 页导入 RNA/16S/MBX/临床并完成差异（或导入 DE）；无 DE 时返回 EXPECTED_GATE。
+4. 实跑核对（2026-07-24）：PASS 39 / SKIP 4 / FAIL 0 — 报告 `webapp/test_outputs/chip_full_ops_guide/report.md`。
+
 ---
 
 ## 5. v5.0.2 新特性摘要

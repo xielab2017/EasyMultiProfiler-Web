@@ -1,6 +1,6 @@
 // Course GitHub sync panel: student login, repo bind, weekly / project sync.
 import * as API from "./api.js?v=2026-07-22-import-auth-v5";
-import { t } from "./locale.js?v=i18n-locale-v1";
+import { t } from "./locale.js?v=nav-active-fix-v1";
 
 const LS_STUDENT_TOKEN = "emp_student_token";
 const LS_TRACK = "emp_github_track";

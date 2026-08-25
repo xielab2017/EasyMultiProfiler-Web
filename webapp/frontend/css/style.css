@@ -656,6 +656,28 @@ tr:hover td { background: rgba(59,110,245,.04); }
   margin-left: auto; font-variant-numeric: tabular-nums;
   font-weight: 700; color: var(--clr-primary);
 }
+#global-progress .gp-cancel {
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding: 3px 12px;
+  font-size: 0.857rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #1e3a8a;
+  background: #fff;
+  border: 1px solid #93c5fd;
+  border-radius: 6px;
+  cursor: pointer;
+}
+#global-progress .gp-cancel:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: var(--clr-primary);
+}
+#global-progress .gp-cancel:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+#global-progress .gp-cancel.hidden { display: none !important; }
 /* Stronger, thicker bar so it stays visible even on bright backgrounds.
    Falls back to the generic .progress-bar rules above but overrides the
    height + colour so the user clearly sees progress moving. */
