@@ -27,6 +27,9 @@ jobs:
 
       - uses: r-lib/actions/setup-r@v2
         with:
+          # "release" rather than a pin: Boruta 10.0.0 imports fru (published 2026-08-20),
+          # which has no Windows binary for older R minor versions, so a pinned 4.4.1 runner
+          # cannot install the declared dependency set at all.
           r-version: "release"
           use-public-rspm: true
 
@@ -69,6 +72,9 @@ jobs:
 
       - uses: r-lib/actions/setup-r@v2
         with:
+          # "release" rather than a pin: Boruta 10.0.0 imports fru (published 2026-08-20),
+          # which has no Windows binary for older R minor versions, so a pinned 4.4.1 runner
+          # cannot install the declared dependency set at all.
           r-version: "release"
           use-public-rspm: true
 
@@ -106,11 +112,26 @@ jobs:
           # taking the whole batch down with an unreadable error.
           failed <- character()
           for (p in miss) {
-            ok <- tryCatch({
-              suppressWarnings(BiocManager::install(p, ask = FALSE, update = FALSE, quiet = TRUE))
-              requireNamespace(p, quietly = TRUE)
-            }, error = function(e) { say("  ERROR", p, ":", conditionMessage(e)); FALSE })
-            if (!isTRUE(ok)) failed <- c(failed, p)
+            notes <- character()
+            ok <- withCallingHandlers(
+              tryCatch({
+                BiocManager::install(p, ask = FALSE, update = FALSE, quiet = TRUE)
+                requireNamespace(p, quietly = TRUE)
+              }, error = function(e) { notes <<- c(notes, paste("ERROR:", conditionMessage(e))); FALSE }),
+              warning = function(w) { notes <<- c(notes, paste("WARN:", conditionMessage(w))); invokeRestart("muffleWarning") })
+            if (!isTRUE(ok)) {
+              failed <- c(failed, p)
+              # A package usually fails because something it needs failed first. Name that,
+              # otherwise the report says "3 packages failed" and hides the single root cause.
+              deps <- tryCatch({
+                db <- available.packages()
+                d <- tools::package_dependencies(p, db = db, recursive = FALSE)[[1]]
+                setdiff(d, rownames(installed.packages()))
+              }, error = function(e) character())
+              say("  FAILED", p)
+              if (length(deps)) say("    missing dependencies:", paste(deps, collapse = " "))
+              for (n in utils::head(notes, 3)) say("   ", substr(n, 1, 220))
+            }
           }
           say("still missing:", length(failed))
           if (length(failed)) say("  ", paste(failed, collapse = " "))
