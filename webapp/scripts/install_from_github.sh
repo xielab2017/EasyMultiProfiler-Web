@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v9.0.4 one-line installer.
+# v9.0.5 one-line installer.
 #
 #   curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.sh | bash
 #

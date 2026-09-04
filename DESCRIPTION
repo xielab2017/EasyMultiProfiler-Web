@@ -1,7 +1,7 @@
 Package: EasyMultiProfiler
 Type: Package
 Title: An Efficient and Convenient R package in Multi-omics Down-Stream Analysis and Visualization
-Version: 9.0.4
+Version: 9.0.5
 Authors@R: c( person(given = "Bingdong", family = "liu",       email = "382983280@qq.com", role = c("aut", "cre")),
               person(given = "Erqiang",  family = "Hu",        email = "13766876214@163.com", role = c("aut", "ctb")))
 Maintainer: Bingdong Liu <382983280@qq.com>
@@ -76,6 +76,31 @@ Suggests:
     knitr,
     dendextend,  
     rmarkdown,
+    plumber,
+    callr,
+    httr2,
+    base64enc,
+    digest,
+    openssl,
+    matrixStats,
+    ragg,
+    pheatmap,
+    RColorBrewer,
+    scales,
+    viridisLite,
+    openxlsx,
+    zip,
+    cluster,
+    igraph,
+    gtsummary,
+    ggsci,
+    BiocParallel,
+    ChIPseeker,
+    DiffBind,
+    GenomicFeatures,
+    GenomicRanges,
+    IRanges,
+    Rsamtools,
     ReactomePA,
     ropls (>= 1.34.0),
     metap (>= 1.9),

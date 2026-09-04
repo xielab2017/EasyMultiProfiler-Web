@@ -163,6 +163,12 @@ build_mae <- function(data_file, metadata_file = NULL,
   if (data_type == "tax") {
     tax_info <- detect_taxonomy(as.character(df$feature))
     if (tax_sep == "auto") tax_sep <- tax_info$sep
+    # Accept "Kingdom" (and other spellings) from the client and map them onto the rank names the
+    # package actually uses, so a correctly spelled request is not silently misread.
+    if (exists(".emp_normalize_tax_rank", mode = "function")) {
+      normalized_start <- .emp_normalize_tax_rank(start_level)
+      if (!is.null(normalized_start)) start_level <- normalized_start
+    }
     inferred_start <- detect_taxonomy_start_level(df$feature, tax_sep)
     if (!is.null(inferred_start)) start_level <- inferred_start
     empt <- EasyMultiProfiler::EMP_taxonomy_import(

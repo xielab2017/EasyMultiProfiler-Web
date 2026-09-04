@@ -105,6 +105,19 @@ str_detect_multi <- function(string,pattern,exact=FALSE){
   return(EMPT)
 }
 
+#' Combine experiments into an EMP object
+#'
+#' Builds an \code{EMP} object from a \code{MultiAssayExperiment} (with \code{select} naming the
+#' experiments to take) or from a list of \code{EMPT}/\code{EMP} objects. Cross-omics verbs such as
+#' \code{\link{EMP_cor_analysis}} operate on \code{EMP}, not on a single \code{EMPT}, so callers
+#' outside the package - including the EMP-Web REST layer - need this constructor to reach them.
+#'
+#' @param object A \code{MultiAssayExperiment}, or a list of \code{EMPT}/\code{EMP} objects.
+#' @param select Character vector of experiment names. Required when \code{object} is a
+#'   \code{MultiAssayExperiment}.
+#'
+#' @return An \code{EMP} object.
+#' @export
 as.EMP <- function(object,select=NULL) {
   call <- match.call()
   deposit <- new(Class = 'EMP')
@@ -487,6 +500,16 @@ EMP_history <- function(obj) {
 # make choice for users to deal with the confilct in the collpase
 #' @importFrom utils menu
 .choose_tax_anotation <- function() {
+  # utils::menu() raises "menu() cannot be used non-interactively" in a plumber worker, a
+  # callr child, Rscript or knitr, which made EMP_collapse() unreachable from any
+  # non-interactive caller whenever a single/full annotation conflict was detected.
+  # Return the same answer the prompt gives for its default choice.
+  if (!interactive()) {
+    message("Detected conflicting single-level and full-level taxonomy annotation; ",
+            "keeping single-level (non-interactive session). ",
+            "Pass tax_annotation = 'single' or 'full' to choose explicitly.")
+    return("single")
+  }
   selection <- c("Keep single-level tax anotation.", "Add full-level tax anotation.")
   choice <- menu(selection, title = "Detected the confilcts between single-level and full-level annotation:")
   
@@ -499,6 +522,21 @@ EMP_history <- function(obj) {
   }
 }
 
+
+
+# Resolve how a single/full taxonomy annotation conflict should be handled.
+# tax_annotation: "single" (keep single-level), "full" (add full-level), or "ask" (prompt when
+# interactive, keep single-level otherwise). Lets non-interactive callers - the EMP-Web REST
+# layer among them - state the choice instead of hitting a prompt they cannot answer.
+.resolve_tax_anotation <- function(tax_annotation = "ask") {
+  choice <- tolower(trimws(as.character(tax_annotation)[1]))
+  if (is.na(choice) || !nzchar(choice)) choice <- "ask"
+  if (choice %in% c("single", "full")) return(choice)
+  if (!identical(choice, "ask")) {
+    stop("tax_annotation must be one of 'single', 'full' or 'ask'.", call. = FALSE)
+  }
+  .choose_tax_anotation()
+}
 
 
 #' Transfer microbial data from EasyMultiProfiler to EasyMciroPlot

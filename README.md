@@ -1,14 +1,14 @@
-# EasyMultiProfiler Web · v9.0.4
+# EasyMultiProfiler Web · v9.0.5
 
-**Windows 发布版 · 内部版本 9.0.4** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
+**Windows 发布版 · 内部版本 9.0.5** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
 
-![](https://img.shields.io/badge/version-9.0.4-1f6feb)
+![](https://img.shields.io/badge/version-9.0.5-1f6feb)
 ![](https://img.shields.io/badge/branch-main-0e8a16)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
 > **分支**：[`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)  
-> **版本**：`9.0.4`
+> **版本**：`9.0.5`
 
 ![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
 
@@ -18,7 +18,7 @@
 
 EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API + 静态前端 + EasyMultiProfiler 核心）。
 
-**v9.0.4** 面向科研与教学场景，学生与课程用户可以：
+**v9.0.5** 面向科研与教学场景，学生与课程用户可以：
 
 1. 在 **Course** 里按 case / 周次完成微课、测验与实操  
 2. 用 **学号 + 姓名（必填）+ 自设口令** 登录课程身份  

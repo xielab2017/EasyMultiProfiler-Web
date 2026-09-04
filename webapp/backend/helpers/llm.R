@@ -946,13 +946,22 @@
   }
   args <- c(
     "-q", "-f", "-sS", "--http1.1", "--noproxy", "*",
-    "--max-time", as.character(timeout), "-X", "POST",
-    "-H", "Content-Type: application/json"
+    "--max-time", as.character(timeout), "-X", "POST"
   )
+  # Headers carry the provider API key. Passing them as command-line arguments puts the key in the
+  # process table, where any local user can read it with `ps`. Write them to a 0600 file instead
+  # and hand curl the file with -K, which it reads and does not expose.
+  hdr_file <- tempfile(fileext = ".curlrc")
+  hdr_lines <- c('header = "Content-Type: application/json"')
   if (length(headers)) {
-    for (h in headers) args <- c(args, "-H", h)
+    hdr_lines <- c(hdr_lines,
+                   vapply(headers, function(h) sprintf('header = "%s"', gsub('"', '\\\\"', h)),
+                          character(1), USE.NAMES = FALSE))
   }
-  args <- c(args, "--data-binary", paste0("@", body_file), url)
+  writeLines(hdr_lines, hdr_file)
+  Sys.chmod(hdr_file, mode = "0600")
+  on.exit(unlink(hdr_file), add = TRUE)
+  args <- c(args, "-K", hdr_file, "--data-binary", paste0("@", body_file), url)
   status <- system2("curl", args, stdout = out_file, stderr = err_file, env = env)
   err <- paste(readLines(err_file, warn = FALSE), collapse = "\n")
   txt <- paste(readLines(out_file, warn = FALSE), collapse = "\n")

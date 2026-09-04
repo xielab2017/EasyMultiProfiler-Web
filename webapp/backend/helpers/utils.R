@@ -7,6 +7,152 @@ if (!exists("%||%", mode = "function")) {
   `%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
 }
 
+## Run `expr_fn` with a fixed seed WITHOUT leaving that seed behind on the global RNG stream.
+## Analyses that need reproducible randomness (k-means starts, random-forest splits) used to call
+## set.seed() directly in the API process, which also made every later draw in that process
+## deterministic - including the sample()-based session identifiers. Save the stream, seed, run,
+## restore.
+.emp_with_local_seed <- function(seed, expr_fn) {
+  had_seed <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+  old_seed <- if (had_seed) get(".Random.seed", envir = globalenv(), inherits = FALSE) else NULL
+  on.exit({
+    if (had_seed) {
+      assign(".Random.seed", old_seed, envir = globalenv())
+    } else if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+      rm(".Random.seed", envir = globalenv())
+    }
+  }, add = TRUE)
+  set.seed(as.integer(seed))
+  expr_fn()
+}
+
+## Cryptographically strong random identifier (session, project, job ids). sample() draws from R's
+## global RNG, which is seedable by any analysis running in the same process.
+.emp_random_id <- function(n = 24L, alphabet = c(letters, LETTERS, 0:9)) {
+  alphabet <- as.character(alphabet)
+  if (requireNamespace("openssl", quietly = TRUE)) {
+    bytes <- as.integer(openssl::rand_bytes(n))
+    return(paste0(alphabet[(bytes %% length(alphabet)) + 1L], collapse = ""))
+  }
+  con <- tryCatch(file("/dev/urandom", "rb"), error = function(e) NULL, warning = function(w) NULL)
+  if (!is.null(con)) {
+    on.exit(close(con), add = TRUE)
+    bytes <- as.integer(readBin(con, what = "raw", n = n))
+    if (length(bytes) == n) {
+      return(paste0(alphabet[(bytes %% length(alphabet)) + 1L], collapse = ""))
+    }
+  }
+  paste0(sample(alphabet, n, replace = TRUE), collapse = "")
+}
+
+## Is caller-supplied R execution enabled? One parser, one default, used by every gate.
+##
+## POST /api/user_r/run and /api/exec/user_r evaluate caller-supplied R in the API process with
+## access to globalenv(). Three sites used to read this variable with `unset = "true"`, so the
+## feature was ON by default: the bundled launchers and docker-compose all set it to false
+## explicitly, but starting the API any other way (`Rscript run_api.R`, a custom unit file) served
+## arbitrary remote code execution with no opt-in — and the startup guard in auth.R read the same
+## variable with a different parser and a different default, so it could not catch that case.
+## Default is now off, and `1/true/yes/on` (any case) are the accepted opt-ins everywhere.
+emp_user_r_enabled <- function() {
+  tolower(trimws(Sys.getenv("EMP_ENABLE_USER_R", unset = "false"))) %in% c("1", "true", "yes", "on")
+}
+
+## Error response for the file-serving endpoints (zip / pdf / rds / csv / png downloads).
+##
+## Those routes sit outside safe_api() and used to answer failures with `res$status <- 500` plus a
+## plain character string, while the declared serializer was application/zip, application/pdf or
+## application/octet-stream - so the client got a body whose content type contradicted its content
+## and no parseable error. Return a JSON error object as raw bytes with the header corrected, the
+## way /api/bundles already does for its 404.
+emp_binary_error <- function(res, e, status = 500L) {
+  res$status <- as.integer(status)
+  try(res$setHeader("Content-Type", "application/json"), silent = TRUE)
+  msg <- paste(conditionMessage(e), collapse = " ")
+  body <- tryCatch(
+    as.character(jsonlite::toJSON(list(success = FALSE, error = msg), auto_unbox = TRUE)),
+    error = function(e2) '{"success":false,"error":"unserialisable error"}'
+  )
+  charToRaw(body)
+}
+
+## Canonical taxonomic ranks, root first, as the package spells them. EMP's own rowData column is
+## "Kindom" (sic), so that spelling is authoritative for lookups; "Kingdom" is accepted as an input
+## alias and normalised here. Four different rank vocabularies used to coexist across utils.R,
+## viz.R, workflow_microbiome_16s.R and import.R, which is how a kingdom-rooted table could be
+## imported with a rank name nothing downstream recognised.
+EMP_TAX_RANKS <- c("Domain", "Kindom", "Phylum", "Class", "Order", "Family", "Genus", "Species",
+                   "Strain")
+
+.emp_normalize_tax_rank <- function(rank) {
+  value <- trimws(as.character(rank %||% ""))
+  if (!length(value) || !nzchar(value[1])) return(NULL)
+  value <- value[1]
+  aliases <- c(kingdom = "Kindom", kindom = "Kindom", domain = "Domain", superkingdom = "Domain",
+               phylum = "Phylum", class = "Class", order = "Order", family = "Family",
+               genus = "Genus", species = "Species", strain = "Strain")
+  hit <- aliases[[tolower(value)]]
+  if (!is.null(hit)) return(hit)
+  exact <- EMP_TAX_RANKS[tolower(EMP_TAX_RANKS) == tolower(value)]
+  if (length(exact)) return(exact[[1]])
+  value
+}
+
+## Impute missing values in the primary assay.
+##
+## EMP_impute() has no `method` formal - its formals are obj, experiment, coldata, assay, rowdata,
+## .formula, pmm.k, num.trees, seed, verbose, use_cached, action - so the previous call
+## `EMP_impute(method = <ui value>)` had the argument swallowed by `...`: all four interface
+## options (knn/zero/min/mean) ran the same mice/ranger imputation while the response echoed the
+## method the user had picked. The deterministic imputers are implemented here, the model-based
+## one is delegated to the package, and the executed method is returned so the endpoint can report
+## it truthfully.
+##
+## Returns list(empt = <EMPT>, executed = <character>, n_imputed = <integer>).
+.emp_impute_assay <- function(empt, method = "emp") {
+  meth <- tolower(trimws(as.character(method %||% "emp")))
+  if (meth %in% c("", "emp", "knn", "mice", "rf", "ranger", "model")) {
+    out <- empt |> EasyMultiProfiler::EMP_impute()
+    return(list(empt = out, executed = "EMP_impute (mice/ranger model-based)", n_imputed = NA_integer_))
+  }
+
+  # Validate the method BEFORE the "nothing to impute" shortcut, otherwise an unsupported method
+  # is silently accepted on any complete matrix and only rejected when a gap happens to exist.
+  supported <- c("zero", "min", "halfmin", "mean", "median")
+  if (!meth %in% supported) {
+    stop("Unsupported imputation method '", meth,
+         "'. Supported: emp (model-based), ", paste(supported, collapse = ", "), ".", call. = FALSE)
+  }
+  mat <- as.matrix(SummarizedExperiment::assay(empt, 1L))
+  n_missing <- sum(!is.finite(mat))
+  if (n_missing == 0L) {
+    return(list(empt = empt, executed = meth, n_imputed = 0L))
+  }
+  fill <- switch(
+    meth,
+    "zero"    = function(x) rep(0, length(x)),
+    "min"     = function(x) rep(min(x[is.finite(x)], na.rm = TRUE), length(x)),
+    "halfmin" = function(x) rep(min(x[is.finite(x)], na.rm = TRUE) / 2, length(x)),
+    "mean"    = function(x) rep(mean(x[is.finite(x)], na.rm = TRUE), length(x)),
+    "median"  = function(x) rep(stats::median(x[is.finite(x)], na.rm = TRUE), length(x)),
+    stop("Unsupported imputation method '", meth,
+         "'. Supported: emp (model-based), zero, min, halfmin, mean, median.", call. = FALSE)
+  )
+  for (i in seq_len(nrow(mat))) {
+    row <- mat[i, ]
+    bad <- !is.finite(row)
+    if (!any(bad)) next
+    if (all(bad)) {
+      row[bad] <- 0
+    } else {
+      row[bad] <- fill(row)[bad]
+    }
+    mat[i, ] <- row
+  }
+  SummarizedExperiment::assay(empt, 1L) <- mat
+  list(empt = empt, executed = meth, n_imputed = as.integer(n_missing))
+}
+
 ## Parse a caller-provided gene/feature list.  Accepts: JSON array,
 ## already-split character vector, or a newline/comma/semicolon/tab/
 ## whitespace-delimited blob that the frontend may paste verbatim.

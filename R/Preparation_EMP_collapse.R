@@ -10,7 +10,7 @@
 #' @importFrom data.table as.data.table
 #' @noRd 
 EMP_collapse_byrow <- function(x,experiment,estimate_group=NULL,method='sum',na_string=c('NA','null',''),
-    collapse_sep=' ',collapse_boolean='any',action='add',...) {
+    collapse_sep=' ',collapse_boolean='any',action='add',tax_annotation='ask',...) {
   `.sample` <- counts <- feature <- primary <- old_feature <- . <- NULL 
   if (is(x,"MultiAssayExperiment")) {
     EMPT <- .as.EMPT(x,
@@ -32,7 +32,7 @@ EMP_collapse_byrow <- function(x,experiment,estimate_group=NULL,method='sum',na_
   # Use skip_old_feature=TRUE to avoid the data which has been already collpased into this detect process
   if (.check_is_tax(EMPT,skip_old_feature=TRUE) & !.check_is_tax_full(EMPT,sep=';')) {
     if (.check_tax_collapse_confilct(EMPT,estimate_group)) {
-       flag <- .choose_tax_anotation()
+       flag <- .resolve_tax_anotation(tax_annotation)
        if (flag == 'full') {
         EMPT <- EMPT |> EMP_feature_convert(from = 'tax_single',add = 'tax_full')
        }else{

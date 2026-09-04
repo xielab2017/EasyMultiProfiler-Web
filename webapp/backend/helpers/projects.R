@@ -21,6 +21,9 @@ validate_project_id <- function(project_id) {
 }
 
 new_project_id <- function() {
+  # Ownership of a project is asserted on this identifier, so it must not come from R's global
+  # (seedable) RNG. See .emp_random_id() in utils.R.
+  if (exists(".emp_random_id", mode = "function")) return(paste0("prj_", .emp_random_id(24L)))
   paste0("prj_", paste0(sample(c(letters, LETTERS, 0:9), 24, replace = TRUE), collapse = ""))
 }
 
@@ -162,7 +165,7 @@ emp_session_manifest <- function(session_id, owner_id) {
     list_jobs_for_session(session_id, owner_id)
   } else list()
   stored$versions <- list(
-    emp_web = Sys.getenv("EMP_WEB_VERSION", unset = "9.0.4"),
+    emp_web = Sys.getenv("EMP_WEB_VERSION", unset = "9.0.5"),
     emp_package = tryCatch(as.character(utils::packageVersion("EasyMultiProfiler")), error = function(e) "unknown"),
     r = as.character(getRversion())
   )

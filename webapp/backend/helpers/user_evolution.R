@@ -1,7 +1,17 @@
 # Self-evolution layer: collect anonymized usage signals, build per-user profiles,
 # and feed personalization hints back into AI interpret / Code Lab.
 
-EVOLUTION_DIR <- "/tmp/emp_evolution"
+# Was hardcoded to "/tmp/emp_evolution" with no override: unwritable-or-misplaced on Windows (no
+# /tmp) and world-writable on a shared POSIX host, for a directory holding per-user usage events.
+# Same per-user application data root as the rest of the server; EMP_EVOLUTION_DIR overrides.
+EVOLUTION_DIR <- local({
+  override <- trimws(Sys.getenv("EMP_EVOLUTION_DIR", unset = ""))
+  if (nzchar(override)) return(path.expand(override))
+  if (exists(".emp_platform_data_root", mode = "function")) {
+    return(file.path(.emp_platform_data_root(), "evolution"))
+  }
+  file.path(tempdir(), "emp_evolution")
+})
 EVOLUTION_MAX_EVENTS <- 5000L
 EVOLUTION_MAX_EVENT_BYTES <- 8192L
 

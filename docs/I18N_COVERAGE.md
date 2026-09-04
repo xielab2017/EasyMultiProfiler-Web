@@ -37,3 +37,17 @@ Catalog: **~137 new keys** (zh+en pairs; catalog total **720** keys each side).
 - Some analysis/viz toast strings and long clinical option rows still mixed
 - Chipds catalog item titles follow source spreadsheet language
 - Welcome / demo cards already keyed; verify after hard refresh (`?v=i18n-locale-v1`)
+
+## v9.0.5 addition
+
+An audit of every CJK-bearing static element in `index.html` against all binding mechanisms
+(`data-i18n`, `DOM_I18N`, and the programmatic binding functions in `ui_dom_i18n.js`,
+`github_sync.js` and `app.js`) found **10 labels reached by none of them**, all on the ChIP-seq
+downstream page: the four `<details>` panel headings (HOMER, DiffBind, Peak set operations,
+deepTools), their four Run buttons, and three peak-management buttons. Catalogue keys and
+`DOM_I18N` bindings were added for all ten.
+
+Everything else in this document was verified correct: the catalogues are balanced (739 zh / 739 en
+after the addition), no English value contains CJK characters, no `t()` call references a missing
+key, no `DOM_I18N` selector is dead, and `<html lang>` is updated on switch. In particular the
+Export / GitHub card is fully translated by `applyGithubSyncI18n()`, as described above.

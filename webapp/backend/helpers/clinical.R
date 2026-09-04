@@ -1105,29 +1105,24 @@ run_multiomics_clinical_joint <- function(session_id, exp_a, exp_b,
   }
   if (!length(trait_map)) stop("No numeric clinical traits selected/found.")
 
-  .safe_cor <- function(x, y, method = "spearman") {
-    ok <- is.finite(x) & is.finite(y)
-    if (sum(ok) < 5L) return(c(r = NA_real_, p = NA_real_, n = sum(ok)))
-    ct <- tryCatch(stats::cor.test(x[ok], y[ok], method = method), error = function(e) NULL)
-    if (is.null(ct)) return(c(r = NA_real_, p = NA_real_, n = sum(ok)))
-    c(r = unname(ct$estimate), p = ct$p.value, n = sum(ok))
-  }
+  # .safe_cor() (one cor.test per feature pair) has been replaced by .clinical_cor_fast(), which
+  # computes the whole coefficient/p-value/n matrices in one pass. Both call sites now use it.
   .top_trait <- function(mat, trait_vec, trait_name, exp_name) {
     m <- as.matrix(mat)
-    out <- vector("list", nrow(m))
-    for (i in seq_len(nrow(m))) {
-      st <- .safe_cor(as.numeric(m[i, ]), trait_vec, method = method)
-      out[[i]] <- data.frame(
-        experiment = exp_name,
-        feature = rownames(m)[i],
-        trait = trait_name,
-        r = as.numeric(st[["r"]]),
-        p = as.numeric(st[["p"]]),
-        n = as.integer(st[["n"]]),
-        stringsAsFactors = FALSE
-      )
-    }
-    df <- dplyr::bind_rows(out)
+    if (!nrow(m)) return(data.frame())
+    # One vectorised pass over all features instead of nrow(m) cor.test() calls each allocating a
+    # one-row data.frame. This is what made the full-feature-space screen unusable: on
+    # 443 taxa x 710 metabolites the loop did not return within 12 minutes.
+    st <- .clinical_cor_fast(t(m), matrix(as.numeric(trait_vec), ncol = 1L), method = method)
+    df <- data.frame(
+      experiment = exp_name,
+      feature = rownames(m),
+      trait = trait_name,
+      r = as.numeric(st$r[, 1]),
+      p = as.numeric(st$p[, 1]),
+      n = as.integer(st$n[, 1]),
+      stringsAsFactors = FALSE
+    )
     df$abs_r <- abs(df$r)
     df <- df[order(-df$abs_r, df$p), , drop = FALSE]
     utils::head(df, as.integer(top_n))
@@ -1148,19 +1143,16 @@ run_multiomics_clinical_joint <- function(session_id, exp_a, exp_b,
   }
   xa2 <- as.matrix(xa[feats_a, , drop = FALSE])
   xb2 <- as.matrix(xb[feats_b, , drop = FALSE])
-  edges <- list(); idx <- 1L
-  for (fa in rownames(xa2)) {
-    for (fb in rownames(xb2)) {
-      st <- .safe_cor(as.numeric(xa2[fa, ]), as.numeric(xb2[fb, ]), method = method)
-      edges[[idx]] <- data.frame(
-        feature_a = fa, feature_b = fb,
-        r = as.numeric(st[["r"]]), p = as.numeric(st[["p"]]), n = as.integer(st[["n"]]),
-        stringsAsFactors = FALSE
-      )
-      idx <- idx + 1L
-    }
-  }
-  edge_df <- dplyr::bind_rows(edges)
+  # Whole cross-product in one call rather than a nested loop with a one-row data.frame per pair.
+  st_edges <- .clinical_cor_fast(t(xa2), t(xb2), method = method)
+  edge_df <- data.frame(
+    feature_a = rep(rownames(st_edges$r), times = ncol(st_edges$r)),
+    feature_b = rep(colnames(st_edges$r), each = nrow(st_edges$r)),
+    r = as.numeric(st_edges$r),
+    p = as.numeric(st_edges$p),
+    n = as.integer(st_edges$n),
+    stringsAsFactors = FALSE
+  )
   edge_df$abs_r <- abs(edge_df$r)
   edge_df <- edge_df[order(-edge_df$abs_r, edge_df$p), , drop = FALSE]
   edge_df <- utils::head(edge_df, as.integer(top_n * 5L))
@@ -1170,6 +1162,43 @@ run_multiomics_clinical_joint <- function(session_id, exp_a, exp_b,
     top_b = top_b,
     edges = edge_df
   )
+}
+
+# Vectorised correlation with p-values and per-pair sample counts.
+#
+# Replaces per-feature stats::cor.test() loops: one BLAS-backed stats::cor() call yields the whole
+# coefficient matrix, and the p-values follow from the standard t approximation
+# t = r * sqrt((n - 2) / (1 - r^2)) on n - 2 degrees of freedom - the same statistic cor.test()
+# reports when it is not using its exact permutation branch. For Spearman with fewer than ~10
+# complete pairs, cor.test() would use an exact distribution, so p can differ slightly from the
+# previous implementation in that regime; the coefficients are identical.
+#
+# X: samples x features_1. Y: samples x features_2 (or a single trait vector).
+# Returns list(r, p, n) as matrices with dim features_1 x features_2.
+.clinical_cor_fast <- function(X, Y, method = "spearman", min_n = 5L) {
+  X <- as.matrix(X); Y <- as.matrix(Y)
+  storage.mode(X) <- "double"; storage.mode(Y) <- "double"
+  X[!is.finite(X)] <- NA_real_; Y[!is.finite(Y)] <- NA_real_
+
+  r <- suppressWarnings(stats::cor(X, Y, method = method, use = "pairwise.complete.obs"))
+  r <- matrix(as.numeric(r), nrow = ncol(X), ncol = ncol(Y),
+              dimnames = list(colnames(X), colnames(Y)))
+  # Pairwise-complete counts for every (feature_1, feature_2) pair in one matrix product.
+  n <- crossprod(!is.na(X), !is.na(Y))
+  n <- matrix(as.numeric(n), nrow = ncol(X), ncol = ncol(Y), dimnames = dimnames(r))
+
+  df <- n - 2
+  ok <- is.finite(r) & n >= min_n & df > 0 & abs(r) < 1
+  p <- matrix(NA_real_, nrow = nrow(r), ncol = ncol(r), dimnames = dimnames(r))
+  if (any(ok)) {
+    tstat <- r[ok] * sqrt(df[ok] / (1 - r[ok]^2))
+    p[ok] <- 2 * stats::pt(-abs(tstat), df = df[ok])
+  }
+  # |r| == 1 with enough observations is a perfect association, not an undefined test.
+  perfect <- is.finite(r) & n >= min_n & df > 0 & abs(r) >= 1
+  if (any(perfect)) p[perfect] <- 0
+  r[n < min_n] <- NA_real_
+  list(r = r, p = p, n = n)
 }
 
 .clinical_binary_metrics <- function(y_true, score, positive_class = NULL) {
@@ -1302,6 +1331,18 @@ run_multiomics_clinical_joint <- function(session_id, exp_a, exp_b,
 }
 
 .clinical_train_test_split <- function(y, validation_fraction = 0.3, seed = 123L) {
+  # Reproducible split without leaving the seed on the global stream (see .emp_with_local_seed in
+  # utils.R for the same guard): a seeded global RNG also fixes every later draw in this API
+  # process, including identifier generation.
+  .had_seed <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+  .old_seed <- if (.had_seed) get(".Random.seed", envir = globalenv(), inherits = FALSE) else NULL
+  on.exit({
+    if (.had_seed) {
+      assign(".Random.seed", .old_seed, envir = globalenv())
+    } else if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+      rm(".Random.seed", envir = globalenv())
+    }
+  }, add = TRUE)
   set.seed(as.integer(seed %||% 123L))
   y <- as.factor(y)
   n <- length(y)

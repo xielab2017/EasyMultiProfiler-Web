@@ -103,6 +103,24 @@ emp_validate_deployment <- function() {
       "For LAN/Tailscale local sharing use EMP_CORS_ORIGIN=reflect-private."
     ))
   }
+  # POST /api/user_r/run evaluates caller-supplied R in this process with access to globalenv() -
+  # arbitrary code execution by design, for the teaching Code Lab. It is gated on EMP_ENABLE_USER_R,
+  # but a single environment variable is not enough when the API is also reachable off-host: refuse
+  # to start in that combination rather than serve it. Loopback with no token stays allowed, which
+  # is the single-user local deployment the tool is built for.
+  if (emp_user_r_enabled()) {
+    has_auth <- nzchar(emp_api_token()) || length(emp_token_hashes()) > 0L
+    if (!emp_is_loopback_host(host)) {
+      if (!has_auth) {
+        stop("EMP_ENABLE_USER_R cannot be combined with a non-loopback API_HOST and no token: ",
+             "this would expose arbitrary R execution to the network.")
+      }
+      message("[WARN] EMP_ENABLE_USER_R is on with a non-loopback API_HOST. Any client holding the ",
+              "API token can execute arbitrary R in this process. Keep the token secret, or unset ",
+              "EMP_ENABLE_USER_R for shared deployments.")
+    }
+  }
+
   invisible(TRUE)
 }
 
@@ -170,6 +188,24 @@ emp_json_request_body <- function(req) {
   tryCatch(jsonlite::fromJSON(raw, simplifyVector = FALSE), error = function(e) list())
 }
 
+# Ownership is enforced centrally in the `auth` filter via emp_authorize_request_resources(),
+# which reads the session id from the path, the X-Session-Id header, the query string and
+# body$session_id. The body branch relies on emp_json_request_body(), which declines to parse a
+# body over 1 MiB (a deliberate DoS guard) and declines nested keys — so a large or nested payload
+# carrying another principal's session id was never checked. Scan the raw text for session-id
+# shaped values instead, which costs one regex and closes the gap without parsing the payload.
+emp_scan_session_ids_raw <- function(req) {
+  raw <- as.character(req$postBody %||% "")
+  if (!nzchar(raw)) return(character())
+  # Scan the WHOLE body, not a leading window: a caller can place session_id after megabytes of
+  # padding, and a truncated scan would skip exactly the case this guard exists for. One regex
+  # over an in-memory string is linear and costs milliseconds even at tens of megabytes.
+  m <- gregexpr("\"session_id\"[[:space:]]*:[[:space:]]*\"([A-Za-z0-9]{24})\"", raw)
+  hits <- regmatches(raw, m)[[1]]
+  if (!length(hits)) return(character())
+  unique(sub("^.*\"([A-Za-z0-9]{24})\"$", "\\1", hits))
+}
+
 emp_authorize_request_resources <- function(req, principal) {
   path <- as.character(req$PATH_INFO %||% "")
   method <- toupper(as.character(req$REQUEST_METHOD %||% "GET"))
@@ -205,6 +241,11 @@ emp_authorize_request_resources <- function(req, principal) {
   body_session <- body$session_id %||% NULL
   if (!is.null(body_session) && length(body_session) == 1L && nzchar(as.character(body_session))) {
     session_ids <- c(session_ids, as.character(body_session))
+  }
+  # Catch session ids the JSON branch above could not see (body over the 1 MiB parse cap, or
+  # nested under another key). Cheap regex over the raw text; see emp_scan_session_ids_raw().
+  if (!ignore_ambient_session) {
+    session_ids <- c(session_ids, emp_scan_session_ids_raw(req))
   }
   for (session_id in unique(session_ids)) emp_assert_session_owner(session_id, principal)
   invisible(TRUE)

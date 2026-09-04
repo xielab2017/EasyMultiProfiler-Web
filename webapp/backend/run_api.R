@@ -70,14 +70,26 @@ if (!nzchar(Sys.getenv("BACKEND_DIR", unset = ""))) {
 
 source(file.path(script_dir, "helpers", "utils.R"))
 source(file.path(script_dir, "helpers", "auth.R"))
+
+# Resolve the effective bind host ONCE, before the deployment guard runs, and export it so that
+# auth.R reads exactly the value we are about to bind. Previously run_api.R defaulted API_HOST to
+# 0.0.0.0 while auth.R defaulted it to 127.0.0.1: with the variable unset, emp_validate_deployment()
+# concluded "loopback" and waived both the token and the CORS origin, and the server then bound
+# every interface. Loopback is now the default, and reaching beyond it is an explicit opt-in that
+# trips the token requirement.
+host <- trimws(Sys.getenv("API_HOST", unset = "127.0.0.1"))
+if (!nzchar(host)) host <- "127.0.0.1"
+Sys.setenv(API_HOST = host)
+
 emp_validate_deployment()
 
 pr <- plumb(plumber_file)
 port <- suppressWarnings(as.integer(Sys.getenv("API_PORT", unset = "8000")))
 if (is.na(port) || port <= 0 || port > 65535) port <- 8000L
-# Default 0.0.0.0 so LAN / Tailscale peers can reach the API.
-# Override with API_HOST=127.0.0.1 for loopback-only.
-host <- trimws(Sys.getenv("API_HOST", unset = "0.0.0.0"))
-if (!nzchar(host)) host <- "0.0.0.0"
 cat(sprintf("Binding API on %s:%s\n", host, port))
+if (emp_is_loopback_host(host)) {
+  cat("Loopback-only. To share on a LAN or Tailscale network, set API_HOST=0.0.0.0 together with\n",
+      "EMP_API_TOKEN (or EMP_API_TOKEN_SHA256S) and EMP_CORS_ORIGIN (reflect-private for LAN).\n",
+      sep = "")
+}
 pr$run(host = host, port = port, docs = FALSE)

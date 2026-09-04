@@ -133,8 +133,18 @@ run_alpha <- function(session_id, experiment, method = "shannon", source = "curr
 .diff_detect_cores <- function(requested = NULL) {
   # Parallelise wilcox/t/etc. using all-but-one physical core by default.
   phys <- tryCatch(parallel::detectCores(logical = FALSE), error = function(e) NA_integer_)
-  if (is.na(phys) || phys < 1) phys <- tryCatch(parallel::detectCores(), error = function(e) 2L)
-  cap <- max(1L, min(8L, phys - 1L))
+  # detectCores() returns NA - not an error - wherever the OS refuses to report CPU topology
+  # (restricted containers, sandboxes, some macOS configurations). The NA guard used to cover only
+  # the first call, so the fallback's NA propagated: cap became NA, every caller received
+  # core = NA, and the package's `if (core > 1)` failed with "missing value where TRUE/FALSE
+  # needed" - which is why differential analysis was unusable on such hosts, with an error no user
+  # could act on. Both calls are now guarded and the result is always a positive integer.
+  if (is.na(phys) || phys < 1L) {
+    phys <- tryCatch(parallel::detectCores(), error = function(e) NA_integer_)
+  }
+  if (is.na(phys) || phys < 1L) phys <- 2L
+  cap <- max(1L, min(8L, as.integer(phys) - 1L))
+  if (is.na(cap) || cap < 1L) cap <- 1L
   if (is.null(requested) || identical(requested, "auto")) return(cap)
   n <- suppressWarnings(as.integer(requested))
   if (is.na(n) || n < 1) return(cap)
@@ -558,6 +568,22 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
   if (!group_var %in% names(cd_df)) {
     stop("Selected grouping variable is not present in sample metadata.")
   }
+  # Samples whose group label is missing must be dropped before anything downstream sees them.
+  # The bundled 16S demo has such samples, and an NA reaching the per-feature tests surfaced as
+  # "missing value where TRUE/FALSE needed" from inside the package - an error a user cannot act
+  # on, and one that made the Differential Analysis panel unusable on the shipped demo data.
+  grp_raw <- as.character(cd_df[[group_var]])
+  na_grp <- is.na(grp_raw) | !nzchar(trimws(grp_raw)) | trimws(grp_raw) %in% c("NA", "na", "NaN")
+  if (any(na_grp)) {
+    if (sum(!na_grp) < 2L) {
+      stop("Every sample has a missing '", group_var, "' label; nothing to compare.", call. = FALSE)
+    }
+    message(sprintf("[diff] dropping %d of %d samples with no '%s' label",
+                    sum(na_grp), length(na_grp), group_var))
+    empt <- empt[, !na_grp]
+    cd_df <- as.data.frame(SummarizedExperiment::colData(empt))
+  }
+
   group_vals <- unique(na.omit(as.character(cd_df[[group_var]])))
   if (length(group_vals) < 2) {
     stop("Grouping variable must contain at least two categories.")
@@ -687,6 +713,11 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
     "edger_robust_likelihood_ratio", "limma_voom", "limma_voom_sample_weights"
   )
 
+  # Which method actually produced the returned table. Stays equal to method_use unless the
+  # wilcox.test fallback below fires.
+  executed_method <- method_use
+  substitution_reason <- NULL
+
   empt <- tryCatch(
     run_selected(method_use),
     error = function(e) {
@@ -700,6 +731,11 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
       }
       if (!identical(method_use, "wilcox.test")) {
         bump(60, "Falling back to wilcox.test")
+        # Record what actually ran. The substitution is deliberate for the non-parametric methods,
+        # but the result must not be labelled with a method that was never executed: the endpoint
+        # returns executed_method alongside requested_method (see the attribute set below).
+        executed_method <<- "wilcox.test"
+        substitution_reason <<- conditionMessage(e)
         tryCatch(run_selected("wilcox.test"),
                  error = function(e2) stop("Differential analysis failed for '",
                                            method_use, "' and fallback 'wilcox.test'. ",
@@ -737,6 +773,9 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
   })
 
   bump(100, "Done")
+  attr(result, "requested_method") <- method_use
+  attr(result, "executed_method")  <- executed_method
+  if (!is.null(substitution_reason)) attr(result, "substitution_reason") <- substitution_reason
   result
 }
 
@@ -945,18 +984,30 @@ ensure_diff_raw <- function(session_id, experiment) {
 run_dimension <- function(session_id, experiment, method = "PCA") {
   empt <- get_empt(session_id, experiment)
   method_raw <- if (is.null(method) || !nzchar(method)) "pca" else tolower(method)
+  # 'mds' maps to pcoa because classical MDS on a distance matrix IS principal coordinates
+  # analysis - that alias is exact. 'tsne' used to map to 'umap', which silently returned a UMAP
+  # embedding (axes labelled umap1/umap2) to a user who asked for t-SNE. EMP_dimension_analysis
+  # implements no t-SNE, so the request is now refused instead of quietly answered with a
+  # different algorithm.
   method_map <- c(
     "pca" = "pca",
     "umap" = "umap",
     "mds" = "pcoa",
     "pcoa" = "pcoa",
     "pls" = "pls",
-    "opls" = "opls",
-    "tsne" = "umap",
-    "t-sne" = "umap"
+    "opls" = "opls"
   )
+  if (method_raw %in% c("tsne", "t-sne")) {
+    stop("t-SNE is not implemented. Choose UMAP for a non-linear embedding, or PCA/PCoA/PLS/OPLS.",
+         call. = FALSE)
+  }
+  # `method_map[[key]]` throws "subscript out of bounds" for an unknown key, which would reach the
+  # caller instead of the message below - check membership first.
+  if (!method_raw %in% names(method_map)) {
+    stop("Unsupported ordination method '", method_raw,
+         "'. Supported: pca, pcoa (mds), umap, pls, opls.", call. = FALSE)
+  }
   method_use <- method_map[[method_raw]]
-  if (is.null(method_use) || !nzchar(method_use)) method_use <- "pca"
 
   ## PCoA in EMP_dimension_analysis requires a `distance =` argument.
   ## Default to Bray-Curtis which is the convention for compositional
@@ -979,37 +1030,51 @@ run_dimension <- function(session_id, experiment, method = "PCA") {
       as.data.frame(dr$dimension_coordinate, stringsAsFactors = FALSE)
     } else NULL
   }, error = function(e) NULL)
+  # When the ordination yields no coordinates, fail loudly. Returning colData here meant the
+  # frontend plotted sample metadata columns as if they were ordination axes.
   if (is.null(result) || !nrow(result)) {
-    result <- tryCatch(
-      as.data.frame(SummarizedExperiment::colData(empt)),
-      error = function(e) data.frame()
-    )
+    stop("Ordination produced no coordinates for method '", method_use,
+         "'. Check that the assay has enough non-constant features and at least 3 samples.",
+         call. = FALSE)
   }
   result
 }
 
 run_correlation <- function(session_id, experiment, use = "spearman") {
   empt <- get_empt(session_id, experiment)
-  result <- tryCatch({
-    empt <- empt |> EasyMultiProfiler::EMP_cor_analysis(method = use)
-    save_empt(session_id, experiment, empt)
-    EasyMultiProfiler::EMP_result(empt, info = "cor_analysis_result")
-  }, error = function(e) {
-    ad <- SummarizedExperiment::assays(empt)[[1]]
-    if (nrow(ad) < 2 || ncol(ad) < 2) stop("Correlation needs at least 2 features and 2 samples.")
-    cor_mat <- suppressWarnings(stats::cor(t(ad), method = use, use = "pairwise.complete.obs"))
-    if (all(is.na(cor_mat))) stop("Could not compute correlation matrix.")
-    idx <- which(upper.tri(cor_mat), arr.ind = TRUE)
-    data.frame(
-      feature_1 = rownames(cor_mat)[idx[, 1]],
-      feature_2 = colnames(cor_mat)[idx[, 2]],
-      coefficient = as.numeric(cor_mat[idx]),
+
+  # EMP_cor_analysis dispatches on class EMP, whose ExperimentList holds one or two EMPTs; with a
+  # single experiment it correlates that experiment against itself, which is what this endpoint
+  # wants. Previously the EMPT was passed straight in, the call always failed on the class check,
+  # and a tryCatch substituted a bare stats::cor() whose table carried no p-value at all - so the
+  # endpoint never once ran EMP's correlation kernel and the UI showed coefficients without
+  # significance. Build the EMP object properly and let a genuine failure surface.
+  # action = "get" returns the coefficient/p-value table directly. Note what must NOT happen here:
+  # EMP_cor_analysis() returns an object of class EMP, and writing that back with
+  # save_empt() would store an EMP in the slot every other endpoint reads as an EMPT, corrupting
+  # the session for all subsequent analyses. The session object is therefore left untouched.
+  emp_obj <- EasyMultiProfiler::as.EMP(list(empt))
+  res <- emp_obj |> EasyMultiProfiler::EMP_cor_analysis(method = use, action = "get")
+
+  # The kernel returns a list: `correlation` and `pvalue` matrices, `n.obs`, `cor_info`, and
+  # `cor_p`, the tidy long table (var1, var2, coefficient, pvalue). The endpoint serialises a
+  # data.frame, so hand back the long table; if a future version drops it, melt the two matrices
+  # rather than silently returning coefficients without significance.
+  if (is.data.frame(res)) return(res)
+  if (is.list(res) && !is.null(res$cor_p)) return(as.data.frame(res$cor_p))
+  if (is.list(res) && !is.null(res$correlation)) {
+    cm <- as.matrix(res$correlation)
+    pm <- if (!is.null(res$pvalue)) as.matrix(res$pvalue) else NULL
+    out <- data.frame(
+      var1 = rep(rownames(cm), times = ncol(cm)),
+      var2 = rep(colnames(cm), each = nrow(cm)),
+      coefficient = as.numeric(cm),
       stringsAsFactors = FALSE
     )
-  })
-
-  if (is.null(result)) result <- data.frame()
-  result
+    out$pvalue <- if (is.null(pm)) NA_real_ else as.numeric(pm)
+    return(out)
+  }
+  stop("Correlation analysis returned no usable result.", call. = FALSE)
 }
 
 run_cluster <- function(session_id, experiment, method = "hclust", k = 3) {
@@ -1031,14 +1096,23 @@ run_cluster <- function(session_id, experiment, method = "hclust", k = 3) {
   if (k < 2L) k <- 2L
 
   meth <- tolower(trimws(as.character(method %||% "hclust")))
+  # Every supported method is named here, and an unsupported one is refused rather than quietly
+  # falling through to hierarchical clustering under the label the user asked for.
   labels <- if (meth %in% c("kmeans", "km")) {
-    set.seed(42)
-    stats::kmeans(x, centers = k, nstart = 10)$cluster
-  } else if (meth %in% c("pam", "kmedoids") && requireNamespace("cluster", quietly = TRUE)) {
+    # set.seed() used to be called on the global stream, which made every subsequent session id and
+    # any later randomised analysis in this process deterministic. Seed locally and restore.
+    .emp_with_local_seed(42L, function() stats::kmeans(x, centers = k, nstart = 10)$cluster)
+  } else if (meth %in% c("pam", "kmedoids")) {
+    if (!requireNamespace("cluster", quietly = TRUE)) {
+      stop("Method 'pam' requires the 'cluster' package. Install it with ",
+           "install.packages('cluster'), or choose 'hclust' or 'kmeans'.", call. = FALSE)
+    }
     cluster::pam(stats::dist(x), k = k, cluster.only = TRUE)
-  } else {
+  } else if (meth %in% c("hclust", "hierarchical", "")) {
     hc <- stats::hclust(stats::dist(x), method = "ward.D2")
     stats::cutree(hc, k = k)
+  } else {
+    stop("Unsupported clustering method '", meth, "'. Supported: hclust, kmeans, pam.", call. = FALSE)
   }
 
   cd <- as.data.frame(SummarizedExperiment::colData(empt))
@@ -1075,18 +1149,27 @@ run_marker <- function(session_id, experiment, method = "randomForest", group_va
     group_var <- cats[1]
   }
 
+  # 'lefse' and 'ancom' used to map to randomForest, so a user who selected LEfSe received
+  # random-forest importances labelled as a LEfSe result. Neither method is implemented here;
+  # refuse the request and name the alternatives instead of substituting a different statistic.
   method_map <- c(
     "randomforest" = "randomForest",
     "rf" = "randomForest",
-    "lefse" = "randomForest",
-    "ancom" = "randomForest",
     "lasso" = "lasso",
     "xgboost" = "xgboost",
     "xgb" = "xgboost"
   )
   method_key <- tolower(trimws(as.character(method %||% "randomForest")))
+  if (method_key %in% c("lefse", "ancom", "ancombc")) {
+    stop("Method '", method_key, "' is not implemented in this release. Use randomForest, lasso ",
+         "or xgboost for feature ranking, or the Differential Analysis panel (which offers ",
+         "ANCOM-BC among its methods) for differential abundance.", call. = FALSE)
+  }
   method_use <- method_map[[method_key]]
-  if (is.null(method_use) || !nzchar(method_use)) method_use <- "randomForest"
+  if (is.null(method_use) || !nzchar(method_use)) {
+    stop("Unsupported marker method '", method_key,
+         "'. Supported: randomForest, lasso, xgboost.", call. = FALSE)
+  }
 
   if (method_use %in% c("lasso", "xgboost")) {
     ad <- SummarizedExperiment::assays(empt)[[1]]
@@ -1176,12 +1259,12 @@ run_marker <- function(session_id, experiment, method = "randomForest", group_va
   marker_tbl <- NULL
   marker_err <- NULL
   if (identical(method_use, "randomForest")) {
-    # EMP has changed argument names across versions; try all common variants.
+    # The argument is `estimate_group` in the version this release depends on (see the formals of
+    # EMP_marker_analysis in R/). The speculative variants .group/group/group_var are not formals
+    # of any of them: `...` swallows them and the call then fails for a missing grouping argument,
+    # so trying them only masked the real error. One documented call, one error message.
     arg_variants <- list(
-      list(method = method_use, estimate_group = group_var),
-      list(method = method_use, .group = group_var),
-      list(method = method_use, group = group_var),
-      list(method = method_use, group_var = group_var)
+      list(method = method_use, estimate_group = group_var)
     )
     for (av in arg_variants) {
       empt_try <- tryCatch(do.call(EasyMultiProfiler::EMP_marker_analysis, c(list(empt), av)),
@@ -1203,13 +1286,11 @@ run_marker <- function(session_id, experiment, method = "randomForest", group_va
       }
     }
   } else {
-    empt <- tryCatch(
-      empt |> EasyMultiProfiler::EMP_marker_analysis(method = method_use, estimate_group = group_var),
-      error = function(e) {
-        marker_err <<- conditionMessage(e)
-        empt |> EasyMultiProfiler::EMP_marker_analysis(method = method_use, .group = group_var)
-      }
-    )
+    # The retry with .group= has been removed: EMP_marker_analysis declares no such formal, so the
+    # second call could only fail for the same reason as the first while replacing the informative
+    # error with a less informative one. group_var is already validated against colData above.
+    empt <- empt |> EasyMultiProfiler::EMP_marker_analysis(method = method_use,
+                                                           estimate_group = group_var)
     save_empt(session_id, experiment, empt)
   }
 

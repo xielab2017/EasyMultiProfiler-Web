@@ -300,9 +300,9 @@ function applyCourseBanner() {
   if (!root) return;
   const loc = getLocale();
   if (loc === "en") {
-    root.innerHTML = `<strong>v9.0.4</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
+    root.innerHTML = `<strong>v9.0.5</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
   } else {
-    root.innerHTML = `<strong>v9.0.4</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
+    root.innerHTML = `<strong>v9.0.5</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
   }
   document.getElementById("btn-course-to-guide")?.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent("emp:navigate", { detail: { page: "guide" } }));

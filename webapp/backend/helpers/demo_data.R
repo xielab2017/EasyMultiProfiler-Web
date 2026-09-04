@@ -78,7 +78,11 @@ demo_dataset_catalog <- function() {
       data_type = "tax",
       experiment_name = "m16s_course",
       assay_name = "counts",
-      start_level = "Species",
+      # The bundled 16S table is kingdom-rooted (k__ prefix), so its start level is Kindom - the
+      # spelling EMP uses. build_mae() re-detects this from the feature strings, which is why the
+      # previous hardcoded "Species" was latent rather than visible, but the catalogue should not
+      # advertise a rank the file does not start at.
+      start_level = "Kindom",
       tax_sep = ";",
       data_file = m16s_data,
       metadata_file = m16s_meta,

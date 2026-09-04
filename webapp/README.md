@@ -1,4 +1,4 @@
-# EasyMultiProfiler Webapp — v9.0.4 (Windows)
+# EasyMultiProfiler Webapp — v9.0.5 (Windows)
 
 Browser UI + Plumber API for EasyMultiProfiler. Includes course weekly sync to GitHub.
 

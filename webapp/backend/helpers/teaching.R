@@ -1,6 +1,17 @@
 # Teaching mode: learning trace, case progress, reflections (session-bound, no login).
 
-TEACHING_DIR <- Sys.getenv("EMP_TEACHING_DIR", "/tmp/emp_teaching")
+# "/tmp/emp_teaching" was the default: there is no /tmp on Windows (it resolves to C:/tmp on the
+# current drive), and on a shared POSIX host /tmp is world-writable, so another user could read or
+# pre-create a student's learning trace. Use the same per-user application data root as sessions
+# and jobs (.emp_platform_data_root() in storage.R), still overridable by EMP_TEACHING_DIR.
+TEACHING_DIR <- local({
+  override <- trimws(Sys.getenv("EMP_TEACHING_DIR", unset = ""))
+  if (nzchar(override)) return(path.expand(override))
+  if (exists(".emp_platform_data_root", mode = "function")) {
+    return(file.path(.emp_platform_data_root(), "teaching"))
+  }
+  file.path(tempdir(), "emp_teaching")
+})
 .teaching_data_path <- function(name) {
   backend <- Sys.getenv("EMP_BACKEND_DIR", Sys.getenv("BACKEND_DIR", unset = ""))
   if (!nzchar(backend)) backend <- getwd()

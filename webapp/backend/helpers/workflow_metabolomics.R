@@ -131,7 +131,12 @@ mbx_preprocess <- function(session_id, experiment, max_na = NULL, impute_method 
   keep <- apply(ad, 1, function(x) sum(is.na(x)) / length(x) <= max_na)
   empt <- empt[keep, ]
 
-  empt <- empt |> EasyMultiProfiler::EMP_impute(method = impute_method)
+  # Shared helper with POST /api/prepare/impute so the two call sites cannot drift; it also
+  # actually applies the requested method, which EMP_impute(method=) never did (the argument is
+  # not one of its formals).
+  imputed <- .emp_impute_assay(empt, impute_method)
+  empt <- imputed$empt
+  executed_impute_method <- imputed$executed
   empt <- empt |> EasyMultiProfiler::EMP_decostand(method = normalize_method)
 
   mae <- load_mae(session_id)
@@ -143,6 +148,7 @@ mbx_preprocess <- function(session_id, experiment, max_na = NULL, impute_method 
     success = TRUE,
     max_na = max_na,
     impute_method = impute_method,
+    executed_impute_method = executed_impute_method,
     normalize_method = normalize_method,
     raw_missingness = raw_missingness,
     kept_features = nrow(SummarizedExperiment::assays(empt)[[1]])

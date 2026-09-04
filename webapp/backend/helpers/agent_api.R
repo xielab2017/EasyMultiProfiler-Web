@@ -43,6 +43,25 @@ emp_resolve_allowed_file <- function(path, label = "file") {
   resolved
 }
 
+# Directory-flavoured sibling of emp_resolve_allowed_file(), for endpoints that take a server
+# folder rather than a server file (ChIP-seq BAM folder scan). Same EMP_ALLOWED_ROOTS contract:
+# with no roots configured, server-path access is disabled rather than unrestricted.
+emp_resolve_allowed_dir <- function(path, label = "folder") {
+  raw <- trimws(as.character(path %||% ""))
+  if (!nzchar(raw)) stop(sprintf("%s path is required.", label))
+  roots <- .emp_allowed_roots()
+  if (!length(roots)) stop("EMP_ALLOWED_ROOTS is not configured; server-path access is disabled.")
+
+  resolved <- normalizePath(path.expand(raw), winslash = "/", mustWork = TRUE)
+  if (!isTRUE(file_test("-d", resolved))) {
+    stop(sprintf("%s must be a directory.", label))
+  }
+  if (!any(vapply(roots, function(root) .emp_is_within_root(resolved, root), logical(1)))) {
+    stop(sprintf("%s is outside EMP_ALLOWED_ROOTS.", label))
+  }
+  resolved
+}
+
 .emp_file_sha256 <- function(path) {
   if (!requireNamespace("digest", quietly = TRUE)) return(NULL)
   digest::digest(file = path, algo = "sha256", serialize = FALSE)
@@ -183,11 +202,11 @@ emp_agent_capabilities <- function() {
     "emp.analyze.enrichment",
     "emp.analyze.association"
   )
-  user_r_enabled <- tolower(trimws(Sys.getenv("EMP_ENABLE_USER_R", unset = "true"))) %in% c("1", "true", "yes", "on")
+  user_r_enabled <- emp_user_r_enabled()
   list(
     success = TRUE,
     api_version = "1.0",
-    emp_version = Sys.getenv("EMP_WEB_VERSION", unset = "9.0.4"),
+    emp_version = Sys.getenv("EMP_WEB_VERSION", unset = "9.0.5"),
     package_version = package_version,
     features = list(
       path_import = length(.emp_allowed_roots()) > 0,

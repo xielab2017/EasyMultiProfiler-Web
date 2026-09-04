@@ -5,6 +5,17 @@
 import { t } from "./locale.js?v=nav-active-fix-v1";
 
 export const DOM_I18N = [
+  // --- added 2026-09-03: 10 ChIP-seq downstream labels that never switched language
+  { sel: "#chipds-btn-use-uploaded-peaks", key: "chipds.useUploadedPeaks" },
+  { sel: "#chipds-btn-refresh-peaks", key: "chipds.refreshPeakList" },
+  { sel: "#chipds-btn-refresh-tools", key: "chipds.reDetectTools" },
+  { sel: "#chipds-panel-homer summary:nth-of-type(1)", key: "chipds.panelHomer" },
+  { sel: "#chipds-btn-homer", key: "chipds.runHomer" },
+  { sel: "#chipds-panel-diffbind summary:nth-of-type(1)", key: "chipds.panelDiffBind" },
+  { sel: "#chipds-btn-diffbind", key: "chipds.runDiffBind" },
+  { sel: "#chipds-panel-peaksops summary:nth-of-type(1)", key: "chipds.panelPeakOps" },
+  { sel: "#chipds-panel-deeptools summary:nth-of-type(1)", key: "chipds.panelDeepTools" },
+  { sel: "#chipds-btn-deeptools", key: "chipds.runDeepTools" },
   { sel: "#gp-label", key: "common.working" },
   { sel: ".omics-switch-label", key: "omics.label" },
   { sel: "#omics-pipeline option[value='all']", key: "omics.all" },

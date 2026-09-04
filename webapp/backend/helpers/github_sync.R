@@ -874,7 +874,7 @@ github_status <- function(identity) {
     "EMP_WEB_VERSION",
     unset = tryCatch(
       as.character(utils::packageVersion("EasyMultiProfiler")),
-      error = function(e) "9.0.4"
+      error = function(e) "9.0.5"
     )
   )
 }

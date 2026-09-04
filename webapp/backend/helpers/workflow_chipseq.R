@@ -1236,6 +1236,11 @@ chip_register_bams <- function(session_id, entries) {
   index_warnings <- character(0)
   for (e in entries) {
     p <- chip_require_string(e$path %||% e[["path"]], "path")
+    # Both callers of this function take the path from the client: POST
+    # /api/workflows/chipseq/bams/register directly, and chip_scan_folder() from a directory that
+    # emp_resolve_allowed_dir() has already validated. Gate here so neither can reach a file
+    # outside EMP_ALLOWED_ROOTS. Uploaded BAMs do not pass through this function.
+    p <- emp_resolve_allowed_file(p, "BAM/SAM path")
     if (!file.exists(p)) stop("BAM/SAM not found: ", p)
     grp <- tolower(as.character(e$group %||% e[["group"]] %||% "t")[1])
     grp <- if (grp %in% c("c", "control")) "c" else "t"
@@ -1269,6 +1274,9 @@ chip_register_bams <- function(session_id, entries) {
 chip_scan_folder <- function(session_id, folder_path, default_group = "t") {
   session_id <- chip_require_session(session_id)
   folder_path <- chip_require_string(folder_path, "folder_path")
+  # Server-supplied directories go through the same EMP_ALLOWED_ROOTS gate as /api/import/path.
+  # Without this the endpoint enumerated any directory the API process could read.
+  folder_path <- emp_resolve_allowed_dir(folder_path, "folder_path")
   if (!dir.exists(folder_path)) stop("folder_path does not exist.")
   hits <- list.files(folder_path, pattern = "\\.(bam|sam|BAM|SAM)$", full.names = TRUE)
   if (!length(hits)) stop("No BAM/SAM files found in folder.")

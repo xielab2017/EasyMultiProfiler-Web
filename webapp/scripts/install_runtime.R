@@ -200,8 +200,37 @@ cran_list <- setdiff(cran_list, bioc_list)
 # CRAN glue packages that are universally useful and that we always
 # want in EMP web runtime, even if DESCRIPTION doesn't strictly require
 # them as Imports.
-cran_always <- c("remotes")
+#
+# The web layer lives in webapp/, not in R/, so these never appear in the package's Imports and
+# R CMD check never sees them - but the API calls them with :: at runtime. Without them the API
+# starts and then fails per route: no callr means every asynchronous endpoint fails, no pheatmap or
+# ragg means heatmap and PNG rendering fail, no openxlsx/zip means export fails. Install them by
+# default, as part of the web runtime.
+cran_always <- c(
+  "remotes",
+  # REST layer and serialisation
+  "plumber", "jsonlite", "httr2", "base64enc", "digest", "openssl",
+  # asynchronous jobs
+  "callr",
+  # rendering and export
+  "ragg", "pheatmap", "RColorBrewer", "scales", "viridisLite", "openxlsx", "zip",
+  # analysis helpers reached from the web layer
+  "matrixStats", "cluster", "igraph", "psych", "gtsummary", "ggsci"
+)
 cran_list <- unique(c(cran_list, cran_always))
+
+# Bioconductor packages the web layer calls but the package does not import.
+bioc_web <- c("BiocParallel")
+bioc_list <- unique(c(bioc_list, bioc_web))
+cran_list <- setdiff(cran_list, bioc_list)
+
+# The ChIP-seq / CUT&RUN routes need a heavy Bioconductor stack. Install it only when asked, so a
+# microbiome-only deployment is not forced to build it; the routes report the missing package with
+# an actionable message when it is absent.
+if (isTRUE(as.logical(Sys.getenv("EMP_INSTALL_CHIPSEQ", unset = "FALSE")))) {
+  bioc_list <- unique(c(bioc_list,
+    "ChIPseeker", "DiffBind", "GenomicFeatures", "GenomicRanges", "IRanges", "Rsamtools"))
+}
 
 msg("[PLAN] CRAN: %d   Bioconductor: %d", length(cran_list), length(bioc_list))
 

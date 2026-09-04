@@ -18,8 +18,14 @@ JOB_DIR <- emp_storage_dir("jobs")
 }
 
 .job_id <- function() {
-  paste0(format(Sys.time(), "%Y%m%d%H%M%OS3"), "-",
-         paste0(sample(c(letters, 0:9), 8, replace = TRUE), collapse = ""))
+  # Job ownership is asserted on this identifier (auth.R emp_assert_job_owner), so the random part
+  # must not come from R's global RNG. Alphabet and length keep validate_job_id() satisfied.
+  suffix <- if (exists(".emp_random_id", mode = "function")) {
+    .emp_random_id(8L, alphabet = c(letters, 0:9))
+  } else {
+    paste0(sample(c(letters, 0:9), 8, replace = TRUE), collapse = "")
+  }
+  paste0(format(Sys.time(), "%Y%m%d%H%M%OS3"), "-", suffix)
 }
 
 validate_job_id <- function(id) {
@@ -60,8 +66,17 @@ validate_job_id <- function(id) {
     st$progress <- max(1L, min(99L, as.integer(pct)))
     if (!is.null(msg)) st$message <- as.character(msg)
     st$updated  <- as.integer(Sys.time())
+    # Write to a sibling temp file and rename, so a concurrent GET /api/jobs/<id> can never read a
+    # half-written state file (which .read_state() reports as NULL, i.e. "job vanished"). This
+    # mirrors .write_state(), which cannot be called here: the callback is serialised into a callr
+    # child process where the parent's helper functions do not exist.
+    tmp <- paste0(state_path, ".tmp-", Sys.getpid())
     writeLines(jsonlite::toJSON(st, auto_unbox = TRUE, null = "null",
-                                 na = "null", pretty = FALSE), state_path)
+                                 na = "null", pretty = FALSE), tmp)
+    if (!file.rename(tmp, state_path)) {
+      file.copy(tmp, state_path, overwrite = TRUE)
+      unlink(tmp)
+    }
     invisible(NULL)
   }
 }

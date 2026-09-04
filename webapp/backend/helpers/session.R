@@ -3,6 +3,10 @@
 SESSION_DIR <- emp_storage_dir("sessions")
 
 new_session_id <- function() {
+  # .emp_random_id() draws from openssl::rand_bytes (or /dev/urandom), not from R's global RNG,
+  # which any analysis in this process can seed. Same 24-char alphanumeric shape, so
+  # validate_session_id() and every stored session directory keep working unchanged.
+  if (exists(".emp_random_id", mode = "function")) return(.emp_random_id(24L))
   paste0(sample(c(letters, LETTERS, 0:9), 24, replace = TRUE), collapse = "")
 }
 

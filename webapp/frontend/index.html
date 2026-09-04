@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EasyMultiProfiler Web V9.0.4</title>
+  <title>EasyMultiProfiler Web V9.0.5</title>
     <link rel="stylesheet" href="css/style.css?v=nav-active-fix-v1">
     <link rel="stylesheet" href="css/code_lab.css?v=2026-07-16-multi-demo-v2">
     <link rel="stylesheet" href="css/teaching.css?v=2026-07-22-gh-week-first">
@@ -135,7 +135,7 @@
       <div id="perf-last" class="perf-last">—</div>
     </div>
     <div id="locale-note" class="locale-note">
-      <span class="version-badge">v9.0.4</span>
+      <span class="version-badge">v9.0.5</span>
       <button type="button" class="btn-link" id="btn-help-guide" data-i18n="footer.guide">安装与使用指南</button>
       · <button type="button" class="btn-link" id="btn-help-course" data-i18n="footer.course">Course 入门</button>
       · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/main/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
@@ -196,7 +196,7 @@
   <section id="page-course" class="page active">
     <div class="card guide-course-banner">
       <p class="hint" style="margin:0">
-        <strong>v9.0.4</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
+        <strong>v9.0.5</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
         （Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」
       </p>
     </div>
@@ -221,14 +221,14 @@
     <div id="teaching-prompt-root"></div>
   </section>
 
-  <!-- ── PAGE: USER GUIDE (v9.0.4) ─────────────────────── -->
+  <!-- ── PAGE: USER GUIDE (v9.0.5) ─────────────────────── -->
   <section id="page-guide" class="page">
     <div id="guide-root"></div>
   </section>
 
   <section id="page-import" class="page">
     <div class="card welcome-card" id="welcome-card">
-      <h2>👋 欢迎使用 EasyMultiProfiler v9.0.4</h2>
+      <h2>👋 欢迎使用 EasyMultiProfiler v9.0.5</h2>
       <p class="hint">
         <strong>还没安装？</strong> 左侧点 <strong>Guide</strong> 查看 Mac / Windows 分平台安装步骤（两条路径不同，请勿混用）。
         <strong>已装好？</strong> 从 <strong>Course</strong> 学，或下方一键加载 16S / RNA-seq / Clinical 示例数据。
@@ -591,11 +591,14 @@
           <label>Taxonomy Level</label>
           <select id="import-start-level">
             <option value="Species">Species</option>
+            <option value="Strain">Strain</option>
             <option value="Genus">Genus</option>
             <option value="Family">Family</option>
             <option value="Order">Order</option>
             <option value="Class">Class</option>
             <option value="Phylum">Phylum</option>
+            <option value="Kindom">Kingdom (k__)</option>
+            <option value="Domain">Domain (d__)</option>
           </select>
         </div>
         <div class="form-group">
@@ -824,7 +827,6 @@
           <option value="hellinger">Hellinger</option>
           <option value="total">Relative Abundance</option>
           <option value="log">Log Transform</option>
-          <option value="CSS">CSS (Cumulative Sum Scaling)</option>
         </select>
       </div>
       <p id="norm-method-desc" class="hint">
@@ -930,7 +932,6 @@
             <option value="hellinger">hellinger</option>
             <option value="total">relative abundance</option>
             <option value="log">log</option>
-            <option value="CSS">CSS</option>
           </select>
         </div>
       </div>
@@ -1111,8 +1112,7 @@
           <option value="PCA">PCA</option>
           <option value="PCoA">PCoA (beta, Bray–Curtis)</option>
           <option value="UMAP">UMAP</option>
-          <option value="tSNE">t-SNE</option>
-          <option value="MDS">MDS (PCoA)</option>
+          <option value="MDS">MDS (= PCoA)</option>
         </select>
       </div>
       <button class="btn btn-primary" id="btn-dim"><i data-lucide="play"></i> Run</button>
@@ -1163,8 +1163,6 @@
           <label>Method</label>
           <select id="marker-method">
             <option value="randomForest">Random Forest (native)</option>
-            <option value="LEfSe">LEfSe (RF fallback)</option>
-            <option value="ANCOM">ANCOM (RF fallback)</option>
             <option value="lasso">LASSO</option>
             <option value="xgboost">XGBoost</option>
           </select>

@@ -960,7 +960,8 @@ function(req, res) {
 
     mode <- b$prepare_mode %||% "stack"
     empt <- .prepare_load_base(session_id, experiment, mode = mode)
-    empt <- empt |> EasyMultiProfiler::EMP_impute(method = method)
+    imputed <- .emp_impute_assay(empt, method)
+    empt <- imputed$empt
 
     mae            <- load_mae(session_id)
     mae[[experiment]] <- empt
@@ -968,7 +969,8 @@ function(req, res) {
     save_empt(session_id, experiment, empt)
     snap_id <- save_prepare_snapshot(session_id, experiment, empt, label = paste0("impute_", method))
 
-    list(success = TRUE, method = method, prepare_mode = mode,
+    list(success = TRUE, method = method, executed_method = imputed$executed,
+         n_imputed = imputed$n_imputed, prepare_mode = mode,
          snapshot_id = snap_id,
          preview_data = emp_prepare_preview_rows(empt))
   }, res)
@@ -1014,7 +1016,32 @@ function(req, res) {
 
     mode <- b$prepare_mode %||% "stack"
     empt <- .prepare_load_base(session_id, experiment, mode = mode)
-    empt <- empt |> EasyMultiProfiler::EMP_collapse(taxa_level = taxa_level)
+
+    # EMP_collapse() has no `taxa_level` formal: the rank goes in `estimate_group` and the axis in
+    # `collapse_by`. Passing taxa_level= let `...` swallow it and the call then died on the missing
+    # `collapse_by`, so this endpoint could never succeed. Validate the requested rank against the
+    # rowData columns first, so an unknown rank produces a list of the available ones rather than
+    # an error from inside the package.
+    ranks <- tryCatch(colnames(SummarizedExperiment::rowData(empt)), error = function(e) character())
+    # Map input spellings onto the package's own vocabulary BEFORE validating: EMP's rowData column
+    # is "Kindom" (sic), so a client sending the correct English "Kingdom" would otherwise be told
+    # its rank does not exist. Case-insensitive matching alone does not cover that.
+    taxa_level <- .emp_normalize_tax_rank(taxa_level) %||% taxa_level
+    if (length(ranks) && !(taxa_level %in% ranks)) {
+      hit <- ranks[tolower(ranks) == tolower(taxa_level)]
+      if (length(hit)) {
+        taxa_level <- hit[[1]]
+      } else {
+        stop("Unknown taxonomic rank '", taxa_level, "'. Available: ",
+             paste(ranks, collapse = ", "), call. = FALSE)
+      }
+    }
+    empt <- empt |> EasyMultiProfiler::EMP_collapse(
+      estimate_group  = taxa_level,
+      collapse_by     = "row",
+      method          = "sum",
+      tax_annotation  = "single"
+    )
 
     mae            <- load_mae(session_id)
     mae[[experiment]] <- empt
@@ -2093,10 +2120,21 @@ function(req, res) {
                       comparison_mode = comparison_mode, cores = cores)
     result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
-    list(success = TRUE,
-         n_rows  = nrow(result_df),
-         columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+    # run_diff() may substitute wilcox.test when a parametric method fails on the given design.
+    # Report what actually ran so the table is never labelled with a method that was not executed.
+    requested <- attr(result, "requested_method") %||% method
+    executed  <- attr(result, "executed_method")  %||% requested
+    out <- list(success = TRUE,
+                n_rows  = nrow(result_df),
+                columns = names(result_df),
+                requested_method = requested,
+                executed_method  = executed,
+                data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+    if (!identical(requested, executed)) {
+      out$method_substituted <- TRUE
+      out$substitution_reason <- attr(result, "substitution_reason") %||% NULL
+    }
+    out
   }, res)
 }
 
@@ -3084,8 +3122,7 @@ function(session_id, experiment, res) {
     )
     .csv_response(df)
   }, error = function(e) {
-    res$status <- 500
-    paste("Error:", e$message)
+    emp_binary_error(res, e)
   })
 }
 
@@ -3101,8 +3138,7 @@ function(session_id, experiment, res) {
     )
     .csv_response(df)
   }, error = function(e) {
-    res$status <- 500
-    paste("Error:", e$message)
+    emp_binary_error(res, e)
   })
 }
 
@@ -3119,8 +3155,7 @@ function(session_id, experiment, res) {
                   paste0('attachment; filename="', experiment, '_assay.csv"'))
     .csv_response(df)
   }, error = function(e) {
-    res$status <- 500
-    paste("Error:", e$message)
+    emp_binary_error(res, e)
   })
 }
 
@@ -3163,8 +3198,7 @@ function(session_id, experiment, res) {
     )
     readBin(tmp, "raw", file.info(tmp)$size)
   }, error = function(e) {
-    res$status <- 500
-    paste("Error:", e$message)
+    emp_binary_error(res, e)
   })
 }
 
@@ -3180,8 +3214,7 @@ function(session_id, experiment, res) {
                   paste0('attachment; filename="', experiment, '_metadata.csv"'))
     .csv_response(cd)
   }, error = function(e) {
-    res$status <- 500
-    paste("Error:", e$message)
+    emp_binary_error(res, e)
   })
 }
 
@@ -3212,8 +3245,7 @@ function(session_id, experiment, analysis, res) {
                   paste0('attachment; filename="', experiment, '_', analysis, '.csv"'))
     .csv_response(df)
   }, error = function(e) {
-    res$status <- 500
-    paste("Error:", e$message)
+    emp_binary_error(res, e)
   })
 }
 
@@ -3229,8 +3261,7 @@ function(session_id, res) {
     res$setHeader("Content-Disposition", 'attachment; filename="EMP_session.rds"')
     readBin(tmp, "raw", file.info(tmp)$size)
   }, error = function(e) {
-    res$status <- 500
-    paste("Error:", e$message)
+    emp_binary_error(res, e)
   })
 }
 
@@ -3244,8 +3275,7 @@ function(session_id, experiment, res) {
                   paste0('attachment; filename="', experiment, '_metabolomics_differential.csv"'))
     .csv_response(df)
   }, error = function(e) {
-    res$status <- 500
-    paste("Error:", e$message)
+    emp_binary_error(res, e)
   })
 }
 
@@ -3565,7 +3595,7 @@ function(req, res) {
 #* @post /api/user_r/run
 #* @serializer unboxedJSON
 function(req, res) {
-  if (!tolower(trimws(Sys.getenv("EMP_ENABLE_USER_R", unset = "true"))) %in% c("1", "true", "yes", "on")) {
+  if (!emp_user_r_enabled()) {
     res$status <- 403
     return(list(success = FALSE, error = "User R execution is disabled"))
   }
@@ -3576,7 +3606,7 @@ function(req, res) {
 #* @post /api/exec/user_r
 #* @serializer unboxedJSON
 function(req, res) {
-  if (!tolower(trimws(Sys.getenv("EMP_ENABLE_USER_R", unset = "true"))) %in% c("1", "true", "yes", "on")) {
+  if (!emp_user_r_enabled()) {
     res$status <- 403
     return(list(success = FALSE, error = "User R execution is disabled"))
   }
