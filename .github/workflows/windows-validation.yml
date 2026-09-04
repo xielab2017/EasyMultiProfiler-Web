@@ -20,6 +20,8 @@ jobs:
   platform:
     name: Windows portability checks
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -40,9 +42,27 @@ jobs:
           name: windows-platform-report
           path: windows_platform_report.csv
 
+      - name: Report results as a commit comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          f=windows_platform_report.csv
+          if [ -f "$f" ]; then
+            { echo "### Windows portability checks (\`${{ runner.os }}\`, run ${{ github.run_id }})"; echo; echo '```'; cat "$f"; echo '```'; } > body.md
+          else
+            { echo "### Windows portability checks"; echo; echo "no report produced - the step failed before writing it"; } > body.md
+          fi
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -f body="$(cat body.md)" --silent
+
+
   router:
     name: Windows functional suite (173 endpoints)
     runs-on: windows-latest
+    permissions:
+      contents: write
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -96,3 +116,19 @@ jobs:
         with:
           name: windows-router-report
           path: windows_router_report.csv
+
+      - name: Report results as a commit comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          f=windows_router_report.csv
+          if [ -f "$f" ]; then
+            { echo "### Windows functional suite (\`${{ runner.os }}\`, run ${{ github.run_id }})"; echo; echo '```'; cat "$f"; echo '```'; } > body.md
+          else
+            { echo "### Windows functional suite"; echo; echo "no report produced - the step failed before writing it"; } > body.md
+          fi
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -f body="$(cat body.md)" --silent
+
