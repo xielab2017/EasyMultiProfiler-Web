@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EasyMultiProfiler Web V9.0.4</title>
-    <link rel="stylesheet" href="css/style.css?v=nav-active-fix-v1">
+    <link rel="stylesheet" href="css/style.css?v=i18n-zh-default-v1">
     <link rel="stylesheet" href="css/code_lab.css?v=2026-07-16-multi-demo-v2">
     <link rel="stylesheet" href="css/teaching.css?v=2026-07-22-gh-week-first">
   <script>
@@ -13,6 +13,18 @@
       if (s >= 0.85 && s <= 1.25) {
         document.documentElement.style.setProperty("--font-scale", String(s));
         document.documentElement.dataset.fontScale = String(Math.round(s * 100));
+      }
+      // Apply cached UI locale before modules load (default: 中文).
+      // For "auto", do not trust a stale resolved=en from old browser-language logic.
+      try {
+        var m = localStorage.getItem("emp_ui_locale_mode");
+        var r = localStorage.getItem("emp_ui_locale_resolved");
+        var loc = (m === "zh" || m === "en") ? m : "zh";
+        if (m === "auto" && r === "zh") loc = "zh";
+        document.documentElement.lang = loc === "en" ? "en" : "zh-CN";
+        document.documentElement.dataset.empLocale = loc;
+      } catch (e) {
+        document.documentElement.lang = "zh-CN";
       }
     })();
   </script>
@@ -61,10 +73,10 @@
   <div class="locale-switch" id="locale-switch" title="Auto-detect or choose UI language">
     <label class="locale-switch-label" data-i18n="locale.label">界面语言</label>
     <div class="locale-toggle">
-      <button type="button" class="locale-btn active" data-locale-mode="auto" title="Browser + region auto-detect">
+      <button type="button" class="locale-btn" data-locale-mode="auto" title="Browser + region auto-detect">
         <i data-lucide="sparkles"></i> <span data-i18n="locale.auto">自动</span>
       </button>
-      <button type="button" class="locale-btn" data-locale-mode="zh">中文</button>
+      <button type="button" class="locale-btn active" data-locale-mode="zh">中文</button>
       <button type="button" class="locale-btn" data-locale-mode="en">EN</button>
     </div>
     <div id="locale-mode-hint" class="locale-mode-hint"></div>
@@ -3469,7 +3481,7 @@
     else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
   }
 </script>
-<script type="module" src="js/app.js?v=nav-active-fix-v1"></script>
+<script type="module" src="js/app.js?v=i18n-zh-default-v1"></script>
 <script>
   // Initialise Lucide icons after all content is ready
   document.addEventListener("DOMContentLoaded", () => lucide.createIcons());

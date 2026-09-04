@@ -1,7 +1,7 @@
 /**
  * User Guide page — bilingual render + install command copy.
  */
-import { getLocale, t } from "./locale.js?v=nav-active-fix-v1";
+import { getLocale, t } from "./locale.js?v=i18n-zh-default-v1";
 
 const INSTALL_MAC_ONE_LINE =
   'bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"';

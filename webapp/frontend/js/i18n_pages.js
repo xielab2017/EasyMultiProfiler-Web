@@ -1,7 +1,7 @@
 /**
  * Page-scoped i18n bindings for Analysis, Clinical, Visualize, Run All, Prepare extras.
  */
-import { t } from "./locale.js?v=nav-active-fix-v1";
+import { t } from "./locale.js?v=i18n-zh-default-v1";
 
 function $(sel, root = document) {
   return root.querySelector(sel);

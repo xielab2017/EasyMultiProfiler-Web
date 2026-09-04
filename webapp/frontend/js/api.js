@@ -494,7 +494,7 @@ export async function probeOpenRouterModels(params = {}) {
 // AI copilot: interpret an analysis result and suggest next steps. Reuses the
 // Code Lab LLM config if the student configured one; otherwise the backend
 // falls back to a deterministic offline interpretation.
-import { getLocale } from "./locale.js?v=nav-active-fix-v1";
+import { getLocale } from "./locale.js?v=i18n-zh-default-v1";
 
 export async function aiInterpret(context = {}, opts = {}) {
   let provider = opts.provider ?? null;

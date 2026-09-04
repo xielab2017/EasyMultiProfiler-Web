@@ -2,9 +2,9 @@
  * UI locale: Auto (browser + region hint) or manual 中文 / English.
  * Dispatches emp:locale-change when the active locale changes.
  */
-import { I18N_CATALOG } from "./i18n_catalog.js?v=nav-active-fix-v1";
-import { applyDomI18n } from "./ui_dom_i18n.js?v=nav-active-fix-v1";
-import { applyPagesI18n } from "./i18n_pages.js?v=nav-active-fix-v1";
+import { I18N_CATALOG } from "./i18n_catalog.js?v=i18n-zh-default-v1";
+import { applyDomI18n } from "./ui_dom_i18n.js?v=i18n-zh-default-v1";
+import { applyPagesI18n } from "./i18n_pages.js?v=i18n-zh-default-v1";
 
 const LS_MODE = "emp_ui_locale_mode"; // auto | zh | en
 const LS_RESOLVED = "emp_ui_locale_resolved";
@@ -257,12 +257,15 @@ async function fetchIpCountry() {
 }
 
 async function detectLocaleAuto() {
+  // Product default is Chinese. Only switch to English when IP region is
+  // clearly outside CN/HK/MO/TW/SG. Browser language alone must not force EN
+  // (many CN users run an English OS / Chrome UI).
   const navLang = (navigator.language || "").toLowerCase();
-  let locale = navLang.startsWith("zh") ? "zh" : "en";
-  _autoMeta = { country: "", source: "browser" };
+  let locale = "zh";
+  _autoMeta = { country: "", source: navLang.startsWith("zh") ? "browser" : "default" };
   const ip = await fetchIpCountry();
-  _autoMeta = ip;
   if (ip.country) {
+    _autoMeta = ip;
     locale = ["CN", "HK", "MO", "TW", "SG"].includes(ip.country) ? "zh" : "en";
   }
   return locale;
@@ -379,10 +382,11 @@ export async function setLocaleMode(mode) {
 
 export async function initLocale() {
   try {
-    _mode = localStorage.getItem(LS_MODE) || "auto";
-    if (_mode !== "zh" && _mode !== "en") _mode = "auto";
+    // First visit: prefer 中文 (not Auto→EN from English browser locale).
+    _mode = localStorage.getItem(LS_MODE) || "zh";
+    if (_mode !== "zh" && _mode !== "en" && _mode !== "auto") _mode = "zh";
   } catch {
-    _mode = "auto";
+    _mode = "zh";
   }
 
   if (_mode === "auto") {

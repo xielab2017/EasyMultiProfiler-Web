@@ -3,7 +3,7 @@
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
 // this value in lock-step with the one used in index.html (app.js ?v=).
-import * as API from "./api.js?v=nav-active-fix-v1";
+import * as API from "./api.js?v=i18n-zh-default-v1";
 import {
   initCodeLab,
   notifyCodeLabNavigate,
@@ -12,17 +12,17 @@ import {
   refreshCodeLabContext,
   openCodeLabPanel,
   applyCopilotAction,
-} from "./code_lab.js?v=nav-active-fix-v1";
+} from "./code_lab.js?v=i18n-zh-default-v1";
 import {
   initTeaching,
   onTeachingPage,
   setupTeachingTraceHooks,
-} from "./teaching.js?v=nav-active-fix-v1";
-import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=nav-active-fix-v1";
-import { initGuide, openGuideInstallTab } from "./guide.js?v=nav-active-fix-v1";
-import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=nav-active-fix-v1";
-import { applyPagesI18n } from "./i18n_pages.js?v=nav-active-fix-v1";
-import { initFontScale } from "./font_scale.js?v=nav-active-fix-v1";
+} from "./teaching.js?v=i18n-zh-default-v1";
+import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=i18n-zh-default-v1";
+import { initGuide, openGuideInstallTab } from "./guide.js?v=i18n-zh-default-v1";
+import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=i18n-zh-default-v1";
+import { applyPagesI18n } from "./i18n_pages.js?v=i18n-zh-default-v1";
+import { initFontScale } from "./font_scale.js?v=i18n-zh-default-v1";
 import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
 import { initGithubSync } from "./github_sync.js?v=editable-repo-v1";
 
@@ -1093,51 +1093,11 @@ function demoIcon(omics) {
   }
 }
 
-// Keep the bundled demo entry points visible even when the catalog request is
-// temporarily unavailable. The import requests still go through the backend,
-// which remains the source of truth for the packaged demo files.
-function bundledDemoDatasets() {
-  return [
-    {
-      id: "m16s_course",
-      label_en: "16S microbiome course demo",
-      label_zh: "16S 微生物组课程示例",
-      omics: "microbiome_16s",
-      available: true
-    },
-    {
-      id: "rnaseq_course",
-      label_en: "RNA-seq course demo",
-      label_zh: "RNA-seq 课程示例",
-      omics: "transcriptomics",
-      available: true
-    },
-    {
-      id: "clinical_course",
-      label_en: "Clinical / phenotype course demo",
-      label_zh: "临床 / 表型课程示例",
-      omics: "clinical",
-      available: true
-    }
-  ];
-}
-
-async function listDemoDatasetsWithFallback() {
-  try {
-    const datasets = await API.listDemoDatasets();
-    if (Array.isArray(datasets) && datasets.some(d => d.available)) return datasets;
-    console.warn("[demo] No available datasets returned; using the bundled demo menu.");
-  } catch (e) {
-    console.warn("[demo] Demo catalog unavailable; using the bundled demo menu.", e);
-  }
-  return bundledDemoDatasets();
-}
-
 async function loadDemoDatasetButtons() {
   const root = document.getElementById("demo-dataset-buttons");
   if (!root) return;
   try {
-    const datasets = await listDemoDatasetsWithFallback();
+    const datasets = await API.listDemoDatasets();
     const available = datasets.filter(d => d.available);
     if (!available.length) {
       root.innerHTML = `<span class="hint">${t("demo.unavailable")}</span>`;
@@ -1172,7 +1132,7 @@ async function importAllDemos() {
   setLoading(true);
   try {
     if (!localStorage.getItem("emp_session_id")) await API.createSession();
-    const datasets = await listDemoDatasetsWithFallback();
+    const datasets = await API.listDemoDatasets();
     const available = datasets.filter(d => d.available);
     const targets = available.filter(d => ["m16s_course", "rnaseq_course", "clinical_course"].includes(d.id));
     if (!targets.length) {

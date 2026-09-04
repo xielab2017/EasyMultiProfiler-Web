@@ -4,7 +4,7 @@
  */
 import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-07-16-multi-demo";
 import { codeLabArtifactURL, execUserR, getOpenRouterVerified, optimizeRCode, probeOpenRouterModels } from "./api.js?v=2026-07-22-script-fusion-v1";
-import { t } from "./locale.js?v=nav-active-fix-v1";
+import { t } from "./locale.js?v=i18n-zh-default-v1";
 
 const LS_KEY = "emp_code_lab_store_v1";
 const LLM_CFG_KEY = "emp_code_lab_llm_config_v2";

@@ -2,7 +2,7 @@
  * Maps static DOM nodes in index.html to i18n keys (bulk labeling without tagging every node).
  * attr: text | html | title | placeholder | aria | value
  */
-import { t } from "./locale.js?v=nav-active-fix-v1";
+import { t } from "./locale.js?v=i18n-zh-default-v1";
 
 export const DOM_I18N = [
   { sel: "#gp-label", key: "common.working" },
