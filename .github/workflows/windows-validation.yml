@@ -86,7 +86,11 @@ jobs:
         shell: Rscript {0}
         run: |
           options(repos = c(CRAN = "https://packagemanager.posit.co/cran/latest"))
+          con <- file("install_diagnostics.txt", open = "wt")
+          say <- function(...) { cat(..., "\n"); cat(..., "\n", file = con) }
+          say("R", as.character(getRversion()), "|", R.version$platform)
           if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+          say("BiocManager", as.character(BiocManager::version()))
           d <- read.dcf("DESCRIPTION")
           strip <- function(x) {
             v <- trimws(gsub("[(].*?[)]", "", strsplit(x, ",")[[1]]))
@@ -95,15 +99,33 @@ jobs:
           need <- unique(c(strip(d[1, "Imports"]),
                            c("plumber", "jsonlite", "callr", "zip", "openxlsx", "httr2",
                              "pheatmap", "ragg", "base64enc", "RColorBrewer", "scales")))
-          have <- rownames(installed.packages())
-          miss <- setdiff(need, have)
-          cat("missing:", length(miss), "\n")
-          if (length(miss)) BiocManager::install(miss, ask = FALSE, update = FALSE)
-          still <- setdiff(need, rownames(installed.packages()))
-          if (length(still)) {
-            cat("UNINSTALLABLE:", paste(still, collapse = " "), "\n")
-            quit(status = 1)
+          say("declared runtime packages:", length(need))
+          miss <- setdiff(need, rownames(installed.packages()))
+          say("missing at start:", length(miss))
+          # One at a time, so a single unavailable package names itself instead of
+          # taking the whole batch down with an unreadable error.
+          failed <- character()
+          for (p in miss) {
+            ok <- tryCatch({
+              suppressWarnings(BiocManager::install(p, ask = FALSE, update = FALSE, quiet = TRUE))
+              requireNamespace(p, quietly = TRUE)
+            }, error = function(e) { say("  ERROR", p, ":", conditionMessage(e)); FALSE })
+            if (!isTRUE(ok)) failed <- c(failed, p)
           }
+          say("still missing:", length(failed))
+          if (length(failed)) say("  ", paste(failed, collapse = " "))
+          close(con)
+          if (length(failed)) quit(status = 1)
+
+      - name: Report dependency diagnostics
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          [ -f install_diagnostics.txt ] || exit 0
+          { echo "### Windows dependency install (run ${{ github.run_id }})"; echo; echo '```'; cat install_diagnostics.txt; echo '```'; } > diag.md
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -f body="$(cat diag.md)" --silent
 
       - name: Install EasyMultiProfiler from this checkout
         run: R CMD INSTALL --no-multiarch --with-keep.source .
