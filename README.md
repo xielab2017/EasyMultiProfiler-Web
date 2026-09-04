@@ -1,3 +1,8 @@
+<p align="right">
+  <a href="./README.md"><img src="https://img.shields.io/badge/CH-中文-0e8a16?style=for-the-badge" alt="CH"></a>
+  <a href="./README_EN.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
+</p>
+
 # EasyMultiProfiler Web · v9.0.4
 
 **Windows 发布版 · 内部版本 9.0.4** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
@@ -201,6 +206,8 @@ EasyMultiProfiler-Web/
 │   ├── images/                 # README 配图（banner / sync / architecture PNG）
 │   ├── TECHNICAL_MODE_V9_EDUCATION.svg
 │   └── RELEASE_NOTES_v9.0.4.md
+├── README.md                   # 中文
+├── README_EN.md                # English
 └── webapp/
     ├── backend/helpers/github_sync.R
     ├── data/course_assignments.json
