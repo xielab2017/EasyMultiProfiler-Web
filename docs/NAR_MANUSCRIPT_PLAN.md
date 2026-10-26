@@ -114,8 +114,8 @@ v9.1.0 code state.
 5. [ ] Run the three validation use cases on the bundled demo data; record time/memory; run the command-line concordance check.
 6. [ ] Fill Table 3 from the recorded benchmark outputs only.
 7. [ ] Capture Figure 2 and Figure 4 on the demo instance at publication resolution.
-8. [ ] Archive the exact submitted release on Zenodo; insert the DOI into README_EN.md, the manuscript Availability section, and the BibTeX block.
-9. [ ] Replace every `{{TODO: ...}}` in README_EN.md and in the manuscript draft; a text search for `{{TODO` must return nothing in the submitted files.
+8. [ ] Archive the exact submitted release on Zenodo; insert the DOI into README.md, the manuscript Availability section, and the BibTeX block.
+9. [ ] Replace every `{{TODO: ...}}` in README.md and in the manuscript draft; a text search for `{{TODO` must return nothing in the submitted files.
 10. [ ] Confirm the current NAR Web Server author instructions (format, word limits, figure rules) and adjust Section 2 budgets.
 11. [ ] Owner review of Funding and Conflict-of-interest statements.
 12. [ ] Submit with the demo URL (and reviewer access details, if any) in the cover letter.
