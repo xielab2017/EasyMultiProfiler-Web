@@ -100,7 +100,9 @@ emp_qc_rigor <- function(mat, meta = NULL, group_col = NULL,
   ## PCA association with batch / group --------------------------------
   pc_assoc <- tryCatch({
     keep <- stats::complete.cases(mat) & !is.na(row_vars) & row_vars > 0
-    if (sum(keep) < 2 || n_samples < 3) return(NULL)
+    # NOTE: no return() here - inside tryCatch it would exit emp_qc_rigor
+    # itself instead of just skipping the PCA check (v9.1.0 test fix).
+    if (sum(keep) < 2 || n_samples < 3) NULL else {
     x <- t(mat[keep, , drop = FALSE])
     pc <- stats::prcomp(x, center = TRUE, scale. = TRUE)
     n_pc <- min(3L, ncol(pc$x))
@@ -126,6 +128,7 @@ emp_qc_rigor <- function(mat, meta = NULL, group_col = NULL,
     attr(rows, "batch_hit") <- batch_pc_hit
     attr(rows, "features_used") <- sum(keep)
     rows
+    }
   }, error = function(e) NULL)
   if (!is.null(pc_assoc)) {
     checks$pca <- list(
