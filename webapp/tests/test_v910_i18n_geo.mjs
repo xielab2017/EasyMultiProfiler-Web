@@ -123,6 +123,32 @@ for (const loc of SUPPORTED_LOCALES) {
     `supported locale ${loc} has no dictionary`);
 }
 
+// --- Round 2 keys: job tray, friendly hints, usability -------------------
+// These keys live in I18N_CORE (zh + en) inside locale.js and in every
+// extra locale. locale.js cannot be imported in Node (it pulls in DOM
+// modules), so for zh/en we assert on the source text: each key must be
+// defined at least twice (once per built-in locale).
+import { readFileSync } from "node:fs";
+const ROUND2_KEYS = [
+  "jobtray.title", "jobtray.empty", "jobtray.done", "jobtray.failed",
+  "jobtray.cancel", "jobtray.running",
+  "hint.title", "hint.qc", "hint.background", "hint.save", "hint.dismiss",
+  "usability.shortcutsTitle", "usability.close",
+];
+const localeSrc = readFileSync(
+  new URL("../frontend/js/locale.js", import.meta.url), "utf8");
+for (const key of ROUND2_KEYS) {
+  const occurrences = localeSrc.split(`"${key}"`).length - 1;
+  assert.ok(occurrences >= 2,
+    `locale.js must define ${key} in both zh and en (found ${occurrences})`);
+}
+for (const [loc, dict] of Object.entries(EXTRA_LOCALES)) {
+  for (const key of ROUND2_KEYS) {
+    assert.ok(dict[key] && dict[key].trim().length > 0,
+      `${loc} is missing Round 2 key ${key}`);
+  }
+}
+
 console.log("test_v910_i18n_geo.mjs: all assertions passed");
 console.log(`  locales: ${SUPPORTED_LOCALES.join(", ")}`);
 console.log(`  core keys per extra locale: ${CORE_KEYS.length}`);

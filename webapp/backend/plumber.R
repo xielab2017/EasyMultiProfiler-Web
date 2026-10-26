@@ -35,6 +35,8 @@ source(file.path(.BACKEND_DIR, "helpers/qc_rigor.R"))
 source(file.path(.BACKEND_DIR, "helpers/run_pipeline_cache.R"))
 source(file.path(.BACKEND_DIR, "helpers/multiomics_joint.R"))
 source(file.path(.BACKEND_DIR, "helpers/repro_report.R"))
+source(file.path(.BACKEND_DIR, "helpers/memory_utils.R"))
+source(file.path(.BACKEND_DIR, "helpers/viz_qc.R"))
 source(file.path(.BACKEND_DIR, "helpers/agent_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_exec.R"))
 source(file.path(.BACKEND_DIR, "helpers/llm.R"))
@@ -2138,6 +2140,17 @@ function(req, res) {
   }, res)
 }
 
+#* List recent background jobs (job tray)
+#* @get /api/jobs
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    limit <- suppressWarnings(as.integer(req$args$limit %||% 20L))
+    if (is.na(limit) || limit < 1L) limit <- 20L
+    list(success = TRUE, jobs = list_jobs(limit = limit))
+  }, res)
+}
+
 #* Poll job status
 #* @get /api/jobs/<job_id>
 #* @serializer unboxedJSON
@@ -3839,6 +3852,13 @@ function() {
   info <- emp_platform_info()
   info$emp_version <- "9.1.0"
   info
+}
+
+#* Memory usage of the API R session (v9.1.0 Round 2)
+#* @get /api/system/memory
+#* @serializer unboxedJSON
+function() {
+  emp_memory_info()
 }
 
 #* Locale negotiation (v9.1.0: geo country header > Accept-Language > zh)

@@ -25,6 +25,9 @@ import { applyPagesI18n } from "./i18n_pages.js?v=i18n-zh-default-v1";
 import { initFontScale } from "./font_scale.js?v=i18n-zh-default-v1";
 import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
 import { initGithubSync } from "./github_sync.js?v=editable-repo-v1";
+import { initJobTray } from "./job_tray.js?v=i18n-v910-r2";
+import { initFriendlyHints } from "./friendly_hints.js?v=i18n-v910-r2";
+import { initUsability } from "./usability.js?v=i18n-v910-r2";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -7869,6 +7872,9 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
 (async () => {
   await initLocale();
   initFontScale();
+  try { initJobTray(); } catch (e) { console.warn("[emp-jobtray] init failed", e); }
+  try { initFriendlyHints(); } catch (e) { console.warn("[emp-hints] init failed", e); }
+  try { initUsability(); } catch (e) { console.warn("[emp-usability] init failed", e); }
   if (window.lucide) window.lucide.createIcons({ nodes: [document.getElementById("locale-switch")].filter(Boolean) });
   window.addEventListener("emp:locale-change", () => {
     document.querySelectorAll(".ai-copilot-btn-label").forEach((el) => {

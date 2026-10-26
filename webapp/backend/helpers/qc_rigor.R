@@ -36,7 +36,10 @@ emp_qc_rigor <- function(mat, meta = NULL, group_col = NULL,
     overall = missing_overall,
     max_per_sample = if (length(per_sample_missing)) max(per_sample_missing) else 0,
     max_per_feature = if (length(per_feature_missing)) max(per_feature_missing) else 0,
-    n_samples_over_50pct_missing = sum(per_sample_missing > 0.5)
+    n_samples_over_50pct_missing = sum(per_sample_missing > 0.5),
+    # Full vectors (v9.1.0 Round 2): consumed by emp_plot_qc_dashboard().
+    per_sample = per_sample_missing,
+    per_feature = per_feature_missing
   )
   if (isTRUE(missing_overall > 0.2)) {
     warnings_out <- c(warnings_out, "HIGH_MISSINGNESS")

@@ -50,6 +50,18 @@ EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API
 
 ---
 
+## 一键安装（按操作系统）
+
+下载与你的系统对应的发布包，解压后运行包内根目录的一键安装文件即可（会自动检查并补齐 git / python3 / R 与 EMP 依赖，并启动网页）：
+
+| 操作系统 | 发布包 | 一键安装 |
+|------|------|------|
+| **Windows** | `EasyMultiProfiler-Web-v9.1.0-windows.zip` | 双击 `Install-EMP-Web-Windows.bat` |
+| **macOS** | `EasyMultiProfiler-Web-v9.1.0-macos.zip` | 双击 `Install-EMP-Web-Mac.command` |
+| **Linux** | `EasyMultiProfiler-Web-v9.1.0-linux.zip` | 终端运行 `bash Install-EMP-Web-Linux.sh` |
+
+每个发布包内还有一个 `PLATFORM.txt`，写明该平台的安装入口与备用的一行命令。
+
 ## 一行命令启动（main）
 
 脚本会自动识别 OS，安装缺失的 git / python3 / R / EMP 依赖并启动网页。
@@ -190,7 +202,10 @@ EMP2026/
 | [docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md) | 用户操作指南 |
 | [docs/CHIP_OPS_GUIDE.md](docs/CHIP_OPS_GUIDE.md) | ChIP-seq / CUT&RUN Step1+Step2 操作路径 |
 | [docs/RELEASE_NOTES_v9.1.0.md](docs/RELEASE_NOTES_v9.1.0.md) | 本版说明 |
+| [docs/NAR_MANUSCRIPT_PLAN.md](docs/NAR_MANUSCRIPT_PLAN.md) | NAR (Web Server issue) 投稿计划 |
 | [CHANGELOG_V7.md](CHANGELOG_V7.md) | V7 变更 |
+
+Full English documentation: [README_EN.md](README_EN.md) is the complete, standalone English README for v9.1.0 (installation, features, architecture, citation).
 
 网页内左侧 **Guide** / **Course** 也有交互说明。
 
