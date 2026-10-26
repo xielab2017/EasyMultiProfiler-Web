@@ -19,8 +19,9 @@ no login required, maintained for at least 5 years; and (b) the
 application must run on any operating system and must provide a container
 version (Docker or Podman) that runs without installing further software.
 Requirements 1-3 and 5 below apply to route (a) only; route (b) replaces
-them with the container requirement (row 1b). **Route decision: pending
-(owner).**
+them with the container requirement (row 1b). **Route decision: Web Server route** (owner, 2026-10-26) - deploy
+the public demo first; the stand-alone container draft is kept as a
+fallback and is not on the critical path.
 
 ---
 
@@ -122,7 +123,7 @@ v9.1.0 code state.
 
 ## 4. Pre-submission action checklist (ordered)
 
-0. [ ] **Decide the submission route** (owner): Web Server route (public HTTPS demo, 5-year maintenance) vs stand-alone route (container version required, no demo). Everything below forks on this choice.
+0. [x] **Decide the submission route** - **done 2026-10-26: Web Server route** (public HTTPS demo, 5-year maintenance commitment). Deployment runbook: `docs/DEMO_DEPLOYMENT_PLAN.md`.
 1. [ ] (Web Server route) Deploy the public demo instance (demo data only), enable HTTPS (port 443), confirm the demo needs no login. (Stand-alone route) Build and verify `container/Dockerfile` end-to-end instead.
 2. [x] Run the R helper tests on a machine with R: `Rscript webapp/tests/test_v910_helpers.R` and `Rscript webapp/tests/test_v910_round2.R` - **done 2026-10-26** (Linux, R 4.3.3): both suites pass; all 150 R files parse; QC dashboard and cross-omics network plots render. One real bug found and fixed (emp_qc_rigor returned NULL on high-missingness data; commit f81fe0a).
 3. [ ] Three-OS install test using the actual release packages from `webapp/scripts/package_release.sh` (Windows, macOS Intel/Apple Silicon, Linux): record date, OS build, R version, success/failure per step in Table 1.

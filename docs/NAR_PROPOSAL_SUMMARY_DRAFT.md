@@ -1,7 +1,8 @@
 # Proposal Summary — NAR Web Server Issue (DRAFT)
 
 **Status:** internal draft for the one-page proposal summary, prepared
-2026-10-26. Statements are limited to implemented, tested functionality.
+2026-10-26. Submission route decided by the owner on 2026-10-26:
+**Web Server route** (public demo first). Statements are limited to implemented, tested functionality.
 Items the owner must supply are marked `{{TODO: ...}}`; nothing is
 submitted anywhere until the owner approves the route and the text.
 
@@ -65,17 +66,12 @@ runs — no numbers are claimed before they are recorded}}
 
 **Availability.** Source code (Artistic License 2.0), per-OS release
 packages, and documentation: https://github.com/xielab2017/EasyMultiProfiler-Web
-{{TODO: choose and insert ONE route block below, delete the other}}
-
-- *Web Server route:* A public demo instance with the bundled demo
-  data is available without login at {{TODO: demo URL}} (HTTPS) and
-  will be maintained for at least five years. The exact submitted
-  release is archived at {{TODO: Zenodo DOI}}.
-- *Stand-alone route:* The application runs on any operating system
-  from the per-OS installers, and a container image (Docker / Podman)
-  that runs without installing further software is provided at
-  {{TODO: container location}}; the exact submitted release is
-  archived at {{TODO: Zenodo DOI}}.
+A public demo instance with the bundled demo data is available
+without login at {{TODO: demo URL — deployment in progress, see
+docs/DEMO_DEPLOYMENT_PLAN.md}} (HTTPS) and will be maintained for at
+least five years. The exact submitted release is archived at
+{{TODO: Zenodo DOI}}. For local installation, per-OS one-click
+installers are provided on the same repository.
 
 **Funding:** {{TODO: funding sources and grant numbers — owner to
 supply; never invent}}
