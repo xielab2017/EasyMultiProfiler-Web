@@ -29,6 +29,12 @@ source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/clinical.R"))
 source(file.path(.BACKEND_DIR, "helpers/jobs.R"))
+source(file.path(.BACKEND_DIR, "helpers/i18n_locale.R"))
+source(file.path(.BACKEND_DIR, "helpers/platform_info.R"))
+source(file.path(.BACKEND_DIR, "helpers/qc_rigor.R"))
+source(file.path(.BACKEND_DIR, "helpers/run_pipeline_cache.R"))
+source(file.path(.BACKEND_DIR, "helpers/multiomics_joint.R"))
+source(file.path(.BACKEND_DIR, "helpers/repro_report.R"))
 source(file.path(.BACKEND_DIR, "helpers/agent_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_exec.R"))
 source(file.path(.BACKEND_DIR, "helpers/llm.R"))
@@ -3824,4 +3830,24 @@ function(req, res) {
 #* @serializer unboxedJSON
 function() {
   list(status = "ok", version = as.character(packageVersion("EasyMultiProfiler")))
+}
+
+#* System / platform info (v9.1.0: Windows / macOS / Linux auto-detection)
+#* @get /api/system/info
+#* @serializer unboxedJSON
+function() {
+  info <- emp_platform_info()
+  info$emp_version <- "9.1.0"
+  info
+}
+
+#* Locale negotiation (v9.1.0: geo country header > Accept-Language > zh)
+#* @get /api/locale/negotiate
+#* @serializer unboxedJSON
+function(req) {
+  country <- req$HTTP_CF_IPCOUNTRY
+  if (is.null(country) || !nzchar(country)) country <- req$HTTP_X_GEO_COUNTRY
+  accept_language <- req$HTTP_ACCEPT_LANGUAGE
+  locale <- emp_negotiate_locale(country, accept_language)
+  list(locale = locale, dir = emp_locale_dir(locale))
 }

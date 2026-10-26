@@ -26,7 +26,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo  [install.cmd] EasyMultiProfiler Web v7 - one-line installer
+echo  [install.cmd] EasyMultiProfiler Web v9.1.0 - one-line installer
 echo  [install.cmd] Repo: %SCRIPT_DIR%
 echo  [install.cmd] Detected PowerShell - handing off to bootstrap_and_start.ps1
 echo  [install.cmd] (CMD window will stay open after the bootstrap finishes.)

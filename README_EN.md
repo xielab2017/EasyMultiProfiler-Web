@@ -3,17 +3,17 @@
   <a href="./README_EN.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v9.0.4
+# EasyMultiProfiler Web · v9.1.0
 
-**Windows release · build 9.0.4** — On top of V7 one-click install and multi-omics analysis, this build adds **weekly course homework + student ID login + GitHub repo sync**, plus ChIP / multi-omics joint workflows from V9.
+**Windows release · build 9.1.0** — On top of V7 one-click install and multi-omics analysis, this build adds **weekly course homework + student ID login + GitHub repo sync**, plus ChIP / multi-omics joint workflows from V9.
 
-![](https://img.shields.io/badge/version-9.0.4-1f6feb)
+![](https://img.shields.io/badge/version-9.1.0-1f6feb)
 ![](https://img.shields.io/badge/branch-main-0e8a16)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
 > **Branch**: [`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)  
-> **Version**: `9.0.4`
+> **Version**: `9.1.0`
 
 ![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
 
@@ -23,7 +23,7 @@
 
 EasyMultiProfiler Web is a browser-based multi-omics downstream analysis platform (Plumber R API + static frontend + EasyMultiProfiler core).
 
-**v9.0.4** targets research and teaching. Students and course users can:
+**v9.1.0** targets research and teaching. Students and course users can:
 
 1. Complete micro-lessons, quizzes, and hands-on work by case / week in **Course**
 2. Sign in with **student ID + name (required) + a self-set passphrase**
@@ -189,7 +189,7 @@ Technical architecture (V7 analysis core still applies): [`docs/TECHNICAL_MODE_V
 | [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Windows install |
 | [docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md) | User guide |
 | [docs/CHIP_OPS_GUIDE.md](docs/CHIP_OPS_GUIDE.md) | ChIP-seq / CUT&RUN Step1+Step2 paths |
-| [docs/RELEASE_NOTES_v9.0.4.md](docs/RELEASE_NOTES_v9.0.4.md) | This release |
+| [docs/RELEASE_NOTES_v9.1.0.md](docs/RELEASE_NOTES_v9.1.0.md) | This release |
 | [CHANGELOG_V7.md](CHANGELOG_V7.md) | V7 changelog |
 
 In-app **Guide** / **Course** panels also provide interactive help.
@@ -205,7 +205,7 @@ EasyMultiProfiler-Web/
 ├── docs/
 │   ├── images/                 # README figures (banner / sync / architecture PNG)
 │   ├── TECHNICAL_MODE_V9_EDUCATION.svg
-│   └── RELEASE_NOTES_v9.0.4.md
+│   └── RELEASE_NOTES_v9.1.0.md
 ├── README.md                   # Chinese
 ├── README_EN.md                # English
 └── webapp/
