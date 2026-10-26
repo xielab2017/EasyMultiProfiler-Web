@@ -8,6 +8,20 @@ still needs evidence is marked `{{TODO: ...}}`. No performance numbers,
 access statistics, or bibliographic details are asserted anywhere in this
 plan until they have actually been measured or confirmed.
 
+**Guidelines verified 2026-10-26** against the live NAR author page
+(Submission_Webserver) and the Web Server issue editorial (Seelow, NAR 2026,
+doi:10.1093/nar/gkag669): proposals are accepted on a rolling basis starting
+November 2026, with no acceptance deadline; accepted papers are published
+online and indexed in PubMed as soon as they are typeset. The issue offers
+two routes: (a) the **Web Server route** - a public demo on HTTPS port 443,
+no login required, maintained for at least 5 years; and (b) the
+**stand-alone application route** - no public demo required, but the
+application must run on any operating system and must provide a container
+version (Docker or Podman) that runs without installing further software.
+Requirements 1-3 and 5 below apply to route (a) only; route (b) replaces
+them with the container requirement (row 1b). **Route decision: pending
+(owner).**
+
 ---
 
 ## 1. Requirements checklist (NAR Web Server style)
@@ -18,7 +32,8 @@ v9.1.0 code state.
 
 | # | Requirement | Status | Notes |
 |---|-------------|--------|-------|
-| 1 | Publicly accessible web server or demo instance | TODO | The app is local-first today. Deploy a public demo instance (bundled demo data only) and record its URL here: {{TODO: demo URL}} |
+| 1 | Publicly accessible web server or demo instance (Web Server route only) | TODO | The app is local-first today. Deploy a public demo instance (bundled demo data only) and record its URL here: {{TODO: demo URL}} |
+| 1b | Container version running without further installs, any-OS application (stand-alone route only) | Draft | `container/Dockerfile` drafted 2026-10-26 (rocker R 4.3.3 base, deps via `webapp/scripts/install_runtime.R`); build and end-to-end run still to be verified on a suitable machine. Not needed if route (a) is chosen. |
 | 2 | Freely accessible without login for the demo | TODO | The demo instance must open the analysis UI without registration. Teaching/GitHub-sync features may stay behind the student login on local installs, but the demo path must not require it. |
 | 3 | HTTPS on the public instance | TODO | Terminate TLS at the demo host / reverse proxy; verify `GET /api/health` over HTTPS. |
 | 4 | Works in modern browsers | Partially done | The front end is a dependency-light static app (HTML/CSS/JS modules) tested in Chromium-based browsers during development; complete a browser matrix pass (Chrome, Edge, Firefox, Safari) on the demo instance: {{TODO: browser matrix results}} |
@@ -26,7 +41,7 @@ v9.1.0 code state.
 | 6 | Software is available (source code) | Done | Public GitHub repository with Artistic-2.0 license; per-OS release packages are built by `webapp/scripts/package_release.sh`. |
 | 7 | Input data are documented, example data provided | Done (local) | Bundled demo datasets with one-click loading in Course mode; mirror the same demo data on the public instance. |
 | 8 | Results are downloadable | Done | CSV / PDF / RDS export in the UI; reproducible report (manifest + report file) per run. |
-| 9 | Manuscript follows the Web Server format (summary, implementation, validation, availability) | Planned | See Section 2 outline. Word budgets to be confirmed against the current author instructions at submission time: {{TODO: confirm current NAR Web Server author instructions and limits}} |
+| 9 | Manuscript follows the Web Server format (summary, implementation, validation, availability) | Planned | See Section 2 outline. Author instructions verified 2026-10-26 (rolling proposals from November 2026; two routes - see header). Detailed format limits to be re-confirmed at submission time. One-page proposal summary drafted: `docs/NAR_PROPOSAL_SUMMARY_DRAFT.md`. |
 | 10 | Long-term availability / archiving | TODO | Archive the v9.1.0 release on Zenodo and cite its DOI: {{TODO: Zenodo DOI}} |
 | 11 | Claims are evidence-backed | Rule | No benchmark, user-count, or performance claim enters the manuscript without a recorded measurement (script + date + environment) in the lab notebook. |
 
@@ -107,8 +122,9 @@ v9.1.0 code state.
 
 ## 4. Pre-submission action checklist (ordered)
 
-1. [ ] Deploy the public demo instance (demo data only), enable HTTPS, confirm the demo needs no login.
-2. [ ] Run the R helper tests on a machine with R: `Rscript webapp/tests/test_v910_helpers.R` and `Rscript webapp/tests/test_v910_round2.R`; fix failures before anything else.
+0. [ ] **Decide the submission route** (owner): Web Server route (public HTTPS demo, 5-year maintenance) vs stand-alone route (container version required, no demo). Everything below forks on this choice.
+1. [ ] (Web Server route) Deploy the public demo instance (demo data only), enable HTTPS (port 443), confirm the demo needs no login. (Stand-alone route) Build and verify `container/Dockerfile` end-to-end instead.
+2. [x] Run the R helper tests on a machine with R: `Rscript webapp/tests/test_v910_helpers.R` and `Rscript webapp/tests/test_v910_round2.R` - **done 2026-10-26** (Linux, R 4.3.3): both suites pass; all 150 R files parse; QC dashboard and cross-omics network plots render. One real bug found and fixed (emp_qc_rigor returned NULL on high-missingness data; commit f81fe0a).
 3. [ ] Three-OS install test using the actual release packages from `webapp/scripts/package_release.sh` (Windows, macOS Intel/Apple Silicon, Linux): record date, OS build, R version, success/failure per step in Table 1.
 4. [ ] Browser matrix pass on the demo instance (Chrome, Edge, Firefox, Safari), including the Arabic RTL layout and the job tray.
 5. [ ] Run the three validation use cases on the bundled demo data; record time/memory; run the command-line concordance check.
@@ -116,6 +132,6 @@ v9.1.0 code state.
 7. [ ] Capture Figure 2 and Figure 4 on the demo instance at publication resolution.
 8. [ ] Archive the exact submitted release on Zenodo; insert the DOI into README.md, the manuscript Availability section, and the BibTeX block.
 9. [ ] Replace every `{{TODO: ...}}` in README.md and in the manuscript draft; a text search for `{{TODO` must return nothing in the submitted files.
-10. [ ] Confirm the current NAR Web Server author instructions (format, word limits, figure rules) and adjust Section 2 budgets.
+10. [x] Confirm the current NAR Web Server author instructions - **verified 2026-10-26** (rolling proposals from November 2026, no acceptance deadline; two submission routes). Re-confirm detailed format limits at submission time and adjust Section 2 budgets.
 11. [ ] Owner review of Funding and Conflict-of-interest statements.
 12. [ ] Submit with the demo URL (and reviewer access details, if any) in the cover letter.
