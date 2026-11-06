@@ -23,17 +23,24 @@ class RangeHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def send_head(self):
+        # Range is defined only for GET; reset state for reused connections.
+        self._range = None
         rng = self.headers.get("Range")
-        if not rng:
+        if self.command != "GET" or not rng:
             return super().send_head()
         path = self.translate_path(self.path)
         if not os.path.isfile(path):
             return super().send_head()
-        m = RANGE_RE.match(rng.strip())
+        m = RANGE_RE.fullmatch(rng.strip())
         if not m:
             return super().send_head()
-        size = os.path.getsize(path)
         start_s, end_s = m.group(1), m.group(2)
+        if not start_s and not end_s:
+            return super().send_head()
+        # Bound numeric parsing to avoid oversized-header integer conversion.
+        if len(start_s) > 20 or len(end_s) > 20:
+            return super().send_head()
+        size = os.path.getsize(path)
         if start_s == "":
             length = int(end_s)
             start = max(0, size - length)
