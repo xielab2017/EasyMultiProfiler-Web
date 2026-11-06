@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 API_PORT = int(os.environ.get("API_PORT", "8000"))
 WEB_PORT = int(os.environ.get("WEB_PORT", "8080"))
+PUBLIC_DATA_PORT = int(os.environ.get("EMP_PUBLIC_DATA_PORT", "0"))
 GATEWAY_HOST = os.environ.get("GATEWAY_HOST", "127.0.0.1")
 GATEWAY_PORT = int(os.environ.get("GATEWAY_PORT", "8090"))
 HOP_BY_HOP = {
@@ -42,6 +43,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
 
     def _target(self):
         path = urlsplit(self.path).path or "/"
+        if PUBLIC_DATA_PORT and (path.startswith("/api/public-data/") or path in {"/public_data.html", "/js/public_data_ui.js"}):
+            return ("127.0.0.1", PUBLIC_DATA_PORT)
         if path == "/api" or path.startswith("/api/"):
             return ("127.0.0.1", API_PORT)
         return ("127.0.0.1", WEB_PORT)

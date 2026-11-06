@@ -3,17 +3,29 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v9.1.0
+# EasyMultiProfiler Web · v9.1.1
 
-**Windows 发布版 · 内部版本 9.1.0** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
+**开发版源码 · 内部版本 9.1.1** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
 
-![](https://img.shields.io/badge/version-9.1.0-1f6feb)
+![](https://img.shields.io/badge/version-9.1.1-1f6feb)
 ![](https://img.shields.io/badge/branch-main-0e8a16)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
-> **分支**：[`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)  
-> **版本**：`9.1.0`
+> **分支**：[`codex/v9.1.0-public-data-metadata`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/codex/v9.1.0-public-data-metadata)
+> **版本**：`9.1.1`
+
+## v9.1.1 独立开发更新
+
+新增可选Python网页/接口：GEO/SRA/ENA元数据、确认后的小型processed矩阵下载、本地PDF候选提取、PubMed检索/摘要、bulk RNA-seq可编辑流程预检，以及默认禁用的OpenAI/NVIDIA只读智能体适配。代码不包含密钥、用户PDF或下载数据。
+
+仓库根目录运行 `python webapp/scripts/public_data_server.py`，在同一电脑打开 `http://127.0.0.1:8081/public_data.html`。元数据/矩阵功能使用Python标准库，PDF解析另需pypdf。服务仅监听loopback；现有R后端独立，可选网关需显式启用。
+
+**验证范围：**92项Python测试、前端JS语法检查、真实GEO/ENA/PubMed元数据，以及GSE60450的513,592字节计数矩阵下载（27,179基因×12个精确匹配样本）。**未验证：**完整浏览器交互、R分析、真实模型调用或生产部署。流程仅预检不执行；其他组学明确未支持；不下载FASTQ；整数表不自动视为raw counts。
+
+NVIDIA指定模型 `nvidia/nemotron-3-ultra-550b-a55b` 及工具调用有官方文档，但尚未真实调用或使用密钥。密钥仅由服务器安全配置，模型默认关闭，每次请求需明确同意发送范围。
+
+详见[版本说明](docs/RELEASE_NOTES_v9.1.1.md)与[元数据服务指南](webapp/docs/PUBLIC_DATA_METADATA.md)。本次为源码开发更新，不宣称已构建/验证9.1.1安装包；下方旧安装说明作为既有功能参考。原v9.1.0分支不变。
 
 ![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
 

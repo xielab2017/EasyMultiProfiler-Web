@@ -3,16 +3,28 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v9.1.0
+# EasyMultiProfiler Web · v9.1.1
 
-![](https://img.shields.io/badge/version-9.1.0-1f6feb)
+![](https://img.shields.io/badge/version-9.1.1-1f6feb)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0e8a16)
 ![](https://img.shields.io/badge/UI%20languages-11-orange)
 ![](https://img.shields.io/badge/license-Artistic--2.0-blue)
 
-> **Version:** `9.1.0` · **Branch:** [`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)
+> **Version:** `9.1.1` · **Branch:** [`codex/v9.1.0-public-data-metadata`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/codex/v9.1.0-public-data-metadata)
 > This is the complete, standalone English documentation for EasyMultiProfiler Web. The Chinese documentation is in [README_CN.md](README_CN.md).
+
+## v9.1.1 development update
+
+This independent source update adds an optional Python metadata UI/API: GEO/SRA/ENA discovery, confirmed small processed-matrix downloads, local PDF accession extraction, PubMed search/abstracts, typed bulk RNA-seq workflow preflight and opt-in OpenAI/NVIDIA read-only tool adapters. No credentials, user PDFs or downloaded datasets are committed.
+
+Run `python webapp/scripts/public_data_server.py` from the repository root; open `http://127.0.0.1:8081/public_data.html` on that computer. Python standard library covers metadata/matrices; local PDF extraction additionally needs `pypdf`. The existing R backend is separate. The sidecar is loopback-only and the gateway integration is opt-in.
+
+**Validated:** 92 Python tests, frontend JavaScript syntax checks, real GEO/ENA metadata, one 513,592-byte GSE60450 count-matrix download (27,179 genes × 12 precisely matched samples), and real PubMed metadata. **Not validated:** full browser interaction, R analysis, actual provider inference or production deployment. Plans do not execute analysis; other omics are unsupported placeholders. Raw FASTQ downloads remain unavailable. Integer values alone do not establish raw counts.
+
+NVIDIA's requested `nvidia/nemotron-3-ultra-550b-a55b` and its tool API are documented officially, but no live call or key use has occurred. Provider keys are server-only; model access is disabled by default and requires explicit per-request consent. Do not paste keys in chat or commit them.
+
+See [v9.1.1 release notes](docs/RELEASE_NOTES_v9.1.1.md) and [metadata service guide](webapp/docs/PUBLIC_DATA_METADATA.md). This is not a tested v9.1.1 installer release; older v9.1.0 installer examples below are inherited reference instructions. The original v9.1.0 branch is unchanged.
 
 ![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
 
@@ -154,7 +166,7 @@ Interactive help is also available in the web UI under **Guide** and **Course**.
 
 ```text
 EasyMultiProfiler-Web/
-├── DESCRIPTION                 # R package metadata (version 9.1.0)
+├── DESCRIPTION                 # R package metadata (version 9.1.1)
 ├── R/                          # EasyMultiProfiler R package
 ├── Install-EMP-Web-Windows.bat # one-click installers (per OS)
 ├── Install-EMP-Web-Mac.command
