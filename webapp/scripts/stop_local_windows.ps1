@@ -15,6 +15,12 @@ function Stop-PidFile($pidFile, $label) {
   if (Test-Path $pidFile) {
     $pidValue = Get-Content $pidFile -ErrorAction SilentlyContinue
     if ($pidValue) {
+      $identity = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$pidValue)" -ErrorAction SilentlyContinue
+      if (-not $identity -or (-not (Test-EMPProcessOwnership -CommandLine $identity.CommandLine -Root $Root))) {
+        Write-Warning "Ignoring stale or unrecognized PID file: $pidFile"
+        Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+        return
+      }
       try {
         $proc = Get-Process -Id ([int]$pidValue) -ErrorAction SilentlyContinue
         if ($proc) {
@@ -36,6 +42,6 @@ Stop-PidFile $GwPid "Gateway"
 $apiP = if ($env:API_PORT) { [int]$env:API_PORT } else { 8000 }
 $webP = if ($env:WEB_PORT) { [int]$env:WEB_PORT } else { 8080 }
 $gwP = if ($env:GATEWAY_PORT) { [int]$env:GATEWAY_PORT } else { 8090 }
-Stop-EMPListenersOnPorts -Ports @($apiP, $webP, $gwP)
+# Do not terminate unrelated applications listening on these ports.
 
 Write-Host "Local EMP web services stopped (or were not running)."

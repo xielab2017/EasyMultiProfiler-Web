@@ -3,16 +3,25 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v9.1.1
+# EasyMultiProfiler Web · v9.1.2
 
-![](https://img.shields.io/badge/version-9.1.1-1f6feb)
+![](https://img.shields.io/badge/version-9.1.2-1f6feb)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0e8a16)
 ![](https://img.shields.io/badge/UI%20languages-11-orange)
 ![](https://img.shields.io/badge/license-Artistic--2.0-blue)
 
-> **Version:** `9.1.1` · **Branch:** [`codex/v9.1.0-public-data-metadata`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/codex/v9.1.0-public-data-metadata)
+> **Version:** `9.1.2` · **Branch:** [`codex/v9.1.0-public-data-metadata`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/codex/v9.1.0-public-data-metadata)
 > This is the complete, standalone English documentation for EasyMultiProfiler Web. The Chinese documentation is in [README_CN.md](README_CN.md).
+
+## v9.1.2 — installation safety and selected-context agents
+
+- New metadata-only launchers for Linux, macOS and Windows; Python 3.10+ is required, R is not. Run `python webapp/scripts/launch_metadata.py --check` for a read-only dependency report. Use `Start-EMP-Metadata.sh`, `.command` or `.cmd`, or run the Python launcher directly. Clone this independent development branch rather than `main` to reproduce this version.
+- Full-service launchers now default to loopback with Funnel off, validate prerequisites/ports, handle quoted paths, and avoid killing unrelated port owners. Nonstandard API/UI ports are passed to the frontend. Existing explicit runtime.env values remain in effect: inspect legacy remote-binding/Funnel settings before starting.
+- Fixed Fedora dependency dispatch, macOS R executable paths, web-runtime package dependencies and project-local R library handling. Broken Linux repository/key setup was removed: administrators must provision R >=4.3.3 using approved distro instructions. This is **not** a verified one-click full R installation on every platform.
+- The agent can inspect explicitly selected data-manifest, workflow and completed matrix-inspection summaries through a bounded read-only tool. The UI previews sanitized metadata, requires separate context consent, and binds it to a digest. PDFs, matrix values, file paths and sample/group labels are excluded. Tool audit contains name/status/duration, not prompts or credentials.
+
+All 118 Python tests plus Node resolver/locale/syntax checks pass, including Linux mocked/static launcher coverage; native Windows/macOS installation, R execution, complete browser interaction and live model calls remain unverified. See [v9.1.2 notes](docs/RELEASE_NOTES_v9.1.2.md) and [installation audit](docs/INSTALLATION_AUDIT_v9.1.2.md). No exposed key was used; no public deployment or merge was performed.
 
 ## v9.1.1 development update
 
@@ -166,7 +175,7 @@ Interactive help is also available in the web UI under **Guide** and **Course**.
 
 ```text
 EasyMultiProfiler-Web/
-├── DESCRIPTION                 # R package metadata (version 9.1.1)
+├── DESCRIPTION                 # R package metadata (version 9.1.2)
 ├── R/                          # EasyMultiProfiler R package
 ├── Install-EMP-Web-Windows.bat # one-click installers (per OS)
 ├── Install-EMP-Web-Mac.command

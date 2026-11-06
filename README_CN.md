@@ -3,17 +3,26 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v9.1.1
+# EasyMultiProfiler Web · v9.1.2
 
-**开发版源码 · 内部版本 9.1.1** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
+**开发版源码 · 内部版本 9.1.2** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
 
-![](https://img.shields.io/badge/version-9.1.1-1f6feb)
+![](https://img.shields.io/badge/version-9.1.2-1f6feb)
 ![](https://img.shields.io/badge/branch-main-0e8a16)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
 > **分支**：[`codex/v9.1.0-public-data-metadata`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/codex/v9.1.0-public-data-metadata)
-> **版本**：`9.1.1`
+> **版本**：`9.1.2`
+
+## v9.1.2 — 安装安全与选中上下文智能体
+
+- 新增Linux/macOS/Windows元数据专用启动器，需Python≥3.10，不需要R。运行 `python webapp/scripts/launch_metadata.py --check` 查看只读诊断；按平台使用 `Start-EMP-Metadata.sh` / `.command` / `.cmd`。复现此版应克隆当前独立开发分支，不是main。
+- 完整服务默认loopback、Funnel关闭，增加依赖/端口检查、空格路径支持，不再因端口占用误杀其他进程；自定义API/Web端口传递给前端。旧runtime.env的显式设置仍保留，启动前应核查旧的远程绑定/Funnel配置。
+- 修复Fedora依赖分发、Mac R路径、web运行依赖和项目本地R库。原Linux仓库/签名设置错误，已删除该不安全自动配置；管理员需先从经批准来源安装R≥4.3.3，不宣称各平台完整R环境一键安装已验证。
+- AI可通过受限只读工具查看用户选中的数据清单、流程及已完成矩阵检查摘要。网页先预览脱敏摘要、单独确认发送，再用指纹绑定；不发送PDF、矩阵数值、路径或样本/组别名称。审计只含工具名/状态/耗时。
+
+118项Python测试及Node端口/国际化/语法检查通过，包含Linux静态/模拟启动覆盖；Windows/macOS原生安装、R分析、完整浏览器交互与真实模型调用仍未验证。详见[版本说明](docs/RELEASE_NOTES_v9.1.2.md)和[安装审查](docs/INSTALLATION_AUDIT_v9.1.2.md)。未使用暴露密钥，未合并或部署公网。
 
 ## v9.1.1 独立开发更新
 

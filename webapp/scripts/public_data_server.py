@@ -16,6 +16,7 @@ import processed_data
 import paper_sources
 import workflow_plans
 import agent_adapter
+import agent_context
 
 ROOT = Path(__file__).resolve().parents[2]
 PREFIX = '/api/public-data/'
@@ -68,7 +69,37 @@ def download_plan(value, selected, free_bytes):
                 'warning': 'Download space excludes decompression, references, alignment and analysis intermediates. R backend integration is not available.'}}
 
 
+def selected_context(server, ids):
+    """Resolve only server-owned IDs; no client-supplied context or paths."""
+    if ids is None: ids = {}
+    if not isinstance(ids, dict) or set(ids) - {'manifest_id', 'plan_id', 'download_id'}:
+        raise metadata.MetadataError('Unsupported context selection')
+    snapshot = {}
+    for kind, key in ids.items():
+        if not isinstance(key, str) or not re.fullmatch(r'[a-f0-9-]{36}', key):
+            raise metadata.MetadataError('Invalid context ID')
+        if kind == 'manifest_id':
+            record = server.store.get(key)
+            if record.get('status') not in {'metadata_only', 'processed_candidates'}:
+                raise metadata.MetadataError('A data manifest is required')
+            snapshot['manifest'] = record
+        elif kind == 'plan_id':
+            record = server.store.get(key)
+            if record.get('kind') != 'workflow_validation':
+                raise metadata.MetadataError('A validated plan record is required')
+            snapshot['plan'] = record['plan']
+        else:
+            record = ROOT / '.local_run/public_data' / (key + '.json')
+            if not record.is_file() or record.stat().st_size > 2 * 1024 * 1024:
+                raise metadata.MetadataError('Completed inspection record unavailable')
+            snapshot['inspection'] = json.loads(record.read_text())
+    return snapshot
+
+
 class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_args):
+        # Do not log query strings, prompts, IDs or request bodies.
+        pass
     def reply(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(status); self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -122,11 +153,26 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(size))
             if not isinstance(request, dict): raise metadata.MetadataError('Object required')
             path = urlsplit(self.path).path
+            if path == PREFIX + 'agent/context-preview':
+                if set(request) - {'context_ids'}: raise metadata.MetadataError('Only context IDs are accepted')
+                return self.reply(200, agent_context.prepare(selected_context(self.server, request.get('context_ids'))))
             if path == PREFIX + 'agent/respond':
+                if set(request) - {'question', 'consent', 'expected_provider', 'context_ids', 'context_consent', 'context_sha256'}:
+                    raise metadata.MetadataError('Unsupported agent request fields')
                 if request.get('consent') is True and request.get('expected_provider') != agent_adapter.status()['provider']:
                     return self.reply(409, {'error': 'Provider changed or not confirmed; reload status and consent again'})
-                return self.reply(200, agent_adapter.respond(request.get('question', ''), request.get('consent', False)))
-            if path == PREFIX + 'workflows/validate': return self.reply(200, workflow_plans.validate_plan(request.get('plan')))
+                context = selected_context(self.server, request.get('context_ids'))
+                if context:
+                    preview = agent_context.prepare(context)
+                    if request.get('context_sha256') != preview['snapshot_sha256']:
+                        return self.reply(409, {'error': 'Selected context changed; preview and consent again'})
+                return self.reply(200, agent_adapter.respond(request.get('question', ''), request.get('consent', False),
+                    context=context, context_consent=request.get('context_consent', False)))
+            if path == PREFIX + 'workflows/validate':
+                result = workflow_plans.validate_plan(request.get('plan'))
+                if result.get('record'):
+                    result['plan_id'] = self.server.store.put({'kind': 'workflow_validation', 'plan': result['record']['plan']})
+                return self.reply(200, result)
             if path == PREFIX + 'papers/abstract': return self.reply(200, paper_sources.fetch_pubmed_abstract(request.get('pmid', '')))
             if path == PREFIX + 'papers/search':
                 return self.reply(200, paper_sources.search_pubmed(request.get('term', ''), 10))
@@ -155,7 +201,10 @@ class Handler(BaseHTTPRequestHandler):
                 key = request.get('manifest_id')
                 if not isinstance(key, str): raise metadata.MetadataError('Manifest ID required')
                 value = self.server.store.get(key)
-                return self.reply(200, download_plan(value, request.get('selected_runs'), shutil.disk_usage(ROOT).free))
+                result = download_plan(value, request.get('selected_runs'), shutil.disk_usage(ROOT).free)
+                selected = metadata.manifest(value['runs'], value['request'], value['sources'], request.get('selected_runs'))
+                result['context_manifest_id'] = self.server.store.put(selected)
+                return self.reply(200, result)
             return self.reply(404, {'error': 'No such operation; download and execution are disabled'})
         except (ValueError, TypeError, AttributeError, OSError) as exc:
             return self.reply(400, {'error': str(exc), 'download_enabled': False})

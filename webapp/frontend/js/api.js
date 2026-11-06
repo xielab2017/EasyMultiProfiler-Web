@@ -15,6 +15,11 @@ function resolveApiBase() {
   if (typeof window === "undefined" || !window.location) return "/api";
   const host = window.location.hostname || "127.0.0.1";
   const p = window.location.port || "";
+  const ports = window.EMP_RUNTIME_PORTS;
+  if (ports && Number.isInteger(ports.api) && ports.api >= 1 && ports.api <= 65535 &&
+      Number.isInteger(ports.web) && ports.web >= 1 && ports.web <= 65535 && p === String(ports.web)) {
+    return `http://${host}:${ports.api}/api`;
+  }
   if (p === "8080")  return `http://${host}:8000/api`;
   if (p === "18080") return `http://${host}:18000/api`;
   return "/api";

@@ -21,6 +21,7 @@ $EmpCorsOrigin = if ($env:EMP_CORS_ORIGIN) { $env:EMP_CORS_ORIGIN } else { "refl
 $EmpApiToken = if ($env:EMP_API_TOKEN) { $env:EMP_API_TOKEN } else { "" }
 $RunDir = Join-Path $Root ".local_run"
 $EmpDataDir = if ($env:EMP_DATA_DIR) { $env:EMP_DATA_DIR } else { Join-Path $RunDir "data" }
+$RuntimeConfig = Join-Path $Root "webapp\config\runtime.env"
 $AuthJs = Join-Path $Root "webapp\frontend\js\runtime_auth.local.js"
 
 function Test-EmpLoopbackHost([string]$HostName) {
@@ -95,6 +96,12 @@ function Stop-PidFile($pidFile) {
   if (Test-Path $pidFile) {
     $pidValue = Get-Content $pidFile -ErrorAction SilentlyContinue
     if ($pidValue) {
+      $identity = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$pidValue)" -ErrorAction SilentlyContinue
+      if (-not $identity -or (-not (Test-EMPProcessOwnership -CommandLine $identity.CommandLine -Root $Root))) {
+        Write-Warning "Ignoring stale or unrecognized PID file: $pidFile"
+        Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+        return
+      }
       try { Stop-Process -Id ([int]$pidValue) -Force -ErrorAction SilentlyContinue } catch {}
     }
     Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
@@ -121,7 +128,15 @@ function Show-EmpTailLog([string]$Path, [string]$Label) {
 
 Stop-PidFile $ApiPid
 Stop-PidFile $WebPid
-Stop-EMPListenersOnPorts -Ports @([int]$ApiPort, [int]$WebPort)
+foreach ($port in @($ApiPort, $WebPort)) {
+  if ($port -notmatch '^\d+$' -or [int]$port -lt 1 -or [int]$port -gt 65535) { throw "Invalid port: $port" }
+  if (Get-NetTCPConnection -LocalPort ([int]$port) -State Listen -ErrorAction SilentlyContinue) {
+    throw "Port $port is occupied. Stop its owner or choose another port."
+  }
+}
+if ([int]$ApiPort -eq [int]$WebPort) { throw "API_PORT and WEB_PORT must differ." }
+$portsJs = Join-Path $Root "webapp\frontend\js\runtime_ports.local.js"
+Set-Content -LiteralPath $portsJs -Value ("window.EMP_RUNTIME_PORTS=" + (@{api=[int]$ApiPort;web=[int]$WebPort} | ConvertTo-Json -Compress) + ";") -Encoding utf8
 
 # Inherit env into child processes (Start-Process does not take -Environment on older PS).
 $env:API_HOST = $ApiHost
@@ -133,10 +148,18 @@ $env:EMP_ENABLE_USER_R = $EmpEnableUserR
 $env:EMP_API_TOKEN = $EmpApiToken
 $env:EMP_CORS_ORIGIN = $EmpCorsOrigin
 $env:EMP_ROOT = $Root
+$localRLibs = Join-Path $RunDir "R_libs"
+if (Test-Path -LiteralPath $localRLibs) {
+  $env:R_LIBS_USER = $localRLibs
+}
 $env:EMP_DATA_DIR = $EmpDataDir
 $env:NO_PROXY = "*"
 $env:no_proxy = "*"
 
+$apiProc = $null
+$webProc = $null
+$startupComplete = $false
+try {
 Write-Host "Starting API + frontend together..."
 $ApiErrLog = Join-Path $RunDir "api.err.log"
 $WebErrLog = Join-Path $RunDir "web.err.log"
@@ -227,4 +250,14 @@ if (-not (Test-EmpLoopbackHost $ApiHost) -or -not (Test-EmpLoopbackHost $WebHost
       Write-Host "API (局域网):      http://${lan}:$ApiPort/api/health"
     }
   } catch {}
+}
+
+$startupComplete = $true
+} finally {
+  if (-not $startupComplete) {
+    foreach ($child in @($apiProc, $webProc)) {
+      if ($child) { Stop-Process -Id $child.Id -Force -ErrorAction SilentlyContinue }
+    }
+    Remove-Item -LiteralPath $ApiPid, $WebPid -Force -ErrorAction SilentlyContinue
+  }
 }

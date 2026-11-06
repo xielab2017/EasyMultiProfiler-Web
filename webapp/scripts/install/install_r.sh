@@ -35,7 +35,7 @@ fi
 emp_log "R installation needed (target >= $(emp_min_r_version), want ${want_ver}, OS=${os}, arch=${arch})"
 
 if ! emp_should_auto_install; then
-  emp_err "EMP_AUTO_INSTALL=0 — refusing to download R. Unset it or run with elevated privileges."
+  emp_err "EMP_AUTO_INSTALL=0 — refusing to download R. Install R manually using approved sources, then retry."
   exit 1
 fi
 
@@ -65,16 +65,13 @@ install_r_macos() {
   curl -fSL --retry 3 --connect-timeout 30 -o "${pkg_path}" "${pkg_url}"
 
   emp_log "Installing R (admin password may be required)…"
-  # -pkg chooses the .pkg, -target / picks the boot volume, -allowUntrusted accepts the
-  # developer cert (R binaries are signed by the R Foundation, but the certificate
-  # is not always recognised by Gatekeeper on first install).
-  sudo installer -pkg "${pkg_path}" -target / -allowUntrusted
+  sudo installer -pkg "${pkg_path}" -target /
 
   # Detect where the installer dropped Rscript. CRAN .pkg installs to /Library/Frameworks/R.framework/Versions/<ver>/Resources/
-  local r_home="/Library/Frameworks/R.framework/Versions/${want_ver}/Resources"
+  local r_home="/Library/Frameworks/R.framework/Versions/${want_ver}/Resources/bin"
   if [[ ! -x "${r_home}/Rscript" ]]; then
     # Fallback to "Current" symlink
-    r_home="/Library/Frameworks/R.framework/Resources"
+    r_home="/Library/Frameworks/R.framework/Resources/bin"
   fi
   if [[ ! -x "${r_home}/Rscript" ]]; then
     emp_err "Rscript binary not found after install."
@@ -96,56 +93,17 @@ EOF
 
 # ─────────────────────────── Debian / Ubuntu ───────────────────────────
 install_r_debian() {
-  emp_require_sudo_or_die
-  local codename
-  codename="$(. /etc/os-release 2>/dev/null && echo "${VERSION_CODENAME:-}")"
-  if [[ -z "${codename}" ]]; then
-    emp_err "Cannot detect Debian/Ubuntu codename (no /etc/os-release)."
-    return 1
-  fi
-
-  local keyring="${TMPDIR_R}/cran-keyring.gpg"
-  local keyring_deb="${TMPDIR_R}/cran-keyring.deb"
-  emp_log "Fetching CRAN GPG key"
-  curl -fSL --retry 3 -o "${keyring}" "${CRAN_MIRROR}/bin/linux/ubuntu/Release.gpg"
-  emp_log "Fetching CRAN keyring package"
-  # We try the modern .deb first; older Ubuntu (jammy) ships a keyring .deb too.
-  if ! curl -fSL --retry 3 -o "${keyring_deb}" \
-        "${CRAN_MIRROR}/bin/linux/ubuntu/jammy/cran-keyring_1.0-1_all.deb"; then
-    # fall back to focal keyring name
-    curl -fSL --retry 3 -o "${keyring_deb}" \
-      "${CRAN_MIRROR}/bin/linux/ubuntu/focal/cran-keyring_1.0-1_all.deb"
-  fi
-  sudo apt-get install -y --no-install-recommends "${keyring_deb}" || true
-  sudo mkdir -p /etc/apt/keyrings
-  sudo gpg --no-default-keyring --keyring /usr/share/keyrings/cran.gpg \
-       --import "${keyring}" 2>/dev/null || true
-
-  local repo_line="deb [signed-by=/usr/share/keyrings/cran.gpg] ${CRAN_MIRROR}/bin/linux/ubuntu ${codename}-cran40/"
-  echo "${repo_line}" | sudo tee /etc/apt/sources.list.d/cran.list >/dev/null
-  sudo apt-get update
-  sudo apt-get install -y --no-install-recommends r-base-core r-base-dev
-
-  # Provide a stable /usr/local/bin/Rscript symlink
-  sudo ln -sf /usr/bin/Rscript /usr/local/bin/Rscript 2>/dev/null || true
-  sudo ln -sf /usr/bin/R      /usr/local/bin/R      2>/dev/null || true
-  emp_ok "R installed via apt"
+  emp_err "Automatic CRAN repository configuration is disabled: distro-specific signing keys and repositories require administrator setup."
+  emp_err "Install R >= $(emp_min_r_version) using your approved package sources, then retry."
+  emp_err "Official instructions: https://cran.r-project.org/bin/linux/ (choose your exact distribution)."
+  return 1
 }
 
-# ─────────────────────────── Fedora / RHEL ───────────────────────────
 install_r_rhel() {
-  emp_require_sudo_or_die
-  local repo_url
-  case "${arch}" in
-    x86_64) repo_url="${CRAN_MIRROR}/bin/linux/fedora/38/x86_64/" ;;
-    arm64)  repo_url="${CRAN_MIRROR}/bin/linux/fedora/38/aarch64/" ;;
-    *)
-      emp_err "Unsupported Fedora/RHEL architecture: ${arch}"
-      return 1
-      ;;
-  esac
-  sudo dnf install -y "${repo_url}/R-${want_ver}-1.fc38.x86_64.rpm" || \
-  sudo dnf install -y "https://mirror.linux.iastate.edu/pub/CRAN/bin/linux/fedora/38/x86_64/R-${want_ver}-1.fc38.x86_64.rpm"
+  emp_err "Install R >= $(emp_min_r_version) from your distribution's approved repositories, then retry."
+  emp_err "A fixed Fedora RPM is not compatible with every Fedora/RHEL release or architecture."
+  emp_err "Official instructions: https://cran.r-project.org/bin/linux/"
+  return 1
 }
 
 # ─────────────────────────── dispatch ───────────────────────────

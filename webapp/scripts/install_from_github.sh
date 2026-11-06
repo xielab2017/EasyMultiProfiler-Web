@@ -20,6 +20,10 @@ BRANCH="${BRANCH:-${EMP_BRANCH:-main}}"
 # Bootstrap git itself so even a barebones box can run this script.
 if ! command -v git >/dev/null 2>&1; then
   echo "git is not installed."
+  if [[ "${EMP_AUTO_INSTALL:-1}" == "0" ]]; then
+    echo "EMP_AUTO_INSTALL=0: install git manually and retry." >&2
+    exit 1
+  fi
   case "$(uname -s 2>/dev/null)" in
     Darwin)
       if command -v brew >/dev/null 2>&1; then

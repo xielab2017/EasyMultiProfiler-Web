@@ -1,12 +1,14 @@
 const $ = (id) => document.getElementById(id);
 let current = null, plan = null, generation = 0, working = false;
+let selectedContextManifestId = null, lastWorkflowPlanId = null, contextPreview = null;
+function resetAgentContext() { contextPreview = null; $('agent-context-consent').checked = false; $('agent-context-preview').textContent = '上下文已改变，请重新预览并确认。'; }
 async function request(operation, body) {
   const response = await fetch(`/api/public-data/${operation}`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
 }
-function clearPlan() { plan = null; $('save').disabled = true; $('plan-result').textContent = '选择已改变，请重新检查计划。'; }
+function clearPlan() { selectedContextManifestId = null; resetAgentContext(); plan = null; $('save').disabled = true; $('plan-result').textContent = '选择已改变，请重新检查计划。'; }
 function busy(value) { for (const id of ['search', 'resolve', 'plan']) $(id).disabled = value || (id === 'plan' && !current); }
 async function run(work) {
   if (working) return;
@@ -53,7 +55,7 @@ $('plan').onclick = () => run(async () => {
   const selected = [...$('runs').querySelectorAll('input:checked')].map((x) => x.value);
   const result = await request('plan', {manifest_id: current.manifest_id, selected_runs: selected});
   if (version !== generation) throw new Error('选择已改变，请重新生成计划');
-  plan = result; $('plan-result').textContent = JSON.stringify(plan, null, 2); $('save').disabled = false;
+  plan = result; selectedContextManifestId = result.context_manifest_id; resetAgentContext(); $('plan-result').textContent = JSON.stringify(plan, null, 2); $('save').disabled = false;
 });
 $('save').onclick = () => {
   if (!plan) return;
@@ -87,8 +89,8 @@ $('pdf-drop').ondrop = (event) => { event.preventDefault(); run(() => readPdf(ev
 $('paper-search').onclick = () => run(async () => showPaper(await request('papers/search', {term: $('paper-term').value})));
 let processed = null, lastMatrix = null;
 $('processed-resolve').onclick = () => run(async () => {
-  processed = null; lastMatrix = null; $('matrix-download').replaceChildren(); $('processed-files').replaceChildren(); $('processed-result').textContent = '';
-  const data = await request('processed/resolve', {accession: $('processed-accession').value}); processed = data;
+  processed = null; lastMatrix = null; resetAgentContext(); $('matrix-download').replaceChildren(); $('processed-files').replaceChildren(); $('processed-result').textContent = '';
+  const data = await request('processed/resolve', {accession: $('processed-accession').value}); processed = data; resetAgentContext();
   for (const file of data.manifest.files) {
     const row = document.createElement('p'); row.textContent = `${file.name} | ${file.format_hint} | ${file.bytes ?? '大小未知'} bytes | 类型未确认`;
     const button = document.createElement('button'); button.textContent = '确认下载此文件并检查';
@@ -97,7 +99,7 @@ $('processed-resolve').onclick = () => run(async () => {
       if (working) return;
       if (!confirm(`从 NCBI GEO 下载 ${file.name}（${file.bytes} bytes）到云端本地工作目录并检查？不会执行分析。`)) return;
       button.disabled = true;
-      run(async () => { try { const result = await request('processed/download', {manifest_id: data.manifest_id, file_id: file.id, confirmed: true}); $('processed-result').textContent = JSON.stringify(result, null, 2); lastMatrix = result; const link = document.createElement('a'); link.href = `/api/public-data/files/${encodeURIComponent(result.download_id)}`; link.textContent = '保存已下载矩阵到本机'; $('matrix-download').replaceChildren(link); $('workflow-datasets').value = JSON.stringify([{id:'matrix1',omics:'bulk_rnaseq',data_type:'unknown',provenance:{source:result.source_url,sha256:result.sha256},sample_ids:result.inspection.column_labels || []}], null, 2); } finally { button.disabled = false; } });
+      run(async () => { try { const result = await request('processed/download', {manifest_id: data.manifest_id, file_id: file.id, confirmed: true}); $('processed-result').textContent = JSON.stringify(result, null, 2); lastMatrix = result; resetAgentContext(); const link = document.createElement('a'); link.href = `/api/public-data/files/${encodeURIComponent(result.download_id)}`; link.textContent = '保存已下载矩阵到本机'; $('matrix-download').replaceChildren(link); $('workflow-datasets').value = JSON.stringify([{id:'matrix1',omics:'bulk_rnaseq',data_type:'unknown',provenance:{source:result.source_url,sha256:result.sha256},sample_ids:result.inspection.column_labels || []}], null, 2); invalidateWorkflow(); } finally { button.disabled = false; } });
     };
     row.append(button); $('processed-files').append(row);
   }
@@ -105,10 +107,10 @@ $('processed-resolve').onclick = () => run(async () => {
 });
 $('annotations').onclick = () => run(async () => {
   const result = await request('processed/annotations', {accession: $('processed-accession').value, columns: lastMatrix?.inspection.column_labels || []});
-  $('annotation-result').textContent = JSON.stringify(result, null, 2); if (result.matches.length && result.matches.every((m) => m.status === 'exact')) $('workflow-samples').value = JSON.stringify(result.matches.map((m) => ({id:m.column,group:''})), null, 2);
+  $('annotation-result').textContent = JSON.stringify(result, null, 2); if (result.matches.length && result.matches.every((m) => m.status === 'exact')) $('workflow-samples').value = JSON.stringify(result.matches.map((m) => ({id:m.column,group:''})), null, 2); invalidateWorkflow();
 });
 let workflowCatalog = null, workflowSteps = [], workflowGeneration = 0;
-function invalidateWorkflow() { workflowGeneration++; $('workflow-result').textContent = '计划已改变，请重新校验。'; }
+function invalidateWorkflow() { lastWorkflowPlanId = null; resetAgentContext(); workflowGeneration++; $('workflow-result').textContent = '计划已改变，请重新校验。'; }
 for (const id of ['workflow-datasets','workflow-samples','contrast-test','contrast-reference','use-batch']) $(id).addEventListener('input', invalidateWorkflow);
 function renderSteps() {
   $('workflow-steps').replaceChildren();
@@ -136,7 +138,7 @@ $('validate-workflow').onclick = () => run(async () => {
   const datasets = JSON.parse($('workflow-datasets').value), samples = JSON.parse($('workflow-samples').value);
   const plan = {version: 1, datasets, samples, design: {group:'group', contrast:[$('contrast-test').value, $('contrast-reference').value]}, steps: workflowSteps.map((s, i) => ({...s, id:`step${i+1}`, dataset_id: s.dataset_id || datasets[0]?.id || ''}))};
   if ($('use-batch').checked) plan.design.batch = 'batch';
-  const result = await request('workflows/validate', {plan}); if (validationGeneration !== workflowGeneration) throw new Error('计划已改变，请重新校验'); $('workflow-result').textContent = JSON.stringify(result, null, 2);
+  const result = await request('workflows/validate', {plan}); if (validationGeneration !== workflowGeneration) throw new Error('计划已改变，请重新校验'); lastWorkflowPlanId = result.plan_id || null; resetAgentContext(); $('workflow-result').textContent = JSON.stringify(result, null, 2);
 });
 fetch('/api/public-data/workflows/templates').then(async (r) => { if (!r.ok) throw new Error('模板服务不可用'); return r.json(); }).then((catalog) => {
   workflowCatalog = catalog;
@@ -146,6 +148,30 @@ let agentProvider = null;
 fetch('/api/public-data/agent/status').then(async (r) => { if (!r.ok) throw new Error('服务不可用'); return r.json(); }).then((data) => { $('agent-status').textContent = JSON.stringify(data, null, 2); agentProvider = data.provider; $('agent-consent').checked = false; $('agent-consent-label').textContent = `我同意将此问题及工具元数据发送至 ${data.provider}，并将必要的公开检索词/accession发送至NCBI/ENA。PDF附件不会发送，不要粘贴私人内容。`; }).catch((error) => { $('agent-status').textContent = error.message; });
 $('agent-send').onclick = () => run(async () => {
   if (!$('agent-consent').checked) throw new Error('请先确认此公开问题的数据发送范围');
-  const result = await request('agent/respond', {question: $('agent-question').value, consent: true, expected_provider: agentProvider});
+  const ids = chosenContextIds();
+  if (Object.keys(ids).length && (!contextPreview || !$('agent-context-consent').checked)) throw new Error('请先预览并明确同意发送选中摘要');
+  const result = await request('agent/respond', {question: $('agent-question').value, consent: true, expected_provider: agentProvider,
+    context_ids: ids, context_consent: $('agent-context-consent').checked, context_sha256: contextPreview?.snapshot_sha256});
   $('agent-result').textContent = JSON.stringify(result, null, 2);
+});
+
+function chosenContextIds() {
+  const ids = {};
+  if ($('agent-data-source').value === 'runs') {
+    const id = selectedContextManifestId || current?.manifest_id;
+    if (!id) throw new Error('请先读取runs清单'); ids.manifest_id = id;
+  } else if ($('agent-data-source').value === 'processed') {
+    if (!processed) throw new Error('请先读取处理矩阵候选'); ids.manifest_id = processed.manifest_id;
+  }
+  if ($('agent-inspection').checked) { if (!lastMatrix) throw new Error('请先完成矩阵下载与检查'); ids.download_id = lastMatrix.download_id; }
+  if ($('agent-plan').checked) { if (!lastWorkflowPlanId) throw new Error('请先重新预检当前流程'); ids.plan_id = lastWorkflowPlanId; }
+  return ids;
+}
+for (const id of ['agent-data-source','agent-inspection','agent-plan']) $(id).addEventListener('change', resetAgentContext);
+$('agent-question').addEventListener('input', () => { $('agent-consent').checked = false; });
+$('agent-preview').onclick = () => run(async () => {
+  const ids = chosenContextIds();
+  const result = await request('agent/context-preview', {context_ids: ids});
+  if (JSON.stringify(ids) !== JSON.stringify(chosenContextIds())) throw new Error('选择已改变，请重新预览');
+  contextPreview = result; $('agent-context-preview').textContent = JSON.stringify(result, null, 2); $('agent-context-consent').checked = false;
 });

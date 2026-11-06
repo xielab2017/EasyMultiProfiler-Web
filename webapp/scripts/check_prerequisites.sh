@@ -21,23 +21,23 @@ else
 fi
 
 PY=""
-for c in python3 python; do
-  if command -v "$c" >/dev/null 2>&1; then
+for c in "${EMPI_PYTHON:-}" python3 python; do
+  if [[ -n "$c" ]] && command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 10))' >/dev/null 2>&1; then
     PY="$c"
     break
   fi
 done
 if [[ -n "$PY" ]]; then
-  say "Python: $($PY --version 2>&1)"
+  say "Python: $("$PY" --version 2>&1)"
 else
-  fail "Python 3 not found (required for web UI on port 8080)."
+  fail "Python >= 3.10 not found (required for web UI on port 8080)."
   hint "Mac: brew install python@3.12"
 fi
 
-if command -v Rscript >/dev/null 2>&1; then
-  RV=$(Rscript -e 'cat(as.character(getRversion()))' 2>/dev/null || echo "?")
+if command -v "${EMPI_RSCRIPT:-Rscript}" >/dev/null 2>&1; then
+  RV=$("${EMPI_RSCRIPT:-Rscript}" -e 'cat(as.character(getRversion()))' 2>/dev/null || echo "?")
   say "R: ${RV}"
-  Rscript -e 'if (getRversion() < "4.3.3") quit(status=2)' 2>/dev/null || {
+  "${EMPI_RSCRIPT:-Rscript}" -e 'if (getRversion() < "4.3.3") quit(status=2)' 2>/dev/null || {
     fail "R version must be >= 4.3.3 (found ${RV})."
     hint "Mac: brew install --cask r   |   https://cran.r-project.org/"
   }

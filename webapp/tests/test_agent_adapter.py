@@ -211,6 +211,59 @@ class AgentTests(unittest.TestCase):
         self.assertFalse(result['tool_results'][0]['result']['valid'])
         self.assertNotIn('mock-nvidia-secret', json.dumps(result))
 
+    @patch.object(agent, '_request')
+    def test_context_consent_gate(self, req):
+        for permission in (False, 'true', 1):
+            result = agent.respond('Review', True, context={'plan': {}}, context_consent=permission)
+            self.assertEqual(result['status'], 'context_consent_required')
+            self.assertEqual(result['audit'], [])
+        self.assertEqual(agent.respond('Review', True, context={'path': '/tmp/x'},
+                                      context_consent=True)['status'], 'invalid_request')
+        req.assert_not_called()
+
+    @patch.object(agent, '_run')
+    @patch.object(agent, '_request')
+    def test_selected_context_roundtrip(self, req, run):
+        from test_agent_context import snapshot
+        req.side_effect = [call('get_selected_context', {}), {'role': 'assistant', 'content': 'Inspection only.'}]
+        result = agent.respond('Review selected data', True, context=snapshot(), context_consent=True)
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual(result['audit'][0]['tool'], 'get_selected_context')
+        self.assertEqual(result['audit'][0]['status'], 'ok')
+        self.assertGreaterEqual(result['audit'][0]['duration_ms'], 0)
+        self.assertNotIn('SECRET', json.dumps(req.call_args.args[0]))
+        self.assertNotIn('/private', json.dumps(result))
+        run.assert_not_called()
+
+    @patch.object(agent, '_request')
+    def test_no_selected_context(self, req):
+        req.side_effect = [call('get_selected_context', {}), {'role': 'assistant', 'content': 'No selection.'}]
+        result = agent.respond('What is selected?', True)
+        self.assertEqual(result['tool_results'][0]['result']['selected_sections'], [])
+        self.assertEqual(result['status'], 'ok')
+
+    @patch.object(agent, '_run')
+    @patch.object(agent, '_request')
+    def test_context_arbitrary_arguments_and_audit(self, req, run):
+        for name, args in [('get_selected_context', {'id': 'other-record'}),
+                           ('get_selected_context', {'path': '/private/secret'}),
+                           ('/private/SECRET', {})]:
+            req.return_value = call(name, args)
+            result = agent.respond('Review', True)
+            self.assertEqual(result['status'], 'error')
+            self.assertEqual(result['audit'][0]['status'], 'rejected')
+            self.assertNotIn('SECRET', json.dumps(result['audit']))
+            self.assertNotIn('other-record', json.dumps(result['audit']))
+        run.assert_not_called()
+
+    @patch.object(agent, '_run', side_effect=RuntimeError('secret raw content'))
+    @patch.object(agent, '_request', return_value=call())
+    def test_tool_failure_audit(self, req, run):
+        result = agent.respond('Review', True)
+        self.assertEqual(result['audit'][0]['status'], 'error')
+        self.assertEqual(set(result['audit'][0]), {'tool', 'status', 'duration_ms'})
+        self.assertNotIn('secret raw content', json.dumps(result))
+
     def test_redirect_refused(self):
         with self.assertRaises(agent.AdapterError):
             agent._NoRedirect().redirect_request(None)

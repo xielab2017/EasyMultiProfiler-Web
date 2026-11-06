@@ -64,8 +64,8 @@ emp_ver_ge() {
 
 # Return the installed R version, or empty.
 emp_detect_r_version() {
-  if command -v Rscript >/dev/null 2>&1; then
-    Rscript -e 'cat(as.character(getRversion()))' 2>/dev/null
+  if command -v "${EMPI_RSCRIPT:-Rscript}" >/dev/null 2>&1; then
+    "${EMPI_RSCRIPT:-Rscript}" -e 'cat(as.character(getRversion()))' 2>/dev/null
   fi
 }
 
@@ -88,7 +88,7 @@ emp_need_git_install() {
 emp_need_python_install() {
   for c in python3 python; do
     if command -v "$c" >/dev/null 2>&1; then
-      if "$c" -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,8) else 1)" 2>/dev/null; then
+      if "$c" -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,10) else 1)" 2>/dev/null; then
         return 1
       fi
     fi

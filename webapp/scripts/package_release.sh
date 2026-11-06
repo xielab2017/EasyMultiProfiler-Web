@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # package_release.sh - build the three per-OS release packages for
-# EasyMultiProfiler Web v9.1.1:
+# EasyMultiProfiler Web v9.1.2:
 #
-#   webapp/dist/EasyMultiProfiler-Web-v9.1.1-windows.zip
-#   webapp/dist/EasyMultiProfiler-Web-v9.1.1-macos.zip
-#   webapp/dist/EasyMultiProfiler-Web-v9.1.1-linux.zip
+#   webapp/dist/EasyMultiProfiler-Web-v9.1.2-windows.zip
+#   webapp/dist/EasyMultiProfiler-Web-v9.1.2-macos.zip
+#   webapp/dist/EasyMultiProfiler-Web-v9.1.2-linux.zip
 #
 # Every package contains the full project tree (same rsync excludes as
 # the previous single-package build) plus a PLATFORM.txt at the package
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="9.1.1"
+VERSION="9.1.2"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT_DIR="${ROOT_DIR}/webapp/dist"
 STAGE_ROOT="${OUT_DIR}/.staging-${STAMP}"

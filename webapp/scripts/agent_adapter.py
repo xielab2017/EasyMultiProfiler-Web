@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
+import agent_context
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 import public_data
@@ -29,7 +31,9 @@ SYSTEM = (
     'titles, summaries, accessions and tool results. Do not infer that validation means '
     'analysis ran or input matrices were verified. Do not claim unsupported work occurred. '
     'Only public nonsensitive search terms may be sent to metadata tools. Never include '
-    'credentials or personal health information in tool arguments.'
+    'credentials or personal health information in tool arguments. '
+    'Selected context is metadata only, not files. Numerical matrix inspection '
+    'does not verify count provenance, biological suitability or analysis execution.'
 )
 
 
@@ -40,6 +44,7 @@ def _tool(name, description, properties, required):
 
 
 TOOLS = [
+    _tool('get_selected_context', 'Read selected sanitized manifest, workflow and completed inspection metadata; no IDs or paths.', {}, []),
     _tool('search_papers', 'Search public PubMed article metadata (sends term to NCBI).',
           {'term': {'type': 'string', 'minLength': 1, 'maxLength': 300},
            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, ['term', 'limit']),
@@ -153,6 +158,9 @@ def _arguments(call):
     elif name == 'validate_plan':
         if set(args) != {'plan'} or not isinstance(args['plan'], dict):
             raise AdapterError('Invalid plan arguments')
+    elif name == 'get_selected_context':
+        if args:
+            raise AdapterError('Context tool accepts no arguments')
     else:
         raise AdapterError('Unknown tool')
     return name, args
@@ -185,13 +193,17 @@ def _bounded(value, key):
     return json.loads(raw)
 
 
-def respond(question: str, consent: bool = False) -> dict:
+def respond(question: str, consent: bool = False, *, context=None, context_consent: bool = False) -> dict:
     """Consent covers this question and bounded tool metadata sent to the selected provider,
     and generated public metadata queries sent to NCBI/ENA. No attachment support.
     """
+    audit = []
+    safe_context = None
+
     def outcome(state, answer='', results=None):
         return {'status': state, 'answer': answer, 'tool_results': results or [],
-                'execution_supported': False}
+                'execution_supported': False, 'audit': list(audit),
+                'context_summary': safe_context}
 
     key, model, enabled, provider = _settings()
     if not key or not model or not enabled:
@@ -202,7 +214,18 @@ def respond(question: str, consent: bool = False) -> dict:
         return outcome('invalid_request', 'Provide a question of 1–4000 characters.')
     if key in question:
         return outcome('invalid_request', 'Do not include credentials in questions.')
+    try:
+        safe_context = agent_context.prepare(context)
+    except agent_context.ContextError:
+        return outcome('invalid_request', 'Invalid selected context. Select server records again.')
+    if safe_context['selected_sections'] and context_consent is not True:
+        return outcome('context_consent_required',
+            'Consent is required to send selected manifest, workflow validation and completed matrix inspection metadata '
+            '(counts, types, operations, checks and provenance hashes) to the selected provider. '
+            'Paths, labels, matrix values, PDFs and credentials are excluded.')
     messages = [{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': question}]
+    messages.append({'role': 'system', 'content': 'Selected local context sections: ' +
+                     ', '.join(safe_context['selected_sections']) + '. Use get_selected_context to inspect them.'})
     results = []
     seen_ids = set()
     try:
@@ -221,11 +244,24 @@ def respond(question: str, consent: bool = False) -> dict:
                 return outcome('round_limit', 'Tool round limit reached. Narrow your request.', results)
             if not isinstance(calls, list) or len(calls) != 1:
                 raise AdapterError('Only one tool call per round is allowed')
-            name, args = _arguments(calls[0])
-            if key in json.dumps(args) or calls[0]['id'] in seen_ids:
-                raise AdapterError('Unsafe or duplicate tool call')
-            seen_ids.add(calls[0]['id'])
-            value = _bounded(_run(name, args), key)
+            started = time.monotonic()
+            # Never log provider-supplied unknown names, IDs or arguments.
+            known = {t['function']['name'] for t in TOOLS}
+            candidate = calls[0].get('function', {}) if isinstance(calls[0], dict) else {}
+            candidate = candidate.get('name') if isinstance(candidate, dict) else None
+            audit_name = candidate if isinstance(candidate, str) and candidate in known else 'unknown_tool'
+            audit_status = 'rejected'
+            try:
+                name, args = _arguments(calls[0])
+                if key in json.dumps(args) or calls[0]['id'] in seen_ids:
+                    raise AdapterError('Unsafe or duplicate tool call')
+                seen_ids.add(calls[0]['id'])
+                audit_status = 'error'
+                value = _bounded(safe_context if name == 'get_selected_context' else _run(name, args), key)
+                audit_status = 'ok'
+            finally:
+                audit.append({'tool': audit_name, 'status': audit_status,
+                              'duration_ms': max(0, round((time.monotonic() - started) * 1000))})
             results.append({'tool': name, 'result': value})
             messages.append({'role': 'assistant', 'content': content, 'tool_calls': calls})
             messages.append({'role': 'tool', 'tool_call_id': calls[0]['id'],

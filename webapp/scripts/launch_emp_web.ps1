@@ -28,8 +28,10 @@ if (-not $isWinPS) {
   elseif ($IsMacOS) { $hostOsName = "macos" }
   Write-Host "[emp-install] Detected host OS: $hostOsName"
   Write-Host "[emp-install] Handing off to launch_emp_web.sh"
-  $argsLine = if ($Repair) { " --repair" } else { "" }
-  & bash -c "bash '$PSScriptRoot/launch_emp_web.sh'$argsLine"
+  $bashArgs = @((Join-Path $PSScriptRoot "launch_emp_web.sh"))
+  if ($Repair) { $bashArgs += "--repair" }
+  if ($NoBrowser) { $env:EMP_NO_BROWSER = "1" }
+  & bash @bashArgs
   exit $LASTEXITCODE
 }
 

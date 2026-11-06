@@ -74,6 +74,38 @@ class ServerTests(unittest.TestCase):
             status,body=self.call('/api/public-data/agent/respond',{'question':'public RNA-seq'})
             self.assertEqual(status,200);self.assertIn(json.loads(body)['status'],['unconfigured','consent_required'])
 
+    def test_context_preview_redacts_and_binds_digest(self):
+        from unittest.mock import patch
+        value=s.metadata.manifest(s.metadata.parse_ena(report()),'SRR123',selected=['SRR123'])
+        value['private_note']='SensitivePatient';key=self.server.store.put(value)
+        status,body=self.call('/api/public-data/agent/context-preview',{'context_ids':{'manifest_id':key}})
+        self.assertEqual(status,200);preview=json.loads(body)
+        self.assertNotIn(b'SensitivePatient',body);self.assertEqual(preview['manifest']['selected_run_count'],1)
+        request={'question':'Public context question','consent':True,'expected_provider':'openai',
+                 'context_ids':{'manifest_id':key},'context_sha256':'stale','context_consent':True}
+        with patch.object(s.agent_adapter,'status',return_value={'provider':'openai'}),patch.object(s.agent_adapter,'respond',return_value={'status':'ok'}) as respond:
+            self.assertEqual(self.call('/api/public-data/agent/respond',request)[0],409);respond.assert_not_called()
+            request['context_sha256']=preview['snapshot_sha256']
+            self.assertEqual(self.call('/api/public-data/agent/respond',request)[0],200)
+            self.assertEqual(respond.call_args.kwargs['context']['manifest']['request'],'SRR123')
+            self.assertTrue(respond.call_args.kwargs['context_consent'])
+    def test_context_rejects_payloads_and_paths(self):
+        for payload in [{'context':{'anything':'arbitrary'}}, {'context_ids':{'download_id':'../../secret'}},
+                        {'context_ids':{'unexpected':'value'}}]:
+            self.assertEqual(self.call('/api/public-data/agent/context-preview',payload)[0],400)
+        self.assertEqual(self.call('/api/public-data/agent/respond',{'context':{'raw':'no'}})[0],400)
+    def test_workflow_record_is_selectable(self):
+        status,body=self.call('/api/public-data/workflows/validate',{'plan':{'version':1}})
+        value=json.loads(body);self.assertIn('plan_id',value)
+        status,body=self.call('/api/public-data/agent/context-preview',{'context_ids':{'plan_id':value['plan_id']}})
+        self.assertEqual(status,200);self.assertFalse(json.loads(body)['plan']['valid'])
+    def test_run_plan_preserves_selection_for_context(self):
+        _,body=self.call('/api/public-data/resolve',{'accession':'SRR123'});key=json.loads(body)['manifest_id']
+        _,body=self.call('/api/public-data/plan',{'manifest_id':key,'selected_runs':['SRR123']})
+        selected_key=json.loads(body)['context_manifest_id']
+        self.assertEqual(self.server.store.get(selected_key)['selected_runs'],['SRR123'])
+        self.assertEqual(self.server.store.get(key)['selected_runs'],[])
+
     def test_optional_gateway_route(self):
         import emp_gateway as gateway
         old=gateway.PUBLIC_DATA_PORT
