@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 echo ========================================================
-echo   EasyMultiProfiler Web v7  (Windows launcher)
+echo   EasyMultiProfiler Web v9.1.3  (Windows launcher)
 echo   Double-click this file on Windows - NOT the .command file
 echo   To stop later: Stop-EMP-Web-Windows.bat
 echo ========================================================

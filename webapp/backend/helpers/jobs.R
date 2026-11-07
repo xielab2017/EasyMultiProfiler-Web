@@ -188,6 +188,46 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
   id
 }
 
+.job_summary <- function(st) {
+  if (is.null(st)) return(NULL)
+  list(
+    id       = st$id %||% NULL,
+    kind     = st$kind %||% NULL,
+    status   = st$status %||% "unknown",
+    progress = suppressWarnings(as.integer(st$progress %||% 0L)),
+    message  = st$message %||% st$error %||% NULL,
+    created  = st$created %||% st$started %||% NULL,
+    started  = st$started %||% NULL,
+    finished = st$finished %||% NULL
+  )
+}
+
+# List recent jobs (newest first) for the job tray / API. Reads the
+# on-disk JSON states under JOB_DIR; optionally filters by owner/project
+# when those fields are recorded on the job state.
+list_jobs <- function(limit = 20, owner_id = NULL, project_id = NULL) {
+  .jobs_ensure_dir()
+  limit <- suppressWarnings(as.integer(limit))
+  if (is.na(limit) || limit < 1L) limit <- 20L
+  files <- list.files(JOB_DIR, pattern = "\\.json$", full.names = TRUE)
+  if (!length(files)) return(list())
+  files <- files[order(file.mtime(files), decreasing = TRUE)]
+  out <- list()
+  for (path in files) {
+    if (length(out) >= limit) break
+    st <- tryCatch(
+      jsonlite::fromJSON(readLines(path, warn = FALSE), simplifyVector = TRUE),
+      error = function(e) NULL
+    )
+    if (is.null(st) || is.null(st$id)) next
+    if (!is.null(owner_id) && !identical(st$owner_id %||% NULL, owner_id)) next
+    if (!is.null(project_id) && !identical(st$project_id %||% NULL, project_id)) next
+    summary <- .job_summary(st)
+    if (!is.null(summary)) out[[length(out) + 1]] <- summary
+  }
+  out
+}
+
 get_job_status <- function(id) {
   st <- .read_state(id)
   if (is.null(st)) return(list(error = paste0("Job not found: ", id)))

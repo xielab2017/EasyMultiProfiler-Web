@@ -4,6 +4,7 @@
 import * as API from "./api.js?v=2026-07-16-multi-demo";
 import { omicsDefaultsHint } from "./omics_defaults.js?v=i18n-zh-default-v1";
 import { getLocale, t } from "./locale.js?v=i18n-zh-default-v1";
+import { renderLessonVideo, bindLessonVideos } from "./teaching_video.js?v=video-fallback-v1";
 
 const LS_CASE = "emp_teaching_active_case";
 
@@ -112,12 +113,7 @@ function renderTakeaways(items) {
 }
 
 function renderLocalVideo(v) {
-  if (!v.local_video) return "";
-  const src = `${v.local_video}?v=2026-06-19-course-v10`;
-  return `
-    <div class="teaching-video-embed teaching-local-video">
-      <video controls preload="metadata" playsinline src="${esc(src)}"></video>
-    </div>`;
+  return renderLessonVideo(v, getLocale());
 }
 
 function renderReferenceLink(v) {
@@ -330,15 +326,9 @@ function bindCaseDetailEvents(detail, caseId) {
     });
   });
 
-  detail.querySelectorAll(".teaching-video-embed iframe").forEach((iframe) => {
-    iframe.addEventListener("load", () => {
-      const block = iframe.closest(".teaching-video-block");
-      traceEvent({
-        event_type: "video_load",
-        case_id: caseId,
-        video_id: block?.dataset.videoId,
-      });
-    });
+  bindLessonVideos(detail, {
+    locale: getLocale(),
+    onEvent: (event) => { void traceEvent({ ...event, case_id: caseId }); },
   });
 }
 

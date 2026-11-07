@@ -1,0 +1,1 @@
+{"host": "127.0.0.1", "missing_modules": [], "mode": "metadata-only", "optional": {"pypdf": true}, "python": {"minimum": "3.10", "version": "3.12.14"}, "r": {"available": false, "note": "Full R analysis requires a separate R >= 4.3.3 installation and EMP packages.", "required_for_metadata": false}, "ready": true}

@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "datasets": [
+    {
+      "id": "rna",
+      "omics": "bulk_rnaseq",
+      "data_type": "raw_counts",
+      "provenance": {
+        "source": "SYNTHETIC TEACHING FIXTURE, NOT A REAL DATASET",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "sample_ids": [
+        "A1",
+        "A2",
+        "B1",
+        "B2"
+      ]
+    }
+  ],
+  "samples": [
+    {
+      "id": "A1",
+      "group": "A"
+    },
+    {
+      "id": "A2",
+      "group": "A"
+    },
+    {
+      "id": "B1",
+      "group": "B"
+    },
+    {
+      "id": "B2",
+      "group": "B"
+    }
+  ],
+  "design": {
+    "group": "group",
+    "contrast": [
+      "B",
+      "A"
+    ]
+  },
+  "steps": [
+    {
+      "id": "de",
+      "operation": "deseq2",
+      "dataset_id": "rna",
+      "parameters": {
+        "alpha": 0.05
+      }
+    }
+  ]
+}

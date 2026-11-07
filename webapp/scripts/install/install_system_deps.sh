@@ -16,6 +16,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./_platform.sh
 source "${SCRIPT_DIR}/_platform.sh"
 
+if ! emp_should_auto_install; then
+  if emp_need_git_install || emp_need_python_install || ! command -v curl >/dev/null 2>&1; then
+    emp_err "EMP_AUTO_INSTALL=0: git, Python >= 3.10 and curl must be installed manually."
+    exit 1
+  fi
+  emp_ok "Prerequisites present; no system changes requested."
+  exit 0
+fi
+
 os="$(emp_detect_os)"
 arch="$(emp_detect_arch)"
 emp_log "Detected OS=${os} arch=${arch}"
@@ -80,7 +89,7 @@ install_with_apt() {
   fi
 }
 
-dnf_install() {
+install_with_dnf() {
   emp_require_sudo_or_die
   local pkgs=("$@")
   local missing=()
@@ -122,7 +131,7 @@ if emp_need_git_install; then
   exit 1
 fi
 if emp_need_python_install; then
-  emp_err "python3 (>= 3.8) is still missing after install. Aborting."
+  emp_err "python3 (>= 3.10) is still missing after install. Aborting."
   exit 1
 fi
 

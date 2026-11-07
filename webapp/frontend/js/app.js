@@ -25,6 +25,9 @@ import { applyPagesI18n } from "./i18n_pages.js?v=i18n-zh-default-v1";
 import { initFontScale } from "./font_scale.js?v=i18n-zh-default-v1";
 import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
 import { initGithubSync } from "./github_sync.js?v=editable-repo-v1";
+import { initJobTray } from "./job_tray.js?v=i18n-v910-r2";
+import { initFriendlyHints } from "./friendly_hints.js?v=i18n-v910-r2";
+import { initUsability } from "./usability.js?v=i18n-v910-r2";
 
 // ── Global state ──────────────────────────────────
 window._emp = {
@@ -903,6 +906,8 @@ async function ensureWorkflowReady(workflowId, exp, opts = {}) {
 
 // ── Navigation ────────────────────────────────────
 const pageTitles = {
+  matrix: "矩阵下载 · Matrix download",
+  workbench: "AI 组学分析工作台",
   course: "Course Cases",
   guide: "User Guide · 使用指南",
   prompts: "AI Prompt Library",
@@ -6854,6 +6859,10 @@ window.addEventListener("emp:timing", (ev) => {
   const msg  = () => document.getElementById("ra-progress-msg");
   const logEl = () => document.getElementById("ra-log");
   const dlLink = () => document.getElementById("ra-download");
+  async function downloadResultBundle(name,button,sid){
+    if(button.disabled)return;button.disabled=true;
+    try{await API.downloadBundle(name,sid);}catch(error){toast(error.message,"error");}finally{button.disabled=false;}
+  }
 
   function setProgress(p, m) {
     wrap()?.classList.remove("hidden");
@@ -6883,20 +6892,11 @@ window.addEventListener("emp:timing", (ev) => {
     try {
       const r = await API.listBundles();
       const list = r.bundles || [];
-      if (!list.length) { el.innerHTML = "—"; return; }
-      el.innerHTML = list.map(b =>
-        `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-           <span><i data-lucide="archive"></i> <strong>${b.name}</strong>
-             <span class="muted" style="margin-left:8px">${b.mtime}</span>
-             <span class="muted" style="margin-left:8px">${b.size_kb} KB</span>
-           </span>
-           <a class="btn btn-outline btn-sm" target="_blank" rel="noopener"
-              href="${API.bundleDownloadUrl(b.name)}">
-             <i data-lucide="download"></i> Download
-           </a>
-         </div>`).join("");
+      if (!list.length) { el.textContent = getLocale()==='en'?'No retained result bundles for this account.':'当前账户暂无已保存的结果包。'; return; }
+      el.replaceChildren();
+      for(const b of list){const row=document.createElement('div'),label=document.createElement('span'),button=document.createElement('button');row.style.cssText='display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--border)';label.textContent=`${b.name} · ${b.mtime} · ${b.size_kb} KB`;button.type='button';button.className='btn btn-outline btn-sm';button.textContent=t('runall.downloadBundle');button.dataset.bundleName=b.name;button.onclick=()=>downloadResultBundle(b.name,button,b.session_id);row.append(label,button);el.append(row);}
       if (window.lucide) window.lucide.createIcons();
-    } catch(_) { el.innerHTML = "—"; }
+    } catch(error) { el.textContent = (getLocale()==='en'?'Could not load result bundles: ':'结果包列表读取失败：')+error.message; }
   }
 
   // Guess the model organism from feature (gene) naming convention:
@@ -7002,8 +7002,9 @@ window.addEventListener("emp:timing", (ev) => {
 
       if (result?.zip_name) {
         const a = dlLink();
-        a.href = API.bundleDownloadUrl(result.zip_name);
+        a.href = '#';
         a.download = result.zip_name;
+        a.onclick=event=>{event.preventDefault();downloadResultBundle(result.zip_name,a);};
         a.classList.remove("hidden");
         if (window.lucide) window.lucide.createIcons();
       }
@@ -7869,6 +7870,9 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
 (async () => {
   await initLocale();
   initFontScale();
+  try { initJobTray(); } catch (e) { console.warn("[emp-jobtray] init failed", e); }
+  try { initFriendlyHints(); } catch (e) { console.warn("[emp-hints] init failed", e); }
+  try { initUsability(); } catch (e) { console.warn("[emp-usability] init failed", e); }
   if (window.lucide) window.lucide.createIcons({ nodes: [document.getElementById("locale-switch")].filter(Boolean) });
   window.addEventListener("emp:locale-change", () => {
     document.querySelectorAll(".ai-copilot-btn-label").forEach((el) => {

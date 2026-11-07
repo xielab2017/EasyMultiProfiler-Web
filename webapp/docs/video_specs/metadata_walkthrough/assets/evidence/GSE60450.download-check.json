@@ -1,0 +1,292 @@
+{
+  "status": "downloaded",
+  "download_id": "4fb58334-c610-4dde-97ba-aee2e59545bd",
+  "source_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE60nnn/GSE60450/suppl/GSE60450_Lactation-GenewiseCounts.txt.gz",
+  "source_name": "GSE60450_Lactation-GenewiseCounts.txt.gz",
+  "bytes": 513592,
+  "sha256": "906b6ec4c33e95ca0ba454a3e0d07ad74e9cb7528ee38b89a9b122f5674a5f0d",
+  "publisher_checksum_verified": false,
+  "inspection": {
+    "data_type": "count_like_unverified",
+    "deseq2_ready": false,
+    "sample_annotation": "not_validated",
+    "warning": "Numerical structure is not proof of raw counts. Confirm author documentation, feature IDs and sample groups.",
+    "inspection": "complete",
+    "feature_rows": 27179,
+    "column_labels": [
+      "MCL1-DG_BC2CTUACXX_ACTTGA_L002_R1",
+      "MCL1-DH_BC2CTUACXX_CAGATC_L002_R1",
+      "MCL1-DI_BC2CTUACXX_ACAGTG_L002_R1",
+      "MCL1-DJ_BC2CTUACXX_CGATGT_L002_R1",
+      "MCL1-DK_BC2CTUACXX_TTAGGC_L002_R1",
+      "MCL1-DL_BC2CTUACXX_ATCACG_L002_R1",
+      "MCL1-LA_BC2CTUACXX_GATCAG_L001_R1",
+      "MCL1-LB_BC2CTUACXX_TGACCA_L001_R1",
+      "MCL1-LC_BC2CTUACXX_GCCAAT_L001_R1",
+      "MCL1-LD_BC2CTUACXX_GGCTAC_L001_R1",
+      "MCL1-LE_BC2CTUACXX_TAGCTT_L001_R1",
+      "MCL1-LF_BC2CTUACXX_CTTGTA_L001_R1"
+    ],
+    "excluded_annotation_columns": [
+      "Length"
+    ],
+    "finite": true,
+    "nonnegative": true,
+    "integer_valued": true
+  },
+  "analysis_executed": false,
+  "sample_matches": [
+    {
+      "column": "MCL1-DG_BC2CTUACXX_ACTTGA_L002_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480297",
+        "descriptions": [
+          "Sample name: MCL1-DG",
+          "MCL1-DG_BC2CTUACXX_ACTTGA_L002_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: basal cell population",
+          "developmental stage: virgin"
+        ],
+        "title": "Basal virgin #1"
+      }
+    },
+    {
+      "column": "MCL1-DH_BC2CTUACXX_CAGATC_L002_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480298",
+        "descriptions": [
+          "Sample name: MCL1-DH",
+          "MCL1-DH_BC2CTUACXX_CAGATC_L002_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: basal cell population",
+          "developmental stage: virgin"
+        ],
+        "title": "Basal virgin #2"
+      }
+    },
+    {
+      "column": "MCL1-DI_BC2CTUACXX_ACAGTG_L002_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480299",
+        "descriptions": [
+          "Sample name: MCL1-DI",
+          "MCL1-DI_BC2CTUACXX_ACAGTG_L002_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: basal cell population",
+          "developmental stage: 18.5 day pregnancy"
+        ],
+        "title": "Basal 18.5 dP #1"
+      }
+    },
+    {
+      "column": "MCL1-DJ_BC2CTUACXX_CGATGT_L002_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480300",
+        "descriptions": [
+          "Sample name: MCL1-DJ",
+          "MCL1-DJ_BC2CTUACXX_CGATGT_L002_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: basal cell population",
+          "developmental stage: 18.5 day pregnancy"
+        ],
+        "title": "Basal 18.5 dP #2"
+      }
+    },
+    {
+      "column": "MCL1-DK_BC2CTUACXX_TTAGGC_L002_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480301",
+        "descriptions": [
+          "Sample name: MCL1-DK",
+          "MCL1-DK_BC2CTUACXX_TTAGGC_L002_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: basal cell population",
+          "developmental stage: 2 day lactation"
+        ],
+        "title": "Basal 2 dL #1"
+      }
+    },
+    {
+      "column": "MCL1-DL_BC2CTUACXX_ATCACG_L002_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480302",
+        "descriptions": [
+          "Sample name: MCL1-DL",
+          "MCL1-DL_BC2CTUACXX_ATCACG_L002_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: basal cell population",
+          "developmental stage: 2 day lactation"
+        ],
+        "title": "Basal 2 dL #2"
+      }
+    },
+    {
+      "column": "MCL1-LA_BC2CTUACXX_GATCAG_L001_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480291",
+        "descriptions": [
+          "Sample name: MCL1-LA",
+          "MCL1-LA_BC2CTUACXX_GATCAG_L001_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: luminal cell population",
+          "developmental stage: virgin"
+        ],
+        "title": "Luminal virgin #1"
+      }
+    },
+    {
+      "column": "MCL1-LB_BC2CTUACXX_TGACCA_L001_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480292",
+        "descriptions": [
+          "Sample name: MCL1-LB",
+          "MCL1-LB_BC2CTUACXX_TGACCA_L001_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: luminal cell population",
+          "developmental stage: virgin"
+        ],
+        "title": "Luminal virgin #2"
+      }
+    },
+    {
+      "column": "MCL1-LC_BC2CTUACXX_GCCAAT_L001_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480293",
+        "descriptions": [
+          "Sample name: MCL1-LC",
+          "MCL1-LC_BC2CTUACXX_GCCAAT_L001_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: luminal cell population",
+          "developmental stage: 18.5 day pregnancy"
+        ],
+        "title": "Luminal 18.5 dP #1"
+      }
+    },
+    {
+      "column": "MCL1-LD_BC2CTUACXX_GGCTAC_L001_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480294",
+        "descriptions": [
+          "Sample name: MCL1-LD",
+          "MCL1-LD_BC2CTUACXX_GGCTAC_L001_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: luminal cell population",
+          "developmental stage: 18.5 day pregnancy"
+        ],
+        "title": "Luminal 18.5 dP #2"
+      }
+    },
+    {
+      "column": "MCL1-LE_BC2CTUACXX_TAGCTT_L001_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480295",
+        "descriptions": [
+          "Sample name: MCL1-LE",
+          "MCL1-LE_BC2CTUACXX_TAGCTT_L001_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: luminal cell population",
+          "developmental stage: 2 day lactation"
+        ],
+        "title": "Luminal 2 dL #1"
+      }
+    },
+    {
+      "column": "MCL1-LF_BC2CTUACXX_CTTGTA_L001_R1",
+      "status": "exact",
+      "sample": {
+        "accession": "GSM1480296",
+        "descriptions": [
+          "Sample name: MCL1-LF",
+          "MCL1-LF_BC2CTUACXX_CTTGTA_L001_R1",
+          "Raw data file batch date: Aug. 9, 2013"
+        ],
+        "characteristics": [
+          "strain/background: FVB/N",
+          "genotype/variation: wild type",
+          "gender: female",
+          "tissue: mouse mammary gland",
+          "immunophenotype: luminal cell population",
+          "developmental stage: 2 day lactation"
+        ],
+        "title": "Luminal 2 dL #2"
+      }
+    }
+  ]
+}

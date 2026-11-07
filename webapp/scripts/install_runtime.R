@@ -50,6 +50,16 @@ msg <- function(...) cat(sprintf(...), "\n")
 emp_root <- .emp_repo_root()
 desc_path <- file.path(emp_root, "DESCRIPTION")
 
+# Match run_api.R: a project-local library avoids administrator-owned R paths.
+runtime_lib <- file.path(emp_root, ".local_run", "R_libs")
+if (!dir.exists(runtime_lib)) dir.create(runtime_lib, recursive = TRUE, showWarnings = FALSE)
+if (!dir.exists(runtime_lib) || file.access(runtime_lib, 2L) != 0L) {
+  stop("Project R library is not writable: ", runtime_lib)
+}
+runtime_lib <- normalizePath(runtime_lib, winslash = "/", mustWork = TRUE)
+.libPaths(c(runtime_lib, .libPaths()))
+Sys.setenv(R_LIBS_USER = runtime_lib)
+
 set_default_repos <- function() {
   repos <- getOption("repos")
   if (is.null(repos) || !length(repos)) repos <- c(CRAN = "@CRAN@")
@@ -200,7 +210,7 @@ cran_list <- setdiff(cran_list, bioc_list)
 # CRAN glue packages that are universally useful and that we always
 # want in EMP web runtime, even if DESCRIPTION doesn't strictly require
 # them as Imports.
-cran_always <- c("remotes")
+cran_always <- c("remotes", "plumber", "jsonlite", "base64enc")
 cran_list <- unique(c(cran_list, cran_always))
 
 msg("[PLAN] CRAN: %d   Bioconductor: %d", length(cran_list), length(bioc_list))
@@ -251,7 +261,7 @@ if (!no_emp) {
 }
 
 # Final smoke check
-needed <- c("EasyMultiProfiler", "plumber", "clusterProfiler")
+needed <- c(if (!no_emp) "EasyMultiProfiler", "plumber", "jsonlite", "base64enc", "clusterProfiler")
 missing_final <- needed[!vapply(needed, requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))]
 if (length(missing_final)) {
   msg("[WARN] Missing after install: %s", paste(missing_final, collapse = ", "))

@@ -13,6 +13,7 @@ Import-EMPRuntimeConfig
 
 $ApiPort = if ($env:API_PORT) { $env:API_PORT } else { "8000" }
 $WebPort = if ($env:WEB_PORT) { $env:WEB_PORT } else { "8080" }
+$MetadataPort = if ($env:EMP_PUBLIC_DATA_PORT) { $env:EMP_PUBLIC_DATA_PORT } else { "8081" }
 $ApiHost = if ($env:API_HOST) { $env:API_HOST } else { "127.0.0.1" }
 $WebHost = if ($env:WEB_HOST) { $env:WEB_HOST } else { "127.0.0.1" }
 $EmpAllowedRoots = if ($env:EMP_ALLOWED_ROOTS) { $env:EMP_ALLOWED_ROOTS } else { Join-Path $Root "tests" }
@@ -21,6 +22,7 @@ $EmpCorsOrigin = if ($env:EMP_CORS_ORIGIN) { $env:EMP_CORS_ORIGIN } else { "refl
 $EmpApiToken = if ($env:EMP_API_TOKEN) { $env:EMP_API_TOKEN } else { "" }
 $RunDir = Join-Path $Root ".local_run"
 $EmpDataDir = if ($env:EMP_DATA_DIR) { $env:EMP_DATA_DIR } else { Join-Path $RunDir "data" }
+$RuntimeConfig = Join-Path $Root "webapp\config\runtime.env"
 $AuthJs = Join-Path $Root "webapp\frontend\js\runtime_auth.local.js"
 
 function Test-EmpLoopbackHost([string]$HostName) {
@@ -87,6 +89,9 @@ $ApiLog = Join-Path $RunDir "api.log"
 $WebLog = Join-Path $RunDir "web.log"
 $ApiPid = Join-Path $RunDir "api.pid"
 $WebPid = Join-Path $RunDir "web.pid"
+$MetadataPid = Join-Path $RunDir "metadata.pid"
+$MetadataLog = Join-Path $RunDir "metadata.log"
+$MetadataErrLog = Join-Path $RunDir "metadata.err.log"
 
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 New-Item -ItemType Directory -Force -Path $EmpDataDir | Out-Null
@@ -95,6 +100,12 @@ function Stop-PidFile($pidFile) {
   if (Test-Path $pidFile) {
     $pidValue = Get-Content $pidFile -ErrorAction SilentlyContinue
     if ($pidValue) {
+      $identity = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$pidValue)" -ErrorAction SilentlyContinue
+      if (-not $identity -or (-not (Test-EMPProcessOwnership -CommandLine $identity.CommandLine -Root $Root))) {
+        Write-Warning "Ignoring stale or unrecognized PID file: $pidFile"
+        Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+        return
+      }
       try { Stop-Process -Id ([int]$pidValue) -Force -ErrorAction SilentlyContinue } catch {}
     }
     Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
@@ -121,22 +132,42 @@ function Show-EmpTailLog([string]$Path, [string]$Label) {
 
 Stop-PidFile $ApiPid
 Stop-PidFile $WebPid
-Stop-EMPListenersOnPorts -Ports @([int]$ApiPort, [int]$WebPort)
+Stop-PidFile $MetadataPid
+foreach ($port in @($ApiPort, $WebPort, $MetadataPort)) {
+  if ($port -notmatch '^\d+$' -or [int]$port -lt 1 -or [int]$port -gt 65535) { throw "Invalid port: $port" }
+  if (Get-NetTCPConnection -LocalPort ([int]$port) -State Listen -ErrorAction SilentlyContinue) {
+    throw "Port $port is occupied. Stop its owner or choose another port."
+  }
+}
+if ([int]$ApiPort -eq [int]$WebPort) { throw "API_PORT and WEB_PORT must differ." }
+if ([int]$MetadataPort -eq [int]$ApiPort -or [int]$MetadataPort -eq [int]$WebPort) { throw "Metadata port must be distinct." }
+$portsJs = Join-Path $Root "webapp\frontend\js\runtime_ports.local.js"
+Set-Content -LiteralPath $portsJs -Value ("window.EMP_RUNTIME_PORTS=" + (@{api=[int]$ApiPort;web=[int]$WebPort} | ConvertTo-Json -Compress) + ";") -Encoding utf8
 
 # Inherit env into child processes (Start-Process does not take -Environment on older PS).
 $env:API_HOST = $ApiHost
 $env:API_PORT = "$ApiPort"
 $env:WEB_HOST = $WebHost
 $env:WEB_PORT = "$WebPort"
+$env:EMP_PUBLIC_DATA_PORT = "$MetadataPort"
 $env:EMP_ALLOWED_ROOTS = $EmpAllowedRoots
 $env:EMP_ENABLE_USER_R = $EmpEnableUserR
 $env:EMP_API_TOKEN = $EmpApiToken
 $env:EMP_CORS_ORIGIN = $EmpCorsOrigin
 $env:EMP_ROOT = $Root
+$localRLibs = Join-Path $RunDir "R_libs"
+if (Test-Path -LiteralPath $localRLibs) {
+  $env:R_LIBS_USER = $localRLibs
+}
 $env:EMP_DATA_DIR = $EmpDataDir
 $env:NO_PROXY = "*"
 $env:no_proxy = "*"
 
+$apiProc = $null
+$webProc = $null
+$metadataProc = $null
+$startupComplete = $false
+try {
 Write-Host "Starting API + frontend together..."
 $ApiErrLog = Join-Path $RunDir "api.err.log"
 $WebErrLog = Join-Path $RunDir "web.err.log"
@@ -171,15 +202,30 @@ $webProc = Start-Process -FilePath $PythonInfo.Exe `
 if (-not $webProc) { throw "Failed to start frontend (Python)." }
 $webProc.Id | Out-File -FilePath $WebPid -Encoding ascii -Force
 
+$metadataArgs = @()
+if ($PythonInfo.PrefixArgs) { $metadataArgs += $PythonInfo.PrefixArgs }
+$metadataArgs += (ConvertTo-EMPProcessArgument (Join-Path $Root "webapp\scripts\public_data_server.py"))
+$metadataProc = Start-Process -FilePath $PythonInfo.Exe -ArgumentList $metadataArgs `
+  -WorkingDirectory $Root -WindowStyle Hidden -RedirectStandardOutput $MetadataLog `
+  -RedirectStandardError $MetadataErrLog -PassThru
+if (-not $metadataProc) { throw "Failed to start matrix/workbench service." }
+$metadataProc.Id | Out-File -FilePath $MetadataPid -Encoding ascii -Force
+
 # Wait until BOTH are healthy before opening the browser (R load can take 30–90s).
 $healthUrl = "http://127.0.0.1:$ApiPort/api/health"
 $webUrl = "http://127.0.0.1:$WebPort/"
 $deadline = (Get-Date).AddSeconds($StartupTimeoutSeconds)
 $apiReady = $false
 $webReady = $false
+$metadataReady = $false
 while ((Get-Date) -lt $deadline) {
   $apiProc.Refresh()
   $webProc.Refresh()
+  $metadataProc.Refresh()
+  if ($metadataProc.HasExited) {
+    Show-EmpTailLog $MetadataErrLog "Metadata stderr"
+    throw "Matrix/workbench service exited before readiness."
+  }
   if ($apiProc.HasExited) {
     Show-EmpTailLog $ApiLog "API stdout"
     Show-EmpTailLog $ApiErrLog "API stderr"
@@ -193,11 +239,12 @@ while ((Get-Date) -lt $deadline) {
 
   if (-not $apiReady) { $apiReady = Test-EmpHttpOk $healthUrl }
   if (-not $webReady) { $webReady = Test-EmpHttpOk $webUrl }
-  if ($apiReady -and $webReady) { break }
+  if (-not $metadataReady) { $metadataReady = Test-EmpHttpOk "http://127.0.0.1:$MetadataPort/api/public-data/health" }
+  if ($apiReady -and $webReady -and $metadataReady) { break }
   Start-Sleep -Seconds 1
 }
 
-if (-not $apiReady -or -not $webReady) {
+if (-not $apiReady -or -not $webReady -or -not $metadataReady) {
   if (-not $apiReady) {
     Show-EmpTailLog $ApiLog "API stdout"
     Show-EmpTailLog $ApiErrLog "API stderr"
@@ -227,4 +274,14 @@ if (-not (Test-EmpLoopbackHost $ApiHost) -or -not (Test-EmpLoopbackHost $WebHost
       Write-Host "API (局域网):      http://${lan}:$ApiPort/api/health"
     }
   } catch {}
+}
+
+$startupComplete = $true
+} finally {
+  if (-not $startupComplete) {
+    foreach ($child in @($apiProc, $webProc, $metadataProc)) {
+      if ($child) { Stop-Process -Id $child.Id -Force -ErrorAction SilentlyContinue }
+    }
+    Remove-Item -LiteralPath $ApiPid, $WebPid, $MetadataPid -Force -ErrorAction SilentlyContinue
+  }
 }

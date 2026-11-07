@@ -29,7 +29,17 @@ source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/clinical.R"))
 source(file.path(.BACKEND_DIR, "helpers/jobs.R"))
+source(file.path(.BACKEND_DIR, "helpers/i18n_locale.R"))
+source(file.path(.BACKEND_DIR, "helpers/platform_info.R"))
+source(file.path(.BACKEND_DIR, "helpers/qc_rigor.R"))
+source(file.path(.BACKEND_DIR, "helpers/run_pipeline_cache.R"))
+source(file.path(.BACKEND_DIR, "helpers/multiomics_joint.R"))
+source(file.path(.BACKEND_DIR, "helpers/repro_report.R"))
+source(file.path(.BACKEND_DIR, "helpers/memory_utils.R"))
+source(file.path(.BACKEND_DIR, "helpers/viz_qc.R"))
 source(file.path(.BACKEND_DIR, "helpers/agent_api.R"))
+source(file.path(.BACKEND_DIR, "helpers/omics_workbench.R"))
+source(file.path(.BACKEND_DIR, "helpers/integration_workbench.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_exec.R"))
 source(file.path(.BACKEND_DIR, "helpers/llm.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_evolution.R"))
@@ -115,11 +125,48 @@ function(res) {
 }
 
 #* List all supported omics workflows
+#* @get /api/workbench/capabilities
+#* @serializer unboxedJSON
+function(res) {
+  safe_api({ emp_wb_capabilities() }, res)
+}
+
+#* Submit a confirmed registered count workflow (never arbitrary R)
+#* @post /api/workbench/run
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    if (nchar(req$postBody, type = "bytes") > 18 * 1024^2) stop("Workbench request exceeds 18 MiB")
+    emp_wb_submit(jsonlite::fromJSON(req$postBody, simplifyVector = FALSE), emp_request_principal(req))
+  }, res)
+}
+
+#* List all supported omics workflows
 #* @get /api/workflows
 #* @serializer unboxedJSON
 function(res) {
   safe_api({
     list(success = TRUE, workflows = list_workflows())
+  }, res)
+}
+
+#* Inspect selected multi-study matrices without inferring sample pairing
+#* @post /api/integration/preview
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    if (nchar(req$postBody, type = "bytes") > 18 * 1024^2) stop("Integration request exceeds 18 MiB")
+    emp_iw_preview(jsonlite::fromJSON(req$postBody, simplifyVector = FALSE))
+  }, res)
+}
+
+#* Run reviewed matched-subject exploratory multi-omics analysis
+#* @post /api/integration/run
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    if (nchar(req$postBody, type = "bytes") > 18 * 1024^2) stop("Integration request exceeds 18 MiB")
+    emp_iw_submit(jsonlite::fromJSON(req$postBody, simplifyVector = FALSE), emp_request_principal(req))
   }, res)
 }
 
@@ -2132,6 +2179,17 @@ function(req, res) {
   }, res)
 }
 
+#* List recent background jobs (job tray)
+#* @get /api/jobs
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    limit <- suppressWarnings(as.integer(req$args$limit %||% 20L))
+    if (is.na(limit) || limit < 1L) limit <- 20L
+    list(success = TRUE, jobs = list_jobs(limit = limit))
+  }, res)
+}
+
 #* Poll job status
 #* @get /api/jobs/<job_id>
 #* @serializer unboxedJSON
@@ -2149,7 +2207,7 @@ function(job_id, res) {
 
 #* Fetch the result of a completed job
 #* @get /api/jobs/<job_id>/result
-#* @serializer unboxedJSON
+#* @serializer unboxedJSON list(digits=NA, na="null", null="null")
 function(job_id, res) {
   safe_api({
     st <- get_job_status(job_id)
@@ -2163,6 +2221,10 @@ function(job_id, res) {
       res$status <- 500
       return(list(success = FALSE, error = "Result not available"))
     }
+    if (identical(st$kind, "count_workbench") && is.list(result_obj) &&
+        identical(result_obj$contract, EMP_WB_CONTRACT)) return(result_obj)
+    if (identical(st$kind, "integration_exploration") && is.list(result_obj) &&
+        identical(result_obj$contract, "emp-integration-exploration-v1")) return(result_obj)
     # Three shapes are possible:
     #   - a list returned by run_all_* (bundle metadata)
     #   - a rich list returned by run_enrichment (data df + plot + counts)
@@ -2260,6 +2322,13 @@ function(req, res) {
 }
 
 #* List bundles produced for a session
+#* @get /api/bundles
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({ list(success = TRUE, bundles = emp_list_owned_bundles(emp_request_principal(req))) }, res)
+}
+
+#* List bundles produced for a session
 #* @get /api/bundles/<session_id>
 #* @serializer unboxedJSON
 function(session_id, res) {
@@ -2280,6 +2349,10 @@ function(session_id, res) {
 #* @get /api/bundles/<session_id>/<bundle_name>
 #* @serializer contentType list(type="application/zip")
 function(session_id, bundle_name, res) {
+  if (length(bundle_name) != 1L || nchar(bundle_name) > 184L || !grepl("^[A-Za-z0-9_.-]+\\.zip$", bundle_name) || grepl("..", bundle_name, fixed = TRUE)) {
+    res$status <- 400
+    return(charToRaw('{"success":false,"error":"Invalid bundle filename"}'))
+  }
   zip_path <- file.path(session_path(session_id), "bundles", bundle_name)
   if (!file.exists(zip_path) || !grepl("\\.zip$", bundle_name)) {
     res$status <- 404
@@ -2287,6 +2360,7 @@ function(session_id, bundle_name, res) {
   }
   res$setHeader("Content-Disposition",
                 sprintf('attachment; filename="%s"', bundle_name))
+  res$setHeader("Cache-Control", "no-store")
   readBin(zip_path, what = "raw", n = file.info(zip_path)$size)
 }
 
@@ -3824,4 +3898,31 @@ function(req, res) {
 #* @serializer unboxedJSON
 function() {
   list(status = "ok", version = as.character(packageVersion("EasyMultiProfiler")))
+}
+
+#* System / platform info (v9.1.0: Windows / macOS / Linux auto-detection)
+#* @get /api/system/info
+#* @serializer unboxedJSON
+function() {
+  info <- emp_platform_info()
+  info$emp_version <- "9.1.0"
+  info
+}
+
+#* Memory usage of the API R session (v9.1.0 Round 2)
+#* @get /api/system/memory
+#* @serializer unboxedJSON
+function() {
+  emp_memory_info()
+}
+
+#* Locale negotiation (v9.1.0: geo country header > Accept-Language > zh)
+#* @get /api/locale/negotiate
+#* @serializer unboxedJSON
+function(req) {
+  country <- req$HTTP_CF_IPCOUNTRY
+  if (is.null(country) || !nzchar(country)) country <- req$HTTP_X_GEO_COUNTRY
+  accept_language <- req$HTTP_ACCEPT_LANGUAGE
+  locale <- emp_negotiate_locale(country, accept_language)
+  list(locale = locale, dir = emp_locale_dir(locale))
 }

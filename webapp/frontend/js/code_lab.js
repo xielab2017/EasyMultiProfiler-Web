@@ -4,7 +4,33 @@
  */
 import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-07-16-multi-demo";
 import { codeLabArtifactURL, execUserR, getOpenRouterVerified, optimizeRCode, probeOpenRouterModels } from "./api.js?v=2026-07-22-script-fusion-v1";
-import { t } from "./locale.js?v=i18n-zh-default-v1";
+import { t, getLocale } from "./locale.js?v=i18n-zh-default-v1";
+import { featureText } from "./feature_i18n.mjs?v=2";
+import { mountAnalysisGuide } from "./analysis_guide.js?v=1";
+import { mountModelSettings } from './model_settings.js';
+
+const guideText = source => featureText(source, getLocale());
+let guideController = null;
+
+function setPanelMode(mode) {
+  if (!rootEl) return;
+  rootEl.dataset.mode = mode === 'code' ? 'code' : 'guide';
+  for (const name of ['guide','code']) {
+    rootEl.querySelector(`#code-lab-${name}-panel`).hidden = name !== rootEl.dataset.mode;
+    const button=rootEl.querySelector(`[data-panel-mode="${name}"]`);
+    button.classList.toggle('active',name===rootEl.dataset.mode);
+    button.setAttribute('aria-selected',String(name===rootEl.dataset.mode));
+  }
+  setHeadTitle();syncDockLayout();
+}
+
+function guideSnapshot() {
+  const group=document.getElementById('clin-three-group')?.value||'';
+  return {workflow:state.workflow,tab:state.tab,omics:document.getElementById('omics-pipeline')?.value||'',
+    experimentName:window._emp?.currentExp||'',hasExperiment:!!window._emp?.currentExp,
+    hasStandaloneClinical:!!window._emp?.standaloneClinical,hasGroup:!!group,
+    groupSelection:state.workflow==='clinical'?group:'',clinicalSource:state.workflow==='clinical'?clinicalSourceValue():''};
+}
 
 const LS_KEY = "emp_code_lab_store_v1";
 const LLM_CFG_KEY = "emp_code_lab_llm_config_v2";
@@ -353,15 +379,20 @@ const LLM_PROVIDER_CATALOG = {
   },
   minimax: {
     models: [
-      { id: "MiniMax-M2.5", label: "MiniMax-M2.5（推荐）" },
+      { id: "MiniMax-M3.1-Flash", label: "MiniMax-M3.1-Flash" },
       { id: "MiniMax-M3", label: "MiniMax-M3" },
+      { id: "MiniMax-M2.5", label: "MiniMax-M2.5" },
       { id: "MiniMax-Text-01", label: "MiniMax-Text-01" },
       { id: "__custom__", label: "自定义模型…" },
     ],
-    defaultModel: "MiniMax-M2.5",
-    baseUrl: "https://api.minimax.chat/v1",
+    defaultModel: "MiniMax-M3",
+    baseUrl: "https://api.minimax.cn/v1",
     baseUrlEditable: false,
     keyRequired: true,
+  },
+  monica: {
+    models: [{id:'gpt-4o',label:'gpt-4o'},{id:'__custom__',label:'自定义模型…'}],
+    defaultModel:'gpt-4o',baseUrl:'https://openapi.monica.im/v1',baseUrlEditable:false,keyRequired:true,
   },
   gemini: {
     models: [
@@ -726,6 +757,10 @@ function isBaseUrlCustomMode(provider) {
 }
 
 function resolveBaseUrl(provider) {
+  if(provider==='minimax'){
+    const profile=providerProfile(provider),region=document.getElementById('models-minimax-region')?.value||profile.region||'china',protocol=document.getElementById('models-minimax-protocol')?.value||profile.protocol||'openai';
+    return (region==='international'?'https://api.minimax.io':'https://api.minimax.cn')+(protocol==='anthropic'?'/anthropic':'/v1');
+  }
   const cat = LLM_PROVIDER_CATALOG[provider] || {};
   const saved = (providerProfile(provider).base_url || "").trim();
   if (provider === "custom") {
@@ -861,6 +896,7 @@ function saveCurrentProviderProfile() {
     model: getSelectedModel(),
     base_url: baseUrl,
     ...(providerHasPresetUrl(provider) ? { base_url_mode: mode } : {}),
+    ...(provider==='minimax'?{region:document.getElementById('models-minimax-region')?.value||'china',protocol:document.getElementById('models-minimax-protocol')?.value||'openai'}:{}),
   };
   if (provider === "openrouter" && isOpenRouterFusionMode(provider)) {
     const raw = llmConfigEls.openrouter_models?.value || "";
@@ -913,7 +949,7 @@ function syncDockLayout() {
   const visible = !rootEl.classList.contains("code-lab--hidden");
   const docked = visible && open;
   document.body.classList.toggle("code-lab-docked", docked);
-  consoleEl?.classList.toggle("hidden", !docked);
+  consoleEl?.classList.toggle("hidden", !docked || rootEl.dataset.mode !== 'code');
   if (docked) repositionConsolePanel();
 }
 
@@ -1010,11 +1046,12 @@ function setLlmStatus(message, kind = "muted") {
   if (!llmStatusEl) return;
   llmStatusEl.textContent = kind === "error" ? formatLlmError(message) : (message || "");
   llmStatusEl.dataset.kind = kind;
+  const settingsStatus=document.getElementById('models-legacy-status');if(settingsStatus)settingsStatus.textContent=llmStatusEl.textContent;
 }
 
 function applyLlmConfigToForm() {
   const cfg = loadLlmConfig();
-  const provider = cfg.provider || "auto";
+  const provider = cfg.provider && LLM_PROVIDER_CATALOG[cfg.provider] ? cfg.provider : "auto";
   if (llmConfigEls.provider) llmConfigEls.provider.value = provider;
   if (llmConfigEls.task_type) {
     llmConfigEls.task_type.value = cfg.task_type || "code_optimize";
@@ -1186,6 +1223,7 @@ function collectLlmConfig({ persistGlobal = false } = {}) {
     model: getSelectedModel(),
     base_url: resolveBaseUrl(provider),
     task_type: llmConfigEls.task_type?.value || "code_optimize",
+    ...(provider==='minimax'?{region:document.getElementById('models-minimax-region')?.value||profile.region||'china',protocol:document.getElementById('models-minimax-protocol')?.value||profile.protocol||'openai'}:{}),
     remote_host: llmConfigEls.remote_host?.value || "",
     remote_port: llmConfigEls.remote_port?.value || "",
     remote_path: llmConfigEls.remote_path?.value || "/api/llm/optimize_r",
@@ -1421,6 +1459,8 @@ function escapeAttr(s) {
 }
 
 function clinicalSnippetLabel(key) {
+  const localized={cor:['特征 × 性状相关','Feature × trait correlation'],fitline:['散点与回归线','Scatter and regression line'],wgcna:['WGCNA（后台任务）','WGCNA (background job)'],joint:['多组学联合','Multi-omics integration'],marker_model:['多组学标志物模型','Multi-omics marker model']};
+  if(localized[key])return localized[key][['zh','zh-TW'].includes(getLocale())?0:1];
   const i18n = {
     three_line: "clinical.threeLine",
     systematic: "clinical.systematic",
@@ -1433,6 +1473,9 @@ function clinicalSnippetLabel(key) {
 function setHeadTitle() {
   const h = rootEl?.querySelector(".code-lab-head h4");
   if (!h) return;
+  if (rootEl.dataset.mode !== 'code') {
+    h.textContent=guideText('分析助手');return;
+  }
   if (!state.workflow) {
     h.textContent = t("codelab.headTitle");
     return;
@@ -1446,22 +1489,25 @@ function setHeadTitle() {
 
 export function applyCodeLabI18n() {
   if (!rootEl) return;
-  const q = (sel) => rootEl.querySelector(sel);
+  const q = (sel) => rootEl.querySelector(sel)||document.getElementById('model-settings-root')?.querySelector(sel);
   const setText = (sel, key) => { const el = q(sel); if (el) el.textContent = t(key); };
   setText(".code-lab-head h4", "codelab.headTitle");
   const badge = q(".code-lab-badge");
-  if (badge) badge.textContent = t("codelab.badge");
+  if (badge) badge.textContent = guideText('引导 · 计划 · 审核');
+  const collapse=q('#code-lab-guide-collapse');if(collapse)collapse.textContent=guideText('收起助手');
+  for(const button of rootEl.querySelectorAll('[data-panel-mode]'))button.textContent=guideText(button.dataset.panelMode==='guide'?'分析引导':'代码与模型（高级）');
   const hint = q(".code-lab-hint");
-  if (hint) hint.innerHTML = t("codelab.intro");
+  if (hint) hint.textContent = guideText('实现参考可能含请求变量与路由包装，不代表可独立运行。自定义脚本需审核输入、设计和执行环境。');
+  const paneHeading=q('.code-lab-pane-src-head');if(paneHeading)paneHeading.textContent=guideText('代码与模型（高级）');
   setText("#code-lab-clinical-row label", "codelab.clinicalStep");
   const srcTitle = q(".code-lab-code-block:first-of-type .code-lab-code-title span");
-  if (srcTitle) srcTitle.textContent = t("codelab.sourceLabel");
+  if (srcTitle) srcTitle.textContent = guideText('系统实现参考（只读；可运行性未核验）');
   setText("#code-lab-use-source", "codelab.copyToOpt");
   const optTitle = q(".code-lab-code-block:nth-of-type(2) .code-lab-code-title span");
-  if (optTitle) optTitle.textContent = t("codelab.optLabel");
+  if (optTitle) optTitle.textContent = guideText('自定义脚本草稿（执行前审核）');
   setText("#code-lab-run-source", "codelab.runSource");
   const llmSum = q("#code-lab-llm-wrap > summary");
-  if (llmSum) llmSum.textContent = t("codelab.llmConfig");
+  if (llmSum) llmSum.textContent = guideText('代码优化指令与操作');
   setText("#code-lab-exec", "codelab.runOptShort");
   setText("#code-lab-llm-optimize", "codelab.optimize");
   setText("#code-lab-llm-fuse", "codelab.fuseExternal");
@@ -1497,6 +1543,7 @@ export function applyCodeLabI18n() {
     clinicalSel.value = cur;
   }
   setHeadTitle();
+  guideController?.render();
 }
 
 function applyContext(workflow, tab) {
@@ -1523,6 +1570,7 @@ function applyContext(workflow, tab) {
   setHeadTitle();
   showDock();
   renderHistory();
+  guideController?.refresh();
 }
 
 function runallTabId() {
@@ -1538,6 +1586,7 @@ export function applyCopilotAction({ page, tab, instruction, autoOptimize = fals
     applyContext(wf, tab || detectActiveTabInPage(wf) || DEFAULT_TAB[wf]);
     showDock();
     rootEl.classList.add("code-lab--open");
+    setPanelMode('code');
     syncDockLayout();
   }
   const inst = document.getElementById("code-lab-llm-instruction");
@@ -1604,13 +1653,20 @@ export async function initCodeLab() {
   rootEl.id = "code-lab-root";
   rootEl.dataset.empLayout = "v3";
   rootEl.className = "code-lab--hidden code-lab--open";
+  rootEl.dataset.mode = 'guide';
   rootEl.innerHTML = `
     <div class="code-lab-head" title="Click to expand / collapse">
-      <h4>流程代码</h4>
-      <span class="code-lab-badge">原始/优化 R · LLM</span>
+      <h4>分析助手</h4>
+      <span class="code-lab-badge">引导 · 计划 · 审核</span>
+      <button type="button" id="code-lab-guide-collapse" class="btn btn-outline">收起助手</button>
     </div>
     <div class="code-lab-body">
-      <div class="code-lab-pane-src code-lab-pane-src--full">
+      <div class="code-lab-mode-tabs" role="tablist" aria-label="Assistant mode">
+        <button type="button" role="tab" data-panel-mode="guide" aria-selected="true" class="active">分析引导</button>
+        <button type="button" role="tab" data-panel-mode="code" aria-selected="false">代码与模型（高级）</button>
+      </div>
+      <div id="code-lab-guide-panel" class="analysis-guide"></div>
+      <div class="code-lab-pane-src code-lab-pane-src--full" id="code-lab-code-panel" hidden>
         <div class="code-lab-pane-src-head">System Source vs Optimized R</div>
         <p class="code-lab-hint">
           上方是系统生成的纯 R 原始脚本；下方可粘贴外来分析/绘图脚本，或人工/LLM 优化。
@@ -1648,6 +1704,7 @@ export async function initCodeLab() {
                 <option value="deepseek">DeepSeek</option>
                 <option value="qwen">Qwen</option>
                 <option value="minimax">MiniMax</option>
+                <option value="monica">Monica API</option>
                 <option value="gemini">Gemini</option>
                 <option value="claude">Claude</option>
                 <option value="nvidia">NVIDIA NIM</option>
@@ -1807,13 +1864,34 @@ export async function initCodeLab() {
     clinicalSel.appendChild(o);
   }
   clinicalSel.addEventListener("change", () => {
+    const mainStrategy=document.getElementById('clin-analysis-strategy');
+    if(mainStrategy && [...mainStrategy.options].some(option=>option.value===clinicalSel.value)) {
+      mainStrategy.value=clinicalSel.value;mainStrategy.dispatchEvent(new Event('change',{bubbles:true}));
+    }
     applyContext("clinical", clinicalSel.value);
   });
+
+  rootEl.querySelector('.code-lab-body').insertBefore(clinicalRow,rootEl.querySelector('.code-lab-mode-tabs'));
+  for(const button of rootEl.querySelectorAll('[data-panel-mode]'))button.addEventListener('click',()=>setPanelMode(button.dataset.panelMode));
+  guideController=mountAnalysisGuide(rootEl.querySelector('#code-lab-guide-panel'),{
+    snapshot:guideSnapshot,
+    focusSettings:target=>{
+      const active=document.querySelector('.page.active');
+      const input=(target&&document.getElementById(target))||active?.querySelector('.form-grid select, .form-grid input');
+      input?.scrollIntoView({behavior:'smooth',block:'center'});input?.focus();
+    },
+    openWorkbench:detail=>{
+      document.querySelector('.nav-item[data-page="workbench"]')?.click();
+      if(detail)window.dispatchEvent(new CustomEvent('emp:workbench-proposal',{detail}));
+    },
+  });
+  setPanelMode('guide');
 
   rootEl.querySelector(".code-lab-head").addEventListener("click", () => {
     rootEl.classList.toggle("code-lab--open");
     syncDockLayout();
   });
+  rootEl.querySelector('#code-lab-guide-collapse').addEventListener('click',event=>{event.stopPropagation();rootEl.classList.remove('code-lab--open');syncDockLayout();});
 
   rootEl.querySelector("#code-lab-toggle-collapse").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2042,6 +2120,9 @@ async function runLlmOptimize({ forceExternal = false } = {}) {
     if (state.workflow === "runall") applyContext("runall", runallTabId());
   });
 
+  const llmWrap=rootEl.querySelector('#code-lab-llm-wrap');
+  mountModelSettings(document.getElementById('model-settings-root'),{legacyWrap:llmWrap,readConfiguration:(persist=false)=>{if(persist)saveCurrentProviderProfile();return collectLlmConfig({persistGlobal:persist});}});
+  const modelSettingsLink=document.createElement('button');modelSettingsLink.type='button';modelSettingsLink.className='btn btn-outline';modelSettingsLink.dataset.featureText='模型与 API';modelSettingsLink.textContent=guideText('模型与 API');modelSettingsLink.onclick=()=>document.querySelector('.nav-item[data-page="models"]')?.click();llmWrap.prepend(modelSettingsLink);
   applyCodeLabI18n();
   window.addEventListener("emp:locale-change", () => applyCodeLabI18n());
 }

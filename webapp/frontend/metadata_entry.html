@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EMP · 启动新功能</title><style>body{max-width:900px;margin:40px auto;padding:20px;font:18px/1.7 system-ui;color:#18364a;background:#f5f8fa}section{padding:22px;background:white;margin:20px 0;border-radius:12px}a{color:#1255a0}code{background:#e6edf2;padding:3px}strong{color:#703900}</style></head><body>
+<h1>v9.1.3 新功能入口 / New features</h1>
+<p>论文/PDF、GEO/SRA/ENA、count matrix下载、流程搭建预检、受限AI工具接口在独立的元数据服务中。它不会随原R首页自动启动。</p>
+<p>The metadata service is separate from the R application. Opening this page does not start it or configure an AI model.</p>
+<section><h2>1. 从当前开发版目录启动</h2><ul><li>Windows：双击 <code>Start-EMP-Metadata.cmd</code></li><li>macOS：打开 <code>Start-EMP-Metadata.command</code></li><li>Linux：执行 <code>bash Start-EMP-Metadata.sh</code></li><li>通用：<code>python webapp/scripts/launch_metadata.py</code></li></ul><p>需Python≥3.10，不需要R。PDF解析另需pypdf。终端会显示准确网址；如果端口已修改，请用终端网址。</p></section>
+<section><h2>2. 打开元数据页面</h2><p><a href="http://127.0.0.1:8081/public_data.html" target="_blank" rel="noopener">打开默认本机入口 / Open default local service</a></p><p>此链接只适用于在你当前电脑启动服务且未改端口的情况；若连接失败，请先启动上一步。远程服务器请使用已获批准的访问方式，不要直接公开端口。</p><p><strong>已实现：</strong>小型处理矩阵的单独确认下载、流程预检、可选只读智能体接口。<strong>未实现或未验收：</strong>FASTQ下载执行、完整R分析衔接、多组学执行、真实模型调用。页面不接收API密钥。</p></section>
+<p><a href="tutorial.html">图解教程 / Illustrated tutorial</a> · <a href="index.html">返回主界面 / Main interface</a></p>
+</body></html>

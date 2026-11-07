@@ -4,6 +4,8 @@ $script:EMP_RepoRoot = $null
 function Initialize-EMPPaths {
   param([Parameter(Mandatory)][string]$ScriptsDir)
   $script:EMP_RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptsDir)
+  $localLib = Join-Path $script:EMP_RepoRoot ".local_run\R_libs"
+  if (Test-Path -LiteralPath $localLib) { $env:R_LIBS_USER = $localLib }
 }
 
 function Get-EMPRepoRoot {
@@ -188,4 +190,20 @@ function Stop-EMPListenersOnPorts {
       throw "Port $port is still in use by PID(s) $owners. Stop that process or choose another port."
     }
   }
+}
+
+# Match only absolute recognized script paths in this checkout. Legacy relative
+# command lines are deliberately not trusted when a PID might have been reused.
+function Test-EMPProcessOwnership {
+  param([string]$CommandLine, [string]$Root)
+  if (-not $CommandLine -or -not $Root) { return $false }
+  $normalizedRoot = [System.IO.Path]::GetFullPath($Root).Replace('\', '/').TrimEnd('/')
+  $normalizedCommand = $CommandLine.Replace('\', '/')
+  foreach ($script in @('backend/run_api.R', 'scripts/static_server.py', 'scripts/emp_gateway.py', 'scripts/public_data_server.py')) {
+    $expected = [regex]::Escape("$normalizedRoot/webapp/$script")
+    if ($normalizedCommand -match ('(?:^|[\s"' + "'" + '])' + $expected + '(?=$|[\s"' + "'" + '])')) {
+      return $true
+    }
+  }
+  return $false
 }

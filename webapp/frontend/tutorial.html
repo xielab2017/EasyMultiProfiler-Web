@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EMP · Illustrated metadata walkthrough</title>
+<style>body{max-width:1080px;margin:32px auto;padding:0 20px;font:17px/1.6 system-ui;color:#18364a;background:#f5f8fa}video{width:100%;background:#102333;border-radius:12px}.note{background:#fff3d1;padding:16px}button{font:inherit;margin:4px;padding:8px}a{color:#1255a0}#failure{color:#8b1717}li{margin:10px 0}</style></head><body>
+<h1>EasyMultiProfiler · Metadata walkthrough</h1>
+<p>English narration · 中文字幕 / English captions · Illustrated guide, not a screen recording</p>
+<p class="note">本教程为原创图解操作指南，不是实机录屏；讲解无需 R 的元数据界面与流程预检。未演示真实 AI 调用或 R 分析。This illustrated guide is not a screen recording and does not demonstrate live model calls or completed R analyses.</p>
+<video id="tutorial" controls preload="metadata" playsinline>
+<source src="videos/emp_metadata_walkthrough.mp4" type="video/mp4">
+<track kind="subtitles" label="English" srclang="en" src="videos/emp_metadata_walkthrough.en.vtt">
+<track kind="subtitles" label="中文" srclang="zh" src="videos/emp_metadata_walkthrough.zh.vtt">
+</video>
+<p id="failure" role="status" hidden>视频文件未安装或浏览器无法解码。可使用下方文字教程；视频就绪后刷新。Video unavailable: use the text guide below, or refresh after installing the media assets.</p>
+<p>中英字幕已嵌入画面；下列可选字幕轨可能重复显示。Bilingual captions are burned into the video; optional text tracks may duplicate them.</p>
+<p><button id="captions-en">English captions</button><button id="captions-zh">中文字幕</button><button id="captions-off">Captions off</button></p>
+<p><a href="videos/emp_metadata_walkthrough.mp4" download>Download video / 下载视频</a> · <a href="videos/emp_metadata_walkthrough.en.vtt" download>English VTT</a> · <a href="videos/emp_metadata_walkthrough.zh.vtt" download>中文 VTT</a></p>
+<h2>Text guide / 文字步骤</h2><ol>
+<li>Start the metadata-only launcher, then open its printed local address. 使用元数据启动器，打开终端显示的本机地址；不需要 R。</li>
+<li>Read the scope warnings. PDF extraction stays local; PubMed/GEO queries require network access. 阅读能力边界；PDF本地解析，公开文献和数据检索需要网络。</li>
+<li>Review processed matrix candidates, provenance, size and separate download confirmation. 文件名不能证明 raw counts；先核对来源、大小和注释，再确认下载。</li>
+<li>Edit the bulk RNA-seq plan and validate inputs and sample matching. A validated plan is not an executed analysis. 修改流程模块并检查样本ID、分组及数据类型；预检通过不代表分析完成。</li>
+<li>Preview the selected agent context before consenting to a configured provider. No key belongs in the page. 智能体需服务端安全配置与逐次授权；页面不收集密钥。</li>
+</ol><script src="js/tutorial.js"></script></body></html>

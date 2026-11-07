@@ -1,7 +1,7 @@
 /* Code Lab — main column: page + R output; right column: source editor (~25%). */
 :root {
   --code-lab-available: calc(100vw - var(--sidebar-w, 220px));
-  --code-lab-dock-w: calc(var(--code-lab-available) * 0.25);
+  --code-lab-dock-w: clamp(350px, calc(var(--code-lab-available) * 0.34), 480px);
   --code-lab-console-h: min(45vh, 520px);
 }
 
@@ -199,6 +199,24 @@ body.code-lab-docked #global-progress {
   overflow: hidden;
   flex-shrink: 0;
 }
+#code-lab-code-panel[hidden],#code-lab-guide-panel[hidden]{display:none!important}
+.analysis-guide [hidden]{display:none!important}
+.code-lab-mode-tabs{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid #dce5ed;flex-shrink:0}
+.code-lab-mode-tabs button{flex:1;border:1px solid #cbd5e1;padding:9px 6px;border-radius:7px;background:#fff;color:#475569;cursor:pointer;font-size:12px}
+.code-lab-mode-tabs button.active{color:#0f766e;border-color:#0f766e;background:#eefaf7;font-weight:600}
+.analysis-guide{padding:14px;overflow:auto;line-height:1.7;min-height:0;flex:1}
+.analysis-guide h3{font-size:17px;margin:8px 0}.analysis-guide h4{font-size:14px;margin:16px 0 7px}
+.analysis-guide p,.analysis-guide li{font-size:13px}.analysis-guide ul,.analysis-guide ol{padding-inline-start:20px}
+.analysis-guide-badge{background:#e0f2ef;color:#115e59;border-radius:12px;padding:3px 9px;font-size:11px}
+.analysis-guide-selection,.analysis-guide-note{color:#64748b;overflow-wrap:anywhere}
+.analysis-guide-readiness{display:grid;gap:3px;background:#f8fafc;padding:9px;border-radius:7px}
+.analysis-guide-readiness strong{font-size:11px;color:#92400e}.analysis-guide-actions{display:flex;gap:6px;flex-wrap:wrap}
+.analysis-guide-actions .btn{padding:7px 9px!important;font-size:12px!important}
+.analysis-guide-service{font-size:12px;background:#f1f5f9;padding:10px;border-radius:7px;margin:12px 0}
+.analysis-guide label{display:block}.analysis-guide textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;padding:9px;border-radius:7px;font:inherit;margin:6px 0}
+.analysis-guide-consent{display:flex!important;gap:7px;font-size:11px;line-height:1.5;margin:8px 0 12px}
+.analysis-guide-consent input{width:auto;flex-shrink:0;align-self:flex-start;margin-top:4px}
+.analysis-guide-answer{white-space:pre-wrap;font-size:13px;overflow-wrap:anywhere;margin:12px 0}
 
 #code-lab-root.code-lab--hidden {
   display: none;

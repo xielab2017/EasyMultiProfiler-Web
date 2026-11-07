@@ -1,0 +1,138 @@
+[
+  {
+    "index": 0,
+    "scene": "Start with the right scope",
+    "start": 0,
+    "end": 9.166667,
+    "en": "Welcome to Easy Multi Profiler Web, version nine point one point two. This illustrated guide covers the metadata-only workflow.",
+    "zh": "欢迎使用 EasyMultiProfiler-Web 9.1.2。本图解教程介绍元数据工作流。"
+  },
+  {
+    "index": 1,
+    "scene": "Start with the right scope",
+    "start": 9.166667,
+    "end": 17.0,
+    "en": "You can review public data and prepare analysis plans. Raw read downloads and R analysis are not connected in this mode.",
+    "zh": "可以查看公开数据并准备分析计划。此模式尚未接入原始 reads 下载和 R 分析。"
+  },
+  {
+    "index": 2,
+    "scene": "Launch the metadata page",
+    "start": 17.0,
+    "end": 25.75,
+    "en": "From the repository folder, run the dependency check, then start the metadata launcher. Keep that terminal open.",
+    "zh": "在仓库目录运行依赖检查，再启动元数据服务。使用页面时请保持终端开启。"
+  },
+  {
+    "index": 3,
+    "scene": "Launch the metadata page",
+    "start": 25.75,
+    "end": 33.583333,
+    "en": "Open the local address shown here. Python version three point ten or later is required. R is not needed for metadata.",
+    "zh": "打开此处显示的本地地址。需要 Python 3.10 或更高版本；元数据功能不需要 R。"
+  },
+  {
+    "index": 4,
+    "scene": "Locate a study or accession",
+    "start": 33.583333,
+    "end": 42.333333,
+    "en": "Use a public keyword to search G E O, or enter an accession and read its sample manifest. Review the study before selecting runs.",
+    "zh": "输入公开关键词检索 GEO，或输入 accession 读取样本清单。选择 runs 前先核对研究。"
+  },
+  {
+    "index": 5,
+    "scene": "Locate a study or accession",
+    "start": 42.333333,
+    "end": 51.5,
+    "en": "This saved public example lists one paired-end run and two FASTQ links. These are metadata records, not downloaded reads.",
+    "zh": "此已保存的公开示例列出一个双端 run 和两个 FASTQ 链接。它们只是元数据，不是已下载的 reads。"
+  },
+  {
+    "index": 6,
+    "scene": "Select deliberately, then preflight",
+    "start": 51.5,
+    "end": 62.916667,
+    "en": "No runs are selected by default. Check the organism, library strategy, paired-end layout, and biological groups, then inspect the selected download plan.",
+    "zh": "默认不选择 run。核对物种、文库策略、单双端和实验分组，再检查所选下载计划。"
+  },
+  {
+    "index": 7,
+    "scene": "Select deliberately, then preflight",
+    "start": 62.916667,
+    "end": 73.833333,
+    "en": "Save the plan as JSON. Reported archive size excludes additional analysis space, and archive checksums have not been verified against local files.",
+    "zh": "将计划保存为 JSON。档案报告大小不含额外分析空间，档案校验值也尚未与本地文件核对。"
+  },
+  {
+    "index": 8,
+    "scene": "Review a processed matrix",
+    "start": 73.833333,
+    "end": 84.416667,
+    "en": "For processed data, enter a G E O series in the matrix section and discover its supplementary files. Inspect each candidate before confirming a download.",
+    "zh": "在已处理矩阵区输入 GEO 系列编号并发现补充文件。确认下载前，先审阅每个候选文件。"
+  },
+  {
+    "index": 9,
+    "scene": "Review a processed matrix",
+    "start": 84.416667,
+    "end": 93.833333,
+    "en": "Only supported text tables with a known size of at most thirty-two mebibytes can be downloaded. Archive bundles are not automatically unpacked.",
+    "zh": "仅支持已知大小不超过 32 MiB 的指定文本表格；不会自动解包归档文件。"
+  },
+  {
+    "index": 10,
+    "scene": "Prove the input, match the samples",
+    "start": 93.833333,
+    "end": 104.5,
+    "en": "A saved inspection of the example matrix found twenty-seven thousand, one hundred seventy-nine features and twelve samples. The Length column was excluded.",
+    "zh": "已保存的示例矩阵检查发现 27,179 个特征和 12 个样本；Length 列已排除。"
+  },
+  {
+    "index": 11,
+    "scene": "Prove the input, match the samples",
+    "start": 104.5,
+    "end": 114.75,
+    "en": "Integer values alone do not prove raw counts. Check the authors' methods, and match sample annotations by exact identifiers rather than column order.",
+    "zh": "整数本身不能证明是原始计数。请核对作者方法，并按精确标识符匹配样本注释，而非按列顺序。"
+  },
+  {
+    "index": 12,
+    "scene": "Build and validate the plan",
+    "start": 114.75,
+    "end": 125.583333,
+    "en": "Choose a bulk R N A sequencing template. Review the steps, dataset provenance, sample labels, contrast, and any batch terms, then validate the design.",
+    "zh": "选择 bulk RNA-seq 模板。核对步骤、数据来源、样本标签、比较组和批次，再校验统计设计。"
+  },
+  {
+    "index": 13,
+    "scene": "Build and validate the plan",
+    "start": 125.583333,
+    "end": 134.833333,
+    "en": "This synthetic teaching plan passes validation, but executable is still false. Passing preflight does not mean an analysis has run.",
+    "zh": "此人工教学计划通过了校验，但 executable 仍为 false。预检通过不代表已经运行分析。"
+  },
+  {
+    "index": 14,
+    "scene": "Keep papers and AI boundaries clear",
+    "start": 134.833333,
+    "end": 145.166667,
+    "en": "The paper section can extract accession candidates from a local P D F. PubMed search is separate, and a candidate still needs scientific verification.",
+    "zh": "论文区可从本地 PDF 提取候选 accession。PubMed 检索是独立操作，候选仍需科学核实。"
+  },
+  {
+    "index": 15,
+    "scene": "Keep papers and AI boundaries clear",
+    "start": 145.166667,
+    "end": 155.5,
+    "en": "The agent is unconfigured here. If you configure a provider later, preview the selected context and consent before sending. The tools remain read-only.",
+    "zh": "此处尚未配置智能体。以后配置 Provider 时，应先预览所选上下文并确认发送；工具仍是只读的。"
+  },
+  {
+    "index": 16,
+    "scene": "Finish with a reproducible review",
+    "start": 155.5,
+    "end": 167.166667,
+    "en": "Keep your data sources, sample mapping, and plan together. Discovery, input verification, and execution are different steps. This mode supports review and planning.",
+    "zh": "请保留数据来源、样本映射和流程计划。发现、输入验证与执行是不同步骤；此模式支持审阅和规划。"
+  }
+]

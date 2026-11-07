@@ -16,24 +16,44 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import metadata_proxy
+
+
 class RangeHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if not metadata_proxy.proxy(self): super().do_GET()
+
+    def do_POST(self):
+        if not metadata_proxy.proxy(self): self.send_error(405)
+
+    def do_HEAD(self):
+        if not metadata_proxy.proxy(self): super().do_HEAD()
+
     def end_headers(self):
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
     def send_head(self):
+        # Range is defined only for GET; reset state for reused connections.
+        self._range = None
         rng = self.headers.get("Range")
-        if not rng:
+        if self.command != "GET" or not rng:
             return super().send_head()
         path = self.translate_path(self.path)
         if not os.path.isfile(path):
             return super().send_head()
-        m = RANGE_RE.match(rng.strip())
+        m = RANGE_RE.fullmatch(rng.strip())
         if not m:
             return super().send_head()
-        size = os.path.getsize(path)
         start_s, end_s = m.group(1), m.group(2)
+        if not start_s and not end_s:
+            return super().send_head()
+        # Bound numeric parsing to avoid oversized-header integer conversion.
+        if len(start_s) > 20 or len(end_s) > 20:
+            return super().send_head()
+        size = os.path.getsize(path)
         if start_s == "":
             length = int(end_s)
             start = max(0, size - length)
@@ -90,6 +110,9 @@ def main():
         raise SystemExit(f"Frontend directory not found: {directory}")
     handler = partial(RangeHandler, directory=directory)
     httpd = EMPThreadingHTTPServer((host, port), handler)
+    httpd.metadata_port = int(os.environ.get("EMP_PUBLIC_DATA_PORT", "8081"))
+    if not 1 <= httpd.metadata_port <= 65535:
+        raise SystemExit("EMP_PUBLIC_DATA_PORT must be 1..65535")
     print(f"Serving {directory} on {host}:{port} (Range enabled)", flush=True)
     httpd.serve_forever()
 

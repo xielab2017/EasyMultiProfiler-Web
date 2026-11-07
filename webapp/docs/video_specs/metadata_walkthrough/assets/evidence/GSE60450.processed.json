@@ -1,0 +1,47 @@
+{
+  "accession": "GSE60450",
+  "title": "Transcriptome analysis of luminal and basal cell subpopulations in the lactating versus pregnant mammary gland",
+  "sample_accessions": [
+    "GSM1480291",
+    "GSM1480292",
+    "GSM1480293",
+    "GSM1480294",
+    "GSM1480295",
+    "GSM1480296",
+    "GSM1480297",
+    "GSM1480298",
+    "GSM1480299",
+    "GSM1480300",
+    "GSM1480301",
+    "GSM1480302"
+  ],
+  "files": [
+    {
+      "id": "0",
+      "name": "GSE60450_Lactation-GenewiseCounts.txt.gz",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE60nnn/GSE60450/suppl/GSE60450_Lactation-GenewiseCounts.txt.gz",
+      "format_hint": "tabular_candidate",
+      "data_type": "unknown",
+      "bytes": 513592,
+      "checksum": null,
+      "warning": "Filename and GEO supplementary status do not establish raw counts or analysis suitability."
+    },
+    {
+      "id": "1",
+      "name": "GSE60450_RAW.tar",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE60nnn/GSE60450/suppl/GSE60450_RAW.tar",
+      "format_hint": "archive",
+      "data_type": "unknown",
+      "bytes": 2191360,
+      "checksum": null,
+      "warning": "Filename and GEO supplementary status do not establish raw counts or analysis suitability."
+    }
+  ],
+  "sample_annotation_status": "GSM accession links only; sample groups are not inferred",
+  "maximum_download_bytes": 33554432,
+  "status": "processed_candidates",
+  "source": {
+    "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE60450&targ=self&form=text&view=quick",
+    "sha256": "2afbdf4f736f2f87edc988df6d53831988199ba44a77262ffbd9ac577ccc2fad"
+  }
+}

@@ -1,0 +1,70 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:09.167
+Welcome to Easy Multi Profiler Web, version nine point one point two. This illustrated guide covers the metadata-only workflow.
+
+2
+00:00:09.167 --> 00:00:17.000
+You can review public data and prepare analysis plans. Raw read downloads and R analysis are not connected in this mode.
+
+3
+00:00:17.000 --> 00:00:25.750
+From the repository folder, run the dependency check, then start the metadata launcher. Keep that terminal open.
+
+4
+00:00:25.750 --> 00:00:33.583
+Open the local address shown here. Python version three point ten or later is required. R is not needed for metadata.
+
+5
+00:00:33.583 --> 00:00:42.333
+Use a public keyword to search G E O, or enter an accession and read its sample manifest. Review the study before selecting runs.
+
+6
+00:00:42.333 --> 00:00:51.500
+This saved public example lists one paired-end run and two FASTQ links. These are metadata records, not downloaded reads.
+
+7
+00:00:51.500 --> 00:01:02.917
+No runs are selected by default. Check the organism, library strategy, paired-end layout, and biological groups, then inspect the selected download plan.
+
+8
+00:01:02.917 --> 00:01:13.833
+Save the plan as JSON. Reported archive size excludes additional analysis space, and archive checksums have not been verified against local files.
+
+9
+00:01:13.833 --> 00:01:24.417
+For processed data, enter a G E O series in the matrix section and discover its supplementary files. Inspect each candidate before confirming a download.
+
+10
+00:01:24.417 --> 00:01:33.833
+Only supported text tables with a known size of at most thirty-two mebibytes can be downloaded. Archive bundles are not automatically unpacked.
+
+11
+00:01:33.833 --> 00:01:44.500
+A saved inspection of the example matrix found twenty-seven thousand, one hundred seventy-nine features and twelve samples. The Length column was excluded.
+
+12
+00:01:44.500 --> 00:01:54.750
+Integer values alone do not prove raw counts. Check the authors' methods, and match sample annotations by exact identifiers rather than column order.
+
+13
+00:01:54.750 --> 00:02:05.583
+Choose a bulk R N A sequencing template. Review the steps, dataset provenance, sample labels, contrast, and any batch terms, then validate the design.
+
+14
+00:02:05.583 --> 00:02:14.833
+This synthetic teaching plan passes validation, but executable is still false. Passing preflight does not mean an analysis has run.
+
+15
+00:02:14.833 --> 00:02:25.167
+The paper section can extract accession candidates from a local P D F. PubMed search is separate, and a candidate still needs scientific verification.
+
+16
+00:02:25.167 --> 00:02:35.500
+The agent is unconfigured here. If you configure a provider later, preview the selected context and consent before sending. The tools remain read-only.
+
+17
+00:02:35.500 --> 00:02:47.167
+Keep your data sources, sample mapping, and plan together. Discovery, input verification, and execution are different steps. This mode supports review and planning.
+

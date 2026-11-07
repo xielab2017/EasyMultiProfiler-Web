@@ -1,0 +1,82 @@
+{
+  "valid": true,
+  "executable": false,
+  "errors": [],
+  "warnings": [
+    {
+      "code": "low_replicates",
+      "path": "steps[0]",
+      "message": "Two replicates per group provide limited power; prefer at least three."
+    },
+    {
+      "code": "metadata_only",
+      "path": "$",
+      "message": "File checksums, numeric matrix values, feature IDs, biological independence and transform suitability have not been verified. No files were read."
+    }
+  ],
+  "execution_blockers": [
+    "Analysis execution is not implemented in this validator; R/Bioconductor runtime and adapters are not verified."
+  ],
+  "recommended_template_ids": [
+    "bulk_counts"
+  ],
+  "record": {
+    "schema_version": 1,
+    "plan_sha256": "5e3050626ff98d77ca4b5cde4a338d4145cfa6ebefa63302bdca758427036c1c",
+    "plan": {
+      "datasets": [
+        {
+          "data_type": "raw_counts",
+          "id": "rna",
+          "omics": "bulk_rnaseq",
+          "provenance": {
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source": "SYNTHETIC TEACHING FIXTURE, NOT A REAL DATASET"
+          },
+          "sample_ids": [
+            "A1",
+            "A2",
+            "B1",
+            "B2"
+          ]
+        }
+      ],
+      "design": {
+        "contrast": [
+          "B",
+          "A"
+        ],
+        "group": "group"
+      },
+      "samples": [
+        {
+          "group": "A",
+          "id": "A1"
+        },
+        {
+          "group": "A",
+          "id": "A2"
+        },
+        {
+          "group": "B",
+          "id": "B1"
+        },
+        {
+          "group": "B",
+          "id": "B2"
+        }
+      ],
+      "steps": [
+        {
+          "dataset_id": "rna",
+          "id": "de",
+          "operation": "deseq2",
+          "parameters": {
+            "alpha": 0.05
+          }
+        }
+      ],
+      "version": 1
+    }
+  }
+}

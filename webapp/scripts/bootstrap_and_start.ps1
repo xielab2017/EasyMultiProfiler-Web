@@ -16,7 +16,7 @@ param(
   [switch]$NoBrowser
 )
 
-$ErrorActionPreference = "Continue"  # do not abort on individual step errors; we want clean messages
+$ErrorActionPreference = "Stop"
 
 $ScriptsDir = $PSScriptRoot
 $InstallDir = Join-Path $ScriptsDir "install"
@@ -43,8 +43,9 @@ if (-not $isWinPS) {
   elseif ($IsMacOS) { $hostOsName = "macos" }
   Write-Host "[emp-install] Detected host OS: $hostOsName"
   Write-Host "[emp-install] Handing off to bootstrap_and_start.sh"
-  $bashCmd = "bash '$ScriptsDir/bootstrap_and_start.sh'"
-  & bash -c $bashCmd
+  if ($NoStart) { throw "-NoStart is currently supported only on Windows." }
+  if ($NoBrowser) { $env:EMP_NO_BROWSER = "1" }
+  & bash (Join-Path $ScriptsDir "bootstrap_and_start.sh")
   exit $LASTEXITCODE
 }
 
@@ -127,7 +128,7 @@ try { & "$ScriptsDir\create_windows_shortcut.ps1" -Root $RepoRoot } catch {}
 
 Write-Host ""
 Write-Host "========================================================"
-Write-Host "  EasyMultiProfiler Web is running (API + frontend)."
+Write-Host "  EasyMultiProfiler Web installation completed."
 Write-Host "  Open: http://127.0.0.1:8080"
 Write-Host "  Desktop: 启动 EasyMultiProfiler.lnk  /  Start-EMP-Panel.bat"
 Write-Host "  Stop: Stop-EMP-Web-Windows.bat"

@@ -1,4 +1,4 @@
-﻿# install_from_github.ps1 — v9.0.4 one-line installer for Windows.
+﻿# install_from_github.ps1 — v9.1.0 one-line installer for Windows.
 #
 #   irm https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.ps1 | iex
 #
@@ -100,6 +100,6 @@ if (Test-Path (Join-Path $TargetDir ".git")) {
 $Root = Resolve-Path $TargetDir
 Set-Location $Root
 
-Write-EmpLog "Running V7 bootstrap (auto-installs R, python3, EMP)…"
+Write-EmpLog "Running v9.1.0 bootstrap (auto-installs R, python3, EMP)…"
 & "$Root\webapp\scripts\bootstrap_and_start.ps1"
 if ($LASTEXITCODE -ne 0) { throw "bootstrap_and_start.ps1 failed." }

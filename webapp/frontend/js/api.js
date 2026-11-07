@@ -1,4 +1,5 @@
 // API client – talks to the Plumber backend.
+import {fetchZip} from './authenticated_download.mjs';
 // The base URL is resolved lazily on every request so that the value
 // picked up at module-load time does not go stale if the surrounding
 // page re-configures window.API_BASE (e.g. after a late reverse-proxy
@@ -15,6 +16,11 @@ function resolveApiBase() {
   if (typeof window === "undefined" || !window.location) return "/api";
   const host = window.location.hostname || "127.0.0.1";
   const p = window.location.port || "";
+  const ports = window.EMP_RUNTIME_PORTS;
+  if (ports && Number.isInteger(ports.api) && ports.api >= 1 && ports.api <= 65535 &&
+      Number.isInteger(ports.web) && ports.web >= 1 && ports.web <= 65535 && p === String(ports.web)) {
+    return `http://${host}:${ports.api}/api`;
+  }
   if (p === "8080")  return `http://${host}:8000/api`;
   if (p === "18080") return `http://${host}:18000/api`;
   return "/api";
@@ -767,13 +773,21 @@ export async function runAllM16s(experiment, params = {}) {
 }
 
 export async function listBundles() {
-  const sid = sessionId();
-  return request("GET", `/bundles/${encodeURIComponent(sid)}`);
+  return request("GET", '/bundles', null, false, {skipSessionHeader:true});
 }
 
-export function bundleDownloadUrl(name) {
-  const sid = sessionId();
+export function bundleDownloadUrl(name, sid = sessionId()) {
   return `${resolveApiBase()}/bundles/${encodeURIComponent(sid)}/${encodeURIComponent(name)}`;
+}
+
+export async function downloadBundle(name, sourceSessionId=sessionId()){
+  if(typeof name!=='string'||!/^[-A-Za-z0-9_.]{1,180}\.zip$/.test(name)||name.includes('..'))throw Error('Invalid bundle filename');
+  const sid=sourceSessionId;if(typeof sid!=='string'||!/^[-A-Za-z0-9_]{1,128}$/.test(sid))throw Error('Please select the session that produced this result bundle');
+  const auth=headers();delete auth['Content-Type'];
+  auth['X-Session-Id']=sid;
+  const blob=await fetchZip(bundleDownloadUrl(name,sid),auth);
+  const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+  return {name,bytes:blob.size};
 }
 
 export async function pollJobUntilDone(jobId, onProgress = null, intervalMs = 700, timeoutMs = 600000) {

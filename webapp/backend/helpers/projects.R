@@ -100,6 +100,27 @@ emp_get_session_owner <- function(session_id) {
   jsonlite::read_json(path, simplifyVector = FALSE)
 }
 
+emp_list_owned_bundles <- function(owner_id) {
+  files <- list.files(.session_owner_dir(), pattern = "\\.json$", full.names = TRUE)
+  if (!length(files)) return(list())
+  files <- head(files[order(file.mtime(files), decreasing = TRUE)], 500L)
+  rows <- list()
+  for (path in files) {
+    record <- tryCatch(jsonlite::read_json(path, simplifyVector = FALSE), error = function(e) NULL)
+    if (is.null(record) || !identical(record$owner_id, owner_id) || !identical(record$endpoint_id, emp_endpoint_id())) next
+    sid <- record$session_id
+    root <- tryCatch(file.path(session_path(sid), "bundles"), error = function(e) NULL)
+    if (is.null(root) || !dir.exists(root)) next
+    zips <- list.files(root, pattern = "^[A-Za-z0-9_.-]+\\.zip$", full.names = TRUE)
+    for (zip in zips) {
+      if (grepl("..", basename(zip), fixed = TRUE)) next
+      rows[[length(rows) + 1L]] <- list(session_id = sid, name = basename(zip), size_kb = round(file.size(zip) / 1024, 1), mtime = format(file.mtime(zip), "%Y-%m-%dT%H:%M:%S"))
+    }
+  }
+  if (length(rows)) rows <- head(rows[order(vapply(rows, `[[`, character(1), "mtime"), decreasing = TRUE)], 100L)
+  rows
+}
+
 emp_assert_session_owner <- function(session_id, owner_id) {
   session_id <- validate_session_id(session_id)
   record <- emp_get_session_owner(session_id)
@@ -162,7 +183,7 @@ emp_session_manifest <- function(session_id, owner_id) {
     list_jobs_for_session(session_id, owner_id)
   } else list()
   stored$versions <- list(
-    emp_web = Sys.getenv("EMP_WEB_VERSION", unset = "9.0.4"),
+    emp_web = Sys.getenv("EMP_WEB_VERSION", unset = "9.1.3"),
     emp_package = tryCatch(as.character(utils::packageVersion("EasyMultiProfiler")), error = function(e) "unknown"),
     r = as.character(getRversion())
   )

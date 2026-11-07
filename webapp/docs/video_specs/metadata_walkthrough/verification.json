@@ -1,0 +1,26 @@
+{
+  "file": "emp_metadata_walkthrough.mp4",
+  "bytes": 2563901,
+  "sha256": "ee94300aa217574f80a39d3257830d616aa1bfd0ca487d8ecfe5b6b5932a9518",
+  "duration_seconds": 167.187663,
+  "video": {
+    "codec": "h264",
+    "width": 1280,
+    "height": 720,
+    "fps": "12/1"
+  },
+  "audio": {
+    "codec": "aac",
+    "sample_rate": "48000",
+    "channels": 1
+  },
+  "cue_count": 17,
+  "chapter_count": 9,
+  "full_decode": "passed",
+  "caption_timings_and_content": "passed",
+  "evidence_assertions": "passed",
+  "fast_start": "passed",
+  "presentation": "original illustrated slides, not screen recording",
+  "browser_playback": "not verified; local service unavailable to cloud browser",
+  "http_range": "integration-owned check"
+}

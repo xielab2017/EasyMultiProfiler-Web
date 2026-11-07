@@ -1,12 +1,24 @@
 /**
- * UI locale: Auto (browser + region hint) or manual 中文 / English.
+ * UI locale (v9.1.0): Auto (IP country -> browser language) or a manual
+ * choice from SUPPORTED_LOCALES (zh, zh-TW, en, ja, ko, ar, es, fr, de,
+ * pt, ru). Arabic resolves to an RTL document direction.
  * Dispatches emp:locale-change when the active locale changes.
  */
 import { I18N_CATALOG } from "./i18n_catalog.js?v=i18n-zh-default-v1";
+import { EXTRA_LOCALES } from "./i18n_extra_locales.js?v=i18n-v910";
+import {
+  SUPPORTED_LOCALES,
+  localeForCountry,
+  localeForBrowserLang,
+  isRtl,
+  bcp47,
+  localeDisplayName,
+} from "./i18n_geo.js?v=i18n-v910";
 import { applyDomI18n } from "./ui_dom_i18n.js?v=i18n-zh-default-v1";
 import { applyPagesI18n } from "./i18n_pages.js?v=i18n-zh-default-v1";
+import { FEATURE_NAV, applyFeatureLocale } from "./feature_i18n.mjs?v=2";
 
-const LS_MODE = "emp_ui_locale_mode"; // auto | zh | en
+const LS_MODE = "emp_ui_locale_mode"; // auto | any SUPPORTED_LOCALES code
 const LS_RESOLVED = "emp_ui_locale_resolved";
 
 const I18N_CORE = {
@@ -101,6 +113,19 @@ const I18N_CORE = {
     "copilot.prompt.hint": "一键填入 Code Lab 优化：",
     "guide.copy": "复制命令",
     "guide.copied": "已复制 ✓",
+    "jobtray.title": "后台任务",
+    "jobtray.empty": "暂无任务",
+    "jobtray.done": "任务「{kind}」已完成",
+    "jobtray.failed": "任务「{kind}」失败",
+    "jobtray.cancel": "取消",
+    "jobtray.running": "运行中",
+    "hint.title": "友情提醒",
+    "hint.qc": "数据导入后，建议先看一遍严谨性质控报告（缺失、批次效应），再开始分析。",
+    "hint.background": "长时间分析会在后台继续运行，你可以放心切换页面，完成后会在这里通知你。",
+    "hint.save": "你已经工作了一段时间，记得及时导出或保存分析结果。",
+    "hint.dismiss": "不再提示",
+    "usability.shortcutsTitle": "键盘快捷键",
+    "usability.close": "关闭",
   },
   en: {
     "nav.guide": "Guide",
@@ -193,20 +218,45 @@ const I18N_CORE = {
     "copilot.prompt.hint": "One-click Code Lab prompts:",
     "guide.copy": "Copy command",
     "guide.copied": "Copied ✓",
+    "jobtray.title": "Background jobs",
+    "jobtray.empty": "No jobs yet",
+    "jobtray.done": "Job \"{kind}\" finished",
+    "jobtray.failed": "Job \"{kind}\" failed",
+    "jobtray.cancel": "Cancel",
+    "jobtray.running": "Running",
+    "hint.title": "Friendly reminder",
+    "hint.qc": "After importing data, review the rigor QC report (missingness, batch effects) before starting the analysis.",
+    "hint.background": "Long analyses keep running in the background — feel free to switch pages; you will be notified here when they finish.",
+    "hint.save": "You have been working for a while — remember to export or save your results.",
+    "hint.dismiss": "Don't show again",
+    "usability.shortcutsTitle": "Keyboard shortcuts",
+    "usability.close": "Close",
   },
 };
 
 const I18N = {
   zh: { ...I18N_CORE.zh, ...I18N_CATALOG.zh },
   en: { ...I18N_CORE.en, ...I18N_CATALOG.en },
+  ...EXTRA_LOCALES,
 };
+for (const [locale, entries] of Object.entries(FEATURE_NAV)) Object.assign(I18N[locale], entries);
 
 let _resolved = "zh";
 let _mode = "auto";
 let _autoMeta = { country: "", source: "browser" };
 
 export function getLocale() {
-  return _resolved === "en" ? "en" : "zh";
+  // v9.1.0: returns the actual resolved locale code (for example "ja",
+  // "ko", "ar", "zh-TW"), not the old binary zh/en. Callers that compare
+  // ==="zh" keep zh behaviour for Simplified Chinese only; long-tail
+  // strings for other locales fall back through t().
+  return _resolved;
+}
+
+/** True for the Chinese family (Simplified + Traditional). */
+export function isZhFamily(locale = null) {
+  const loc = locale || _resolved;
+  return loc === "zh" || loc === "zh-TW";
 }
 
 export function getLocaleMode() {
@@ -216,7 +266,7 @@ export function getLocaleMode() {
 /** Translate key; supports {name} style placeholders in values. */
 export function t(key, locale = null, vars = null) {
   const loc = locale || getLocale();
-  let s = I18N[loc]?.[key] ?? I18N.zh[key] ?? key;
+  let s = I18N[loc]?.[key] ?? I18N.en[key] ?? I18N.zh[key] ?? key;
   if (vars && typeof vars === "object") {
     Object.entries(vars).forEach(([k, v]) => {
       s = s.replaceAll(`{${k}}`, String(v ?? ""));
@@ -257,18 +307,26 @@ async function fetchIpCountry() {
 }
 
 async function detectLocaleAuto() {
-  // Product default is Chinese. Only switch to English when IP region is
-  // clearly outside CN/HK/MO/TW/SG. Browser language alone must not force EN
-  // (many CN users run an English OS / Chrome UI).
-  const navLang = (navigator.language || "").toLowerCase();
-  let locale = "zh";
-  _autoMeta = { country: "", source: navLang.startsWith("zh") ? "browser" : "default" };
+  // Manual-less resolution chain (v9.1.0):
+  //   1. IP country (fetchIpCountry) -> localeForCountry
+  //   2. browser language -> localeForBrowserLang
+  //   3. product default "zh" (preserved product decision: the primary
+  //      audience is Chinese-speaking, so an inconclusive detection must
+  //      not silently switch the whole UI away from Chinese).
+  const navLang = navigator.language || "";
+  _autoMeta = { country: "", source: "default" };
   const ip = await fetchIpCountry();
   if (ip.country) {
     _autoMeta = ip;
-    locale = ["CN", "HK", "MO", "TW", "SG"].includes(ip.country) ? "zh" : "en";
+    const byCountry = localeForCountry(ip.country);
+    if (byCountry) return byCountry;
   }
-  return locale;
+  const byBrowser = localeForBrowserLang(navLang);
+  if (byBrowser) {
+    _autoMeta = { country: ip.country || "", source: "browser" };
+    return byBrowser;
+  }
+  return "zh";
 }
 
 function applyDataI18nAttributes() {
@@ -302,10 +360,10 @@ function applyCourseBanner() {
   const root = document.querySelector(".guide-course-banner .hint");
   if (!root) return;
   const loc = getLocale();
-  if (loc === "en") {
-    root.innerHTML = `<strong>v9.0.4</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
+  if (!isZhFamily(loc)) {
+    root.innerHTML = `<strong>v9.1.0</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
   } else {
-    root.innerHTML = `<strong>v9.0.4</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
+    root.innerHTML = `<strong>v9.1.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
   }
   document.getElementById("btn-course-to-guide")?.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent("emp:navigate", { detail: { page: "guide" } }));
@@ -314,7 +372,8 @@ function applyCourseBanner() {
 
 function applyDocumentLocale() {
   const loc = getLocale();
-  document.documentElement.lang = loc === "en" ? "en" : "zh-CN";
+  document.documentElement.lang = bcp47(loc);
+  document.documentElement.dir = isRtl(loc) ? "rtl" : "ltr";
   document.documentElement.dataset.empLocale = loc;
 
   // Isolate each apply step so a throw in bulk DOM labeling cannot skip
@@ -339,16 +398,23 @@ function applyDocumentLocale() {
   } catch (e) {
     console.warn("[emp-i18n] course banner failed", e);
   }
+  applyFeatureLocale(document, loc);
 
   document.querySelectorAll(".locale-btn").forEach((btn) => {
     const m = btn.dataset.localeMode;
     btn.classList.toggle("active", m === _mode);
   });
 
+  const select = document.getElementById("locale-select");
+  if (select) {
+    select.value = _mode === "auto" ? _resolved : _mode;
+    select.classList.toggle("active", _mode !== "auto");
+  }
+
   const hint = document.getElementById("locale-mode-hint");
   if (hint) {
     if (_mode === "auto") {
-      const locLabel = loc === "en" ? "English" : "中文";
+      const locLabel = localeDisplayName(loc);
       const via = _autoMeta.source === "ip" && _autoMeta.country
         ? `IP ${_autoMeta.country}`
         : t("locale.hint.browser");
@@ -368,7 +434,7 @@ function applyDocumentLocale() {
 }
 
 export async function setLocaleMode(mode) {
-  _mode = mode === "zh" || mode === "en" ? mode : "auto";
+  _mode = mode === "auto" || SUPPORTED_LOCALES.includes(mode) ? mode : "auto";
   try { localStorage.setItem(LS_MODE, _mode); } catch { /* quota */ }
 
   if (_mode === "auto") {
@@ -384,7 +450,7 @@ export async function initLocale() {
   try {
     // First visit: prefer 中文 (not Auto→EN from English browser locale).
     _mode = localStorage.getItem(LS_MODE) || "zh";
-    if (_mode !== "zh" && _mode !== "en" && _mode !== "auto") _mode = "zh";
+    if (_mode !== "auto" && !SUPPORTED_LOCALES.includes(_mode)) _mode = "zh";
   } catch {
     _mode = "zh";
   }
@@ -402,8 +468,12 @@ export async function initLocale() {
     root.querySelectorAll(".locale-btn").forEach((btn) => {
       btn.addEventListener("click", () => setLocaleMode(btn.dataset.localeMode));
     });
+    const select = document.getElementById("locale-select");
+    if (select) {
+      select.addEventListener("change", () => setLocaleMode(select.value));
+    }
   }
   applyDocumentLocale();
 }
 
-window._empLocale = { getLocale, t, setLocaleMode };
+window._empLocale = { getLocale, t, setLocaleMode, isZhFamily, SUPPORTED_LOCALES };

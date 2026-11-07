@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "request": "SRR390728",
+  "status": "metadata_only",
+  "sources": [
+    {
+      "url": "https://www.ebi.ac.uk/ena/portal/api/filereport?accession=SRR390728&result=read_run&fields=run_accession%2Cstudy_accession%2Csample_accession%2Cexperiment_accession%2Cscientific_name%2Clibrary_strategy%2Clibrary_layout%2Cfastq_ftp%2Cfastq_md5%2Cfastq_bytes&format=tsv",
+      "sha256": "22be7f9acd2e1342a3c79b39540716356e6388a7f0f4e4de7c377a58919de654",
+      "retrieved_at": "2026-11-06T14:13:23.943506+00:00"
+    }
+  ],
+  "runs": [
+    {
+      "run_accession": "SRR390728",
+      "study_accession": "PRJNA172563",
+      "sample_accession": "SAMN00630374",
+      "experiment_accession": "SRX079566",
+      "scientific_name": "Homo sapiens",
+      "library_strategy": "RNA-Seq",
+      "library_layout": "PAIRED",
+      "files": [
+        {
+          "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR390/SRR390728/SRR390728_1.fastq.gz",
+          "md5": "a04ed1f37028cda9486eec9726237796",
+          "bytes": 101304405,
+          "downloaded": false
+        },
+        {
+          "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR390/SRR390728/SRR390728_2.fastq.gz",
+          "md5": "3d440434c968624acaa4f787d48efe2f",
+          "bytes": 101858469,
+          "downloaded": false
+        }
+      ],
+      "availability": "public_fastq_metadata",
+      "warnings": []
+    }
+  ],
+  "selected_runs": [
+    "SRR390728"
+  ],
+  "selected_bytes": 203162874,
+  "download_enabled": false,
+  "analysis_executed": false,
+  "notes": [
+    "Selection is not execution approval.",
+    "Review organism, assay, layout and experimental groups before analysis.",
+    "DOI/PMID resolution and raw-read processing are not implemented."
+  ],
+  "geo_records": []
+}

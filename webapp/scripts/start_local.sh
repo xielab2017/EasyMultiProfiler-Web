@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+source "${ROOT_DIR}/webapp/scripts/process_identity.sh"
 RUNTIME_CONFIG="${ROOT_DIR}/webapp/config/runtime.env"
 if [[ -f "${RUNTIME_CONFIG}" ]]; then
   set -a
@@ -11,26 +12,54 @@ if [[ -f "${RUNTIME_CONFIG}" ]]; then
 fi
 API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-8080}"
-# Bind all interfaces by default so LAN and Tailscale can reach EMP.
-API_HOST="${API_HOST:-0.0.0.0}"
-WEB_HOST="${WEB_HOST:-0.0.0.0}"
+EMP_PUBLIC_DATA_PORT="${EMP_PUBLIC_DATA_PORT:-8081}"
+# Local-only unless explicitly configured otherwise.
+API_HOST="${API_HOST:-127.0.0.1}"
+WEB_HOST="${WEB_HOST:-127.0.0.1}"
 EMP_ALLOWED_ROOTS="${EMP_ALLOWED_ROOTS:-${ROOT_DIR}/tests}"
 EMP_ENABLE_USER_R="${EMP_ENABLE_USER_R:-false}"
 EMP_CORS_ORIGIN="${EMP_CORS_ORIGIN:-reflect-private}"
 EMP_API_TOKEN="${EMP_API_TOKEN:-}"
-# Auto-publish EMP on Tailscale Funnel HTTPS for phone / 外网 browsers.
-EMP_ENABLE_FUNNEL="${EMP_ENABLE_FUNNEL:-true}"
+# Public Funnel publication is explicitly opt-in.
+EMP_ENABLE_FUNNEL="${EMP_ENABLE_FUNNEL:-false}"
 GATEWAY_PORT="${GATEWAY_PORT:-8090}"
 PIDS_DIR="${ROOT_DIR}/.local_run"
 API_PID_FILE="${PIDS_DIR}/api.pid"
 WEB_PID_FILE="${PIDS_DIR}/web.pid"
 GW_PID_FILE="${PIDS_DIR}/gateway.pid"
+METADATA_PID_FILE="${PIDS_DIR}/metadata.pid"
 API_LOG="${PIDS_DIR}/api.log"
 WEB_LOG="${PIDS_DIR}/web.log"
 GW_LOG="${PIDS_DIR}/gateway.log"
 AUTH_JS="${ROOT_DIR}/webapp/frontend/js/runtime_auth.local.js"
 
+# Validate prerequisites before writing auth files or stopping existing services.
+PY=""
+for candidate in "${EMPI_PYTHON:-}" "${ROOT_DIR}/.local_run/metadata_venv/bin/python" python3 python; do
+  [[ -n "$candidate" ]] || continue
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 10))' >/dev/null 2>&1; then
+    PY="$candidate"
+    break
+  fi
+done
+[[ -n "$PY" ]] || { echo "Python >= 3.10 not found. Set EMPI_PYTHON to its executable." >&2; exit 1; }
+RSCRIPT="${EMPI_RSCRIPT:-Rscript}"
+command -v "$RSCRIPT" >/dev/null 2>&1 || { echo "Rscript not found. Install R >= 4.3.3 or set EMPI_RSCRIPT." >&2; exit 1; }
+"$RSCRIPT" --vanilla -e 'if (getRversion() < "4.3.3") quit(status=2)' || { echo "R >= 4.3.3 required." >&2; exit 1; }
+command -v curl >/dev/null 2>&1 || { echo "curl is required for readiness checks." >&2; exit 1; }
+for port in "$API_PORT" "$WEB_PORT" "$GATEWAY_PORT" "$EMP_PUBLIC_DATA_PORT"; do
+  [[ "$port" =~ ^[0-9]+$ ]] && (( 10#$port >= 1 && 10#$port <= 65535 )) || { echo "Invalid port: $port" >&2; exit 1; }
+done
+[[ "$API_PORT" != "$WEB_PORT" && "$API_PORT" != "$GATEWAY_PORT" && "$WEB_PORT" != "$GATEWAY_PORT" ]] || { echo "Service ports must be distinct." >&2; exit 1; }
+[[ "$EMP_PUBLIC_DATA_PORT" != "$API_PORT" && "$EMP_PUBLIC_DATA_PORT" != "$WEB_PORT" && "$EMP_PUBLIC_DATA_PORT" != "$GATEWAY_PORT" ]] || { echo "Metadata port must be distinct." >&2; exit 1; }
+if [[ "${EMP_DRY_RUN:-0}" == "1" ]]; then
+  printf 'Validated: API %s:%s; Web %s:%s; Funnel %s\n' "$API_HOST" "$API_PORT" "$WEB_HOST" "$WEB_PORT" "$EMP_ENABLE_FUNNEL"
+  exit 0
+fi
+
 mkdir -p "${PIDS_DIR}"
+mkdir -p "${ROOT_DIR}/webapp/frontend/js"
+printf 'window.EMP_RUNTIME_PORTS={"api":%s,"web":%s};\n' "$((10#$API_PORT))" "$((10#$WEB_PORT))" > "${ROOT_DIR}/webapp/frontend/js/runtime_ports.local.js"
 
 is_loopback_host() {
   case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
@@ -49,7 +78,7 @@ ensure_network_auth() {
     if command -v openssl >/dev/null 2>&1; then
       EMP_API_TOKEN="$(openssl rand -hex 24)"
     else
-      EMP_API_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+      EMP_API_TOKEN="$("${PY}" -c 'import secrets; print(secrets.token_hex(24))')"
     fi
     if [[ -f "${RUNTIME_CONFIG}" ]]; then
       if grep -q '^EMP_API_TOKEN=' "${RUNTIME_CONFIG}" 2>/dev/null; then
@@ -87,7 +116,8 @@ kill_if_running() {
   if [[ -f "${pid_file}" ]]; then
     local pid
     pid="$(cat "${pid_file}" 2>/dev/null || true)"
-    if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null &&
+       emp_command_belongs_to_repo "$(ps -p "$pid" -o args= 2>/dev/null || true)" "$ROOT_DIR"; then
       kill "${pid}" || true
     fi
     rm -f "${pid_file}"
@@ -97,35 +127,19 @@ kill_if_running() {
 kill_if_running "${API_PID_FILE}"
 kill_if_running "${WEB_PID_FILE}"
 kill_if_running "${GW_PID_FILE}"
+kill_if_running "${METADATA_PID_FILE}"
 
-kill_port_if_running() {
-  local port="$1"
-  local attempt pids
-  for attempt in 1 2 3; do
-    pids="$(lsof -t -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
-    if [[ -z "${pids}" ]]; then
-      return 0
-    fi
-    # shellcheck disable=SC2086
-    kill ${pids} 2>/dev/null || true
-    sleep 1
-    pids="$(lsof -t -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
-    if [[ -n "${pids}" ]]; then
-      # shellcheck disable=SC2086
-      kill -9 ${pids} 2>/dev/null || true
-      sleep 1
-    fi
-  done
-  if lsof -t -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "Port ${port} is still in use after cleanup. Try: lsof -iTCP:${port} -sTCP:LISTEN" >&2
-    return 1
-  fi
-}
-
-# Ensure stale listeners do not block new instances.
-kill_port_if_running "${API_PORT}"
-kill_port_if_running "${WEB_PORT}"
-kill_port_if_running "${GATEWAY_PORT}"
+# Never terminate an unrelated application just because it owns a configured port.
+for port in "$API_PORT" "$WEB_PORT" "$EMP_PUBLIC_DATA_PORT"; do
+  "$PY" - "$port" <<'CHECK_PORT'
+import socket, sys
+with socket.socket() as sock:
+    try:
+        sock.bind(("127.0.0.1", int(sys.argv[1])))
+    except OSError as exc:
+        sys.exit(f"Port {sys.argv[1]} unavailable: {exc}. Stop its owner or choose another port.")
+CHECK_PORT
+done
 
 start_detached() {
   local pid_file="$1"
@@ -177,7 +191,7 @@ detect_tailscale_name() {
     return 1
   fi
   local name
-  name="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys
+  name="$(tailscale status --json 2>/dev/null | "${PY}" -c 'import json,sys
 try:
   d=json.load(sys.stdin)
   print(d.get("Self",{}).get("DNSName","").rstrip("."))
@@ -195,6 +209,11 @@ print_access_urls() {
   echo "Local services started."
   echo "- Frontend (本机):     http://127.0.0.1:${WEB_PORT}"
   echo "- API health (本机):   http://127.0.0.1:${API_PORT}/api/health"
+  if is_loopback_host "$API_HOST" && is_loopback_host "$WEB_HOST"; then
+    echo "- Loopback only; remote access is disabled."
+    echo "- Logs: ${API_LOG}, ${WEB_LOG}"
+    return 0
+  fi
   lan_ip="$(detect_lan_ip || true)"
   if [[ -n "${lan_ip}" ]]; then
     echo "- Frontend (局域网):   http://${lan_ip}:${WEB_PORT}"
@@ -244,7 +263,7 @@ start_gateway_and_funnel() {
   echo "Starting EMP gateway on 127.0.0.1:${GATEWAY_PORT} ..."
   start_detached "${GW_PID_FILE}" "${GW_LOG}" \
     env API_PORT="${API_PORT}" WEB_PORT="${WEB_PORT}" GATEWAY_PORT="${GATEWAY_PORT}" GATEWAY_HOST=127.0.0.1 \
-    "${PY}" webapp/scripts/emp_gateway.py
+    "${PY}" "${ROOT_DIR}/webapp/scripts/emp_gateway.py"
   sleep 1
   if ! curl_ok "http://127.0.0.1:${GATEWAY_PORT}/api/health"; then
     echo "Gateway failed; Funnel not updated. See ${GW_LOG}"
@@ -260,14 +279,10 @@ start_gateway_and_funnel() {
   echo "Pointing Tailscale Funnel HTTPS:443 -> EMP gateway :${GATEWAY_PORT} ..."
   # Do NOT `funnel reset` — preserve other Funnel ports (e.g. :8443 Agent Hub).
   if tailscale funnel --bg --yes --https=443 "${GATEWAY_PORT}" >/dev/null 2>&1; then
-    FUNNEL_URL="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys
+    FUNNEL_URL="$(tailscale status --json 2>/dev/null | "${PY}" -c 'import json,sys
 d=json.load(sys.stdin)
 name=(d.get("Self",{}) or {}).get("DNSName","").rstrip(".")
 print(f"https://{name}/" if name else "")' 2>/dev/null || true)"
-    # Keep Agent Hub on Funnel :8443 when local hub is up (optional companion service).
-    if curl_ok "http://127.0.0.1:8765/"; then
-      tailscale funnel --bg --yes --https=8443 8765 >/dev/null 2>&1 || true
-    fi
   else
     echo "Funnel enable failed. Try manually: bash webapp/scripts/enable_emp_funnel.sh"
   fi
@@ -314,23 +329,16 @@ start_detached "${API_PID_FILE}" "${API_LOG}" \
     EMP_MACS_BIN="${EMP_MACS_BIN:-}" \
     PATH="${PATH}" \
     R_LIBS="${R_LIBS:-}" R_LIBS_USER="${R_LIBS_USER:-}" \
-    NO_PROXY='*' no_proxy='*' Rscript "webapp/backend/run_api.R"
+    NO_PROXY='*' no_proxy='*' "${RSCRIPT}" "${ROOT_DIR}/webapp/backend/run_api.R"
 
 echo "Starting frontend on ${WEB_HOST}:${WEB_PORT} ..."
-PY=""
-for _py in python3 python; do
-  if command -v "${_py}" >/dev/null 2>&1; then
-    PY="${_py}"
-    break
-  fi
-done
-if [[ -z "${PY}" ]]; then
-  echo "Python 3 not found. Mac: brew install python@3.12" >&2
-  exit 1
-fi
+echo "Starting matrix and AI workflow services on 127.0.0.1:${EMP_PUBLIC_DATA_PORT} ..."
+start_detached "${METADATA_PID_FILE}" "${PIDS_DIR}/metadata.log" \
+  env EMP_PUBLIC_DATA_PORT="${EMP_PUBLIC_DATA_PORT}" \
+  "${PY}" "${ROOT_DIR}/webapp/scripts/public_data_server.py"
 start_detached "${WEB_PID_FILE}" "${WEB_LOG}" \
-  env WEB_HOST="${WEB_HOST}" WEB_PORT="${WEB_PORT}" \
-  "${PY}" webapp/scripts/static_server.py "${WEB_PORT}" "webapp/frontend" "${WEB_HOST}"
+  env WEB_HOST="${WEB_HOST}" WEB_PORT="${WEB_PORT}" EMP_PUBLIC_DATA_PORT="${EMP_PUBLIC_DATA_PORT}" \
+  "${PY}" "${ROOT_DIR}/webapp/scripts/static_server.py" "${WEB_PORT}" "webapp/frontend" "${WEB_HOST}"
 
 web_pid="$(cat "${WEB_PID_FILE}" 2>/dev/null || true)"
 if [[ -z "${web_pid}" ]] || ! kill -0 "${web_pid}" 2>/dev/null; then
@@ -349,16 +357,19 @@ api_failed_in_log() {
 
 wait_for_services() {
   local max_attempts="${1:-120}"
-  local attempt api_ok web_ok
+  local attempt api_ok web_ok metadata_ok
   for attempt in $(seq 1 "${max_attempts}"); do
     api_ok=1
     web_ok=1
+    metadata_ok=1
     curl_ok "http://127.0.0.1:${API_PORT}/api/health" && api_ok=0
     curl_ok "http://127.0.0.1:${WEB_PORT}/" && web_ok=0
-    if [[ "${api_ok}" -eq 0 && "${web_ok}" -eq 0 ]]; then
+    curl_ok "http://127.0.0.1:${EMP_PUBLIC_DATA_PORT}/api/public-data/health" && metadata_ok=0
+    if [[ "${api_ok}" -eq 0 && "${web_ok}" -eq 0 && "${metadata_ok}" -eq 0 ]]; then
       return 0
     fi
-    if api_failed_in_log; then
+    api_pid="$(cat "${API_PID_FILE}" 2>/dev/null || true)"
+    if [[ -z "$api_pid" ]] || ! kill -0 "$api_pid" 2>/dev/null || api_failed_in_log; then
       echo "API failed while starting. Recent log:"
       tail -n 80 "${API_LOG}" || true
       return 1
@@ -367,6 +378,12 @@ wait_for_services() {
     if [[ -z "${web_pid}" ]] || ! kill -0 "${web_pid}" 2>/dev/null; then
       echo "Frontend process exited while starting. Recent log:"
       tail -n 80 "${WEB_LOG}" || true
+      return 1
+    fi
+    metadata_pid="$(cat "${METADATA_PID_FILE}" 2>/dev/null || true)"
+    if [[ -z "${metadata_pid}" ]] || ! kill -0 "${metadata_pid}" 2>/dev/null; then
+      echo "Matrix/workbench service exited while starting. Recent log:"
+      tail -n 40 "${PIDS_DIR}/metadata.log" || true
       return 1
     fi
     sleep 1
@@ -382,6 +399,11 @@ wait_for_services() {
   return 1
 }
 
-wait_for_services 120
+if ! wait_for_services 120; then
+  kill_if_running "$API_PID_FILE"
+  kill_if_running "$WEB_PID_FILE"
+  kill_if_running "$METADATA_PID_FILE"
+  exit 1
+fi
 start_gateway_and_funnel
 print_access_urls

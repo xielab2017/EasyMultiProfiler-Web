@@ -17,6 +17,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
+if [[ -d "${ROOT_DIR}/.local_run/R_libs" ]]; then
+  export R_LIBS_USER="${ROOT_DIR}/.local_run/R_libs${R_LIBS_USER:+:${R_LIBS_USER}}"
+fi
 
 SCRIPTS_DIR="${ROOT_DIR}/webapp/scripts"
 INSTALL_DIR="${SCRIPTS_DIR}/install"
@@ -52,7 +55,7 @@ fi
 
 # Make sure R is on PATH in this shell even if we just installed it.
 hash -r
-if ! command -v Rscript >/dev/null 2>&1; then
+if ! command -v "${EMPI_RSCRIPT:-Rscript}" >/dev/null 2>&1; then
   echo "[bootstrap] Rscript still not on PATH. Open a new shell and re-run."
   exit 1
 fi
@@ -67,7 +70,9 @@ bash "${SCRIPTS_DIR}/start_local.sh"
 
 WEB_PORT="${WEB_PORT:-8080}"
 URL="http://127.0.0.1:${WEB_PORT}"
-if command -v open >/dev/null 2>&1; then
+if [[ "${EMP_NO_BROWSER:-0}" == "1" ]]; then
+  :
+elif command -v open >/dev/null 2>&1; then
   open "${URL}" >/dev/null 2>&1 || true
 elif command -v xdg-open >/dev/null 2>&1; then
   xdg-open "${URL}" >/dev/null 2>&1 || true

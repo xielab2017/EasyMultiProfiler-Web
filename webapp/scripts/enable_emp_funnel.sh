@@ -76,11 +76,6 @@ echo "(Keeps other Funnel ports such as :8443. Use --https=10000 for a third ser
 # Avoid full reset so Agent Hub on :8443 can coexist.
 tailscale funnel --bg --yes --https=443 "${GATEWAY_PORT}"
 
-# Optionally keep / restore Agent Hub Funnel on allowed port 8443
-if curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:8765/" >/dev/null 2>&1; then
-  echo "Also publishing Agent Hub on Funnel :8443 -> :8765"
-  tailscale funnel --bg --yes --https=8443 8765 >/dev/null 2>&1 || true
-fi
 
 sleep 1
 FUNNEL_URL="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys
@@ -91,7 +86,6 @@ print(f"https://{name}" if name else "")' 2>/dev/null || true)"
 echo
 echo "EMP Funnel ready."
 echo "- EMP 外网:     ${FUNNEL_URL:-https://<machine>.ts.net}/   (Funnel :443)"
-echo "- Agent Hub 外网: ${FUNNEL_URL:-https://<machine>.ts.net}:8443/  (Funnel :8443)"
 echo "- Local gateway: http://127.0.0.1:${GATEWAY_PORT}"
 echo "- Note: Funnel 公网端口只能是 443 / 8443 / 10000，不能用 8080"
 echo "- Funnel status:  tailscale funnel status"

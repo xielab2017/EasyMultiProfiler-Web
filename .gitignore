@@ -8,3 +8,6 @@ webapp/config/runtime.env
 webapp/config/campus_llm.json
 webapp/config/openrouter_llm.json
 webapp/frontend/js/runtime_auth.local.js
+
+# Nonsecret per-machine API/UI port discovery.
+webapp/frontend/js/runtime_ports.local.js

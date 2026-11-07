@@ -1,0 +1,20 @@
+{
+  "status": "unconfigured",
+  "configured": false,
+  "enabled": false,
+  "allow_model_request": false,
+  "provider": "openai",
+  "model": "gpt-4.1-mini",
+  "live_verified": false,
+  "consent_required": true,
+  "tools": [
+    "get_selected_context",
+    "search_papers",
+    "fetch_paper_abstract",
+    "discover_processed",
+    "search_metadata",
+    "resolve_accession",
+    "validate_plan"
+  ],
+  "execution_supported": false
+}

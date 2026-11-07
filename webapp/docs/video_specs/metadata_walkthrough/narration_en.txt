@@ -1,0 +1,33 @@
+1. Welcome to Easy Multi Profiler Web, version nine point one point two. This illustrated guide covers the metadata-only workflow.
+
+2. You can review public data and prepare analysis plans. Raw read downloads and R analysis are not connected in this mode.
+
+3. From the repository folder, run the dependency check, then start the metadata launcher. Keep that terminal open.
+
+4. Open the local address shown here. Python version three point ten or later is required. R is not needed for metadata.
+
+5. Use a public keyword to search G E O, or enter an accession and read its sample manifest. Review the study before selecting runs.
+
+6. This saved public example lists one paired-end run and two FASTQ links. These are metadata records, not downloaded reads.
+
+7. No runs are selected by default. Check the organism, library strategy, paired-end layout, and biological groups, then inspect the selected download plan.
+
+8. Save the plan as JSON. Reported archive size excludes additional analysis space, and archive checksums have not been verified against local files.
+
+9. For processed data, enter a G E O series in the matrix section and discover its supplementary files. Inspect each candidate before confirming a download.
+
+10. Only supported text tables with a known size of at most thirty-two mebibytes can be downloaded. Archive bundles are not automatically unpacked.
+
+11. A saved inspection of the example matrix found twenty-seven thousand, one hundred seventy-nine features and twelve samples. The Length column was excluded.
+
+12. Integer values alone do not prove raw counts. Check the authors' methods, and match sample annotations by exact identifiers rather than column order.
+
+13. Choose a bulk R N A sequencing template. Review the steps, dataset provenance, sample labels, contrast, and any batch terms, then validate the design.
+
+14. This synthetic teaching plan passes validation, but executable is still false. Passing preflight does not mean an analysis has run.
+
+15. The paper section can extract accession candidates from a local P D F. PubMed search is separate, and a candidate still needs scientific verification.
+
+16. The agent is unconfigured here. If you configure a provider later, preview the selected context and consent before sending. The tools remain read-only.
+
+17. Keep your data sources, sample mapping, and plan together. Discovery, input verification, and execution are different steps. This mode supports review and planning.

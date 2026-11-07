@@ -69,19 +69,10 @@ tx_run_differential <- function(session_id, experiment, method = "DESeq2",
   tx_stop_if_missing(session_id, experiment)
   method_use <- if (is.null(method) || !nzchar(method)) "DESeq2" else method
   tryCatch({
-    tryCatch(
-      run_diff(session_id, experiment, method_use, group_var, ref_group, test_group,
-               filter_low = filter_low, subset_two_groups = subset_two_groups,
-               cores = cores, on_progress = on_progress),
-      error = function(e) {
-        if (!identical(tolower(method_use), "limma")) {
-          return(run_diff(session_id, experiment, "limma", group_var, ref_group, test_group,
-                          filter_low = filter_low, subset_two_groups = subset_two_groups,
-                          cores = cores, on_progress = on_progress))
-        }
-        stop(e)
-      }
-    )
+    # A requested statistical method must never silently become another method.
+    run_diff(session_id, experiment, method_use, group_var, ref_group, test_group,
+             filter_low = filter_low, subset_two_groups = subset_two_groups,
+             cores = cores, on_progress = on_progress)
   }, error = function(e) {
     msg <- conditionMessage(e)
     if (grepl("estimate_group|\\.formula", msg)) {

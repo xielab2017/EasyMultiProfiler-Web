@@ -2,7 +2,7 @@
 # The API key is supplied per request from the browser and is not persisted here.
 
 .LLM_OPENAI_COMPAT <- c(
-  "chatgpt", "openai", "deepseek", "qwen", "minimax", "nvidia", "custom", "campus", "openrouter"
+  "chatgpt", "openai", "deepseek", "qwen", "minimax", "monica", "nvidia", "custom", "campus", "openrouter"
 )
 
 .llm_is_openai_compat <- function(provider, base_url = "") {
@@ -555,7 +555,8 @@
     base_url = switch(provider,
       deepseek = if (nzchar(base_url)) base_url else "https://api.deepseek.com",
       qwen = if (nzchar(base_url)) base_url else "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      minimax = if (nzchar(base_url)) base_url else "https://api.minimax.chat/v1",
+      minimax = if (nzchar(base_url)) base_url else "https://api.minimax.cn/v1",
+      monica = if (nzchar(base_url)) base_url else "https://openapi.monica.im/v1",
       gemini = if (nzchar(base_url)) base_url else "https://generativelanguage.googleapis.com/v1beta",
       claude = if (nzchar(base_url)) base_url else "https://api.anthropic.com/v1",
       chatgpt = if (nzchar(base_url)) base_url else "https://api.openai.com/v1",
@@ -570,7 +571,8 @@
     model = switch(provider,
       deepseek = if (nzchar(model)) model else "deepseek-chat",
       qwen = if (nzchar(model)) model else "qwen-plus",
-      minimax = if (nzchar(model)) model else "MiniMax-Text-01",
+      minimax = if (nzchar(model)) model else "MiniMax-M3",
+      monica = if (nzchar(model)) model else "gpt-4o",
       gemini = if (nzchar(model)) model else "gemini-1.5-pro",
       claude = if (nzchar(model)) model else "claude-3-5-sonnet-latest",
       chatgpt = if (nzchar(model)) model else "gpt-4o-mini",
@@ -1085,7 +1087,8 @@
       stop("OpenRouter API key is missing. Configure webapp/config/openrouter_llm.json or Code Lab API Key.")
     }
   }
-  if (.llm_is_openai_compat(provider, d$base_url)) {
+  minimax_anthropic <- identical(provider, "minimax") && identical(cfg$protocol, "anthropic")
+  if (.llm_is_openai_compat(provider, d$base_url) && !minimax_anthropic) {
     models_try <- unique(c(
       d$model,
       .llm_normalize_direct_model(provider, d$model),
@@ -1107,15 +1110,15 @@
     }
     stop(paste(c("OpenAI-compatible chat/completions failed.", errors), collapse = "\n"))
   }
-  if (identical(provider, "claude")) {
-    url <- paste0(d$base_url, "/messages")
+  if (identical(provider, "claude") || minimax_anthropic) {
+    url <- paste0(d$base_url, if (minimax_anthropic) "/v1/messages" else "/messages")
     body <- list(
       model = d$model,
       max_tokens = as.integer(cfg$max_tokens %||% 2048L),
       temperature = suppressWarnings(as.numeric(cfg$temperature %||% 0.2)),
       messages = list(list(role = "user", content = prompt))
     )
-    headers <- c(paste0("x-api-key: ", key), "anthropic-version: 2023-06-01")
+    headers <- c(paste0(if (minimax_anthropic) "Authorization: Bearer " else "x-api-key: ", key), "anthropic-version: 2023-06-01")
     resp <- .llm_call_curl(url, headers, body, timeout)
     return(.llm_pure_r_or_stop(.llm_extract_text(resp)))
   }
