@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # package_release.sh - build the three per-OS release packages for
-# EasyMultiProfiler Web v9.2.0:
+# EasyMultiProfiler Web (version from DESCRIPTION):
 #
-#   webapp/dist/EasyMultiProfiler-Web-v9.2.0-windows.zip
-#   webapp/dist/EasyMultiProfiler-Web-v9.2.0-macos.zip
-#   webapp/dist/EasyMultiProfiler-Web-v9.2.0-linux.zip
+#   webapp/dist/EasyMultiProfiler-Web-v${VERSION}-windows.zip
+#   webapp/dist/EasyMultiProfiler-Web-v${VERSION}-macos.zip
+#   webapp/dist/EasyMultiProfiler-Web-v${VERSION}-linux.zip
 #
 # Every package contains the full project tree (same rsync excludes as
 # the previous single-package build) plus a PLATFORM.txt at the package
@@ -13,7 +13,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="9.2.0"
+VERSION="$(awk '/^Version:/{print $2;exit}' "${ROOT_DIR}/DESCRIPTION")"
+if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9.-]+)?$ ]]; then
+  echo "ERROR: invalid release version in DESCRIPTION" >&2
+  exit 1
+fi
+python3 "${ROOT_DIR}/webapp/scripts/sync_app_version.py" --check
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT_DIR="${ROOT_DIR}/webapp/dist"
 STAGE_ROOT="${OUT_DIR}/.staging-${STAMP}"
@@ -43,6 +48,17 @@ for entry in "${PLATFORMS[@]}"; do
     --exclude ".local_run" \
     --exclude "webapp/dist" \
     --exclude "__pycache__" \
+    --exclude "*.pyc" \
+    --exclude "webapp/config/runtime.env" \
+    --exclude "webapp/config/campus_llm.json" \
+    --exclude "webapp/config/openrouter_llm.json" \
+    --exclude "webapp/frontend/js/runtime_auth.local.js" \
+    --exclude "webapp/frontend/js/runtime_ports.local.js" \
+    --exclude "output" \
+    --exclude "tests/bridge_acceptance_*" \
+    --exclude "Rplots.pdf" \
+    --exclude "* 2.*" \
+    --exclude "* 2" \
     --exclude "*.Rproj.user" \
     "${ROOT_DIR}/" "${PKG_DIR}/"
 

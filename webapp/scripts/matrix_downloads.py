@@ -213,7 +213,11 @@ def _spec(item, accession):
     if not isinstance(item, dict) or not isinstance(item.get('url'), str) or len(item['url']) > 4096:
         raise DownloadError('Malformed GEO file metadata.')
     try:
-        url = processed_data.safe_url(item['url'], accession)
+        if re.fullmatch(r'PXD[0-9]{5,9}',accession):
+            parts=urlsplit(item['url']);path=unquote(parts.path)
+            if parts.scheme!='https' or parts.hostname!='ftp.pride.ebi.ac.uk' or parts.port or parts.username or parts.password or parts.query or parts.fragment or not path.startswith('/pride/data/archive/') or accession not in path.split('/') or '%' in path or '\\' in path or '..' in path.split('/') or any(ord(c)<32 for c in path):raise ValueError('unapproved PRIDE source')
+            url='https://ftp.pride.ebi.ac.uk'+parts.path
+        else:url = processed_data.safe_url(item['url'], accession)
     except (ValueError, public_data.MetadataError) as exc:
         raise DownloadError('Only official GEO supplementary files for this series are allowed.') from exc
     parts = urlsplit(url)
@@ -290,7 +294,7 @@ class MatrixDownloadManager:
         if not isinstance(manifest, dict) or manifest.get('status') != 'processed_candidates':
             raise DownloadError('A server-owned GEO supplementary-file manifest is required.')
         accession = manifest.get('accession')
-        if not isinstance(accession, str) or not re.fullmatch(r'GSE\d+', accession):
+        if not isinstance(accession, str) or not re.fullmatch(r'(?:GSE\d+|PXD[0-9]{5,9})', accession):
             raise DownloadError('A GEO series accession is required.')
         rows = manifest.get('files')
         if not isinstance(rows, list) or len(rows) > 10000 or not isinstance(file_id, str):
@@ -353,7 +357,7 @@ class MatrixDownloadManager:
             raise DownloadError('Resolve plan blockers and prepare a new plan before downloading.')
         item = value.get('file')
         accession = value.get('accession')
-        if not isinstance(accession, str) or not re.fullmatch(r'GSE\d+', accession) or not isinstance(item, dict) or _spec(item, accession) != item:
+        if not isinstance(accession, str) or not re.fullmatch(r'(?:GSE\d+|PXD[0-9]{5,9})', accession) or not isinstance(item, dict) or _spec(item, accession) != item:
             raise DownloadError('Invalid planned GEO source.')
         cap = value.get('max_bytes')
         if type(cap) is not int or not 0 < cap <= self.limits.max_file_bytes or (item['bytes'] is not None and item['bytes'] > cap):

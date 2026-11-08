@@ -8,6 +8,8 @@ Env overrides:
   WEB_PORT, WEB_DIR, WEB_HOST
 """
 import os
+import json
+from urllib.parse import urlsplit
 import re
 import sys
 from functools import partial
@@ -18,10 +20,13 @@ RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import metadata_proxy
+from version_source import app_version
 
 
 class RangeHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
+        if urlsplit(self.path).path=='/version.json':
+            body=json.dumps({'version':app_version()}).encode();self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
         if not metadata_proxy.proxy(self): super().do_GET()
 
     def do_POST(self):

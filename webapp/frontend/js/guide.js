@@ -1,7 +1,8 @@
+import {UI_LOCALES_FULL} from './ui_locales_full.mjs';
 /**
  * User Guide page — bilingual render + install command copy.
  */
-import { getLocale, t } from "./locale.js?v=i18n-zh-default-v1";
+import { getLocale, t } from "./locale.js?v=nav-language-20261108";
 
 const INSTALL_MAC_ONE_LINE =
   'bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/master/webapp/scripts/install_from_github.sh)"';
@@ -15,8 +16,8 @@ library(EasyMultiProfiler)`;
 
 const COPY = {
   zh: {
-    heroTitle: "EasyMultiProfiler Web v9.1.0 使用指南",
-    heroHint: "本页汇总<strong>安装路径</strong>（Mac / Windows / 仅 R 包）与<strong>网页内分析流程</strong>。零基础：先完成对应系统安装，再从 Course 或「一键示例数据」开始。",
+    heroTitle: "EasyMultiProfiler Web v9.3.0 使用指南",
+    heroHint: "本页汇总<strong>安装路径</strong>（Mac / Windows / 仅 R 包）与<strong>网页内分析流程</strong>。零基础：先完成对应系统安装，再从「数据」导入或加载示例数据开始。",
     pathsTitle: "三条安装路径（请只选与你电脑匹配的一条）",
     macCard: "🍎 macOS · Web 版",
     macCardP: "终端一行命令，或双击 <code>Run-EMP-Web.command</code>",
@@ -44,10 +45,10 @@ const COPY = {
     winN2: "<strong>勿与 Mac 脚本混用</strong>（.bat/.ps1 vs .sh/.command）。见 docs/INSTALL_WINDOWS.md",
     winN3: "R 找不到：设置 <code>$env:EMPI_RSCRIPT</code> 为 Rscript.exe 完整路径",
     rH: "仅安装 EMP R 包",
-    rP: "Web 版 AI、Course、Run All <strong>仅在浏览器版</strong>提供。",
+    rP: "Web 版 AI、一键运行 <strong>仅在浏览器版</strong>提供。",
     rCopy: "复制 R 代码",
     flowTitle: "网页内分析流程（v5 推荐）",
-    featTitle: "v9.1.0 新功能速览",
+    featTitle: "v9.3.0 新功能速览",
     navTitle: "左侧导航说明",
     faqTitle: "常见问题",
     clinDemoTitle: "Demo 操作指南：临床 × 16S（三线表 + 全流程关联）",
@@ -68,8 +69,8 @@ const COPY = {
     chipDemoTitle: "Demo 操作指南：ChIP-seq / CUT&RUN（Step1 + Step2）",
   },
   en: {
-    heroTitle: "EasyMultiProfiler Web v9.1.0 User Guide",
-    heroHint: "Install paths (Mac / Windows / R-only) and the in-app workflow. Complete install first, then start from <strong>Course</strong> or one-click demo data.",
+    heroTitle: "EasyMultiProfiler Web v9.3.0 User Guide",
+    heroHint: "Install paths (Mac / Windows / R-only) and the in-app workflow. Complete install first, then import data or load a demo from <strong>Data</strong>.",
     pathsTitle: "Three install paths (pick one for your computer)",
     macCard: "🍎 macOS · Web",
     macCardP: "One-line Terminal command or double-click <code>Run-EMP-Web.command</code>",
@@ -97,10 +98,10 @@ const COPY = {
     winN2: "<strong>Do not mix</strong> Mac scripts (.sh) with Windows (.bat/.ps1). See INSTALL_WINDOWS.md",
     winN3: "R not found: set <code>$env:EMPI_RSCRIPT</code> to full Rscript.exe path",
     rH: "EMP R package only",
-    rP: "AI interpret, Course, Run All are <strong>web-only</strong> features.",
+    rP: "AI interpret, Data, Run All are <strong>web-only</strong> features.",
     rCopy: "Copy R code",
     flowTitle: "In-app workflow (v5)",
-    featTitle: "v9.1.0 highlights",
+    featTitle: "v9.3.0 highlights",
     navTitle: "Sidebar pages",
     faqTitle: "FAQ",
     clinDemoTitle: "Demo walkthrough: Clinical × 16S (three-line table + association)",
@@ -124,7 +125,7 @@ const COPY = {
 
 function L(key) {
   const loc = getLocale();
-  return COPY[loc]?.[key] ?? COPY.zh[key] ?? key;
+  return UI_LOCALES_FULL[COPY.en[key]]?.[loc] ?? COPY[loc]?.[key] ?? COPY[["zh","zh-TW"].includes(loc)?"zh":"en"][key] ?? key;
 }
 
 function renderGuideHtml() {
@@ -132,7 +133,7 @@ function renderGuideHtml() {
     <div class="card guide-hero">
       <div class="guide-hero-head">
         <h2>${L("heroTitle")}</h2>
-        <span class="version-badge version-badge-lg">v9.1.0</span>
+        <span class="version-badge version-badge-lg">v9.3.0</span>
       </div>
       <p class="hint">${L("heroHint")}</p>
     </div>
@@ -196,7 +197,7 @@ function renderGuideHtml() {
 }
 
 function renderClinicalDemoSection() {
-  const zh = getLocale() === "zh";
+  const zh = ["zh","zh-TW"].includes(getLocale());
   const body = zh
     ? `
       <p class="hint">${L("clinDemoHint")}</p>
@@ -205,7 +206,7 @@ function renderClinicalDemoSection() {
       <h4>${L("clinDemoLoadTitle")}</h4>
       <ol class="guide-steps">
         <li>打开 <code>http://127.0.0.1:8080/</code>，组学可选「全部」或 Microbiome 16S。</li>
-        <li>左侧 <strong>数据</strong> → Course Demo：先点 <strong>Clinical Phenotypes</strong>，再点 <strong>16S Microbiome</strong>。</li>
+        <li>左侧 <strong>数据</strong> → Data Demo：先点 <strong>Clinical Phenotypes</strong>，再点 <strong>16S Microbiome</strong>。</li>
         <li>或手动上传 <code>tests/Clinical-test.csv</code>（临床原始表）+ <code>tests/16S_level-7.csv</code> + <code>tests/16S_mapping.csv</code>。</li>
         <li>顶部实验下拉选中 <code>m16s_course</code>，再进入左侧 <strong>临床</strong>。</li>
       </ol>
@@ -268,7 +269,7 @@ function renderClinicalDemoSection() {
       <h4>${L("clinDemoLoadTitle")}</h4>
       <ol class="guide-steps">
         <li>Open <code>http://127.0.0.1:8080/</code>.</li>
-        <li><strong>Data</strong> → Course Demo: load <strong>Clinical Phenotypes</strong>, then <strong>16S Microbiome</strong>.</li>
+        <li><strong>Data</strong> → Data Demo: load <strong>Clinical Phenotypes</strong>, then <strong>16S Microbiome</strong>.</li>
         <li>Or upload <code>tests/Clinical-test.csv</code> + <code>16S_level-7.csv</code> + <code>16S_mapping.csv</code>.</li>
         <li>Select experiment <code>m16s_course</code>, open <strong>Clinical</strong> in the sidebar.</li>
       </ol>
@@ -335,14 +336,14 @@ function renderClinicalDemoSection() {
 }
 
 function renderM16sDemoSection() {
-  const zh = getLocale() === "zh";
+  const zh = ["zh","zh-TW"].includes(getLocale());
   const body = zh
     ? `
-      <p class="hint">Course Demo <code>m16s_course</code> 实跑：样本 <strong>132</strong> × 特征 <strong>470</strong>；Group 为 IBS/UC × before/after。推荐顺序见下（与 E2E 一致）。</p>
+      <p class="hint">Data Demo <code>m16s_course</code> 实跑：样本 <strong>132</strong> × 特征 <strong>470</strong>；Group 为 IBS/UC × before/after。推荐顺序见下（与 E2E 一致）。</p>
 
       <h4>① 加载数据</h4>
       <ol class="guide-steps">
-        <li>组学选 <strong>16S Microbiome</strong>；左侧 <strong>数据</strong> → Course Demo → <strong>16S Microbiome</strong>。</li>
+        <li>组学选 <strong>16S Microbiome</strong>；左侧 <strong>数据</strong> → Data Demo → <strong>16S Microbiome</strong>。</li>
         <li>实验选 <code>m16s_course</code>；概览核对 132 样本、Group 四水平。</li>
       </ol>
 
@@ -392,11 +393,11 @@ function renderM16sDemoSection() {
         <dd>相关阈值改为 <strong>0.3</strong>（0.5+ 常为空）。</dd>
       </dl>`
     : `
-      <p class="hint">Course demo <code>m16s_course</code>: <strong>132</strong> samples × <strong>470</strong> features; Group = IBS/UC × before/after.</p>
+      <p class="hint">Data demo <code>m16s_course</code>: <strong>132</strong> samples × <strong>470</strong> features; Group = IBS/UC × before/after.</p>
 
       <h4>① Load</h4>
       <ol class="guide-steps">
-        <li>Omics → <strong>16S Microbiome</strong>; <strong>Data</strong> → Course Demo → 16S.</li>
+        <li>Omics → <strong>16S Microbiome</strong>; <strong>Data</strong> → Data Demo → 16S.</li>
         <li>Select experiment <code>m16s_course</code>; confirm 132 samples and four Group levels.</li>
       </ol>
 
@@ -450,14 +451,14 @@ function renderM16sDemoSection() {
 }
 
 function renderRnaseqDemoSection() {
-  const zh = getLocale() === "zh";
+  const zh = ["zh","zh-TW"].includes(getLocale());
   const body = zh
     ? `
-      <p class="hint">Course Demo <code>rnaseq_course</code> 实跑（29 PASS / 3 SKIP）：样本 <strong>24</strong> × 基因 <strong>19150</strong>；Group 实际 <strong>6</strong> 水平（DMSO / DMSO+LIPUS / T4400 / T4400+LIPUS / T3976 / T3976+LIPUS）。物种 <strong>mmu</strong>。</p>
+      <p class="hint">Data Demo <code>rnaseq_course</code> 实跑（29 PASS / 3 SKIP）：样本 <strong>24</strong> × 基因 <strong>19150</strong>；Group 实际 <strong>6</strong> 水平（DMSO / DMSO+LIPUS / T4400 / T4400+LIPUS / T3976 / T3976+LIPUS）。物种 <strong>mmu</strong>。</p>
 
       <h4>① 加载数据</h4>
       <ol class="guide-steps">
-        <li>组学选 <strong>Transcriptomics</strong>；数据 → Course Demo → <strong>RNA-seq Transcriptomics</strong>。</li>
+        <li>组学选 <strong>Transcriptomics</strong>；数据 → Data Demo → <strong>RNA-seq Transcriptomics</strong>。</li>
         <li>实验选 <code>rnaseq_course</code>；差分时务必显式指定 ref/test（示例 <strong>DMSO vs T4400</strong>）。</li>
       </ol>
 
@@ -506,11 +507,11 @@ function renderRnaseqDemoSection() {
         <dd>重负载后偶发。重启本地 API 后再 Visualize / Run All。</dd>
       </dl>`
     : `
-      <p class="hint">Course demo <code>rnaseq_course</code> (29 PASS / 3 SKIP): <strong>24</strong> × <strong>19150</strong>; <strong>6</strong> Group levels (DMSO / T4400 / T3976 ± LIPUS). Organism <strong>mmu</strong>.</p>
+      <p class="hint">Data demo <code>rnaseq_course</code> (29 PASS / 3 SKIP): <strong>24</strong> × <strong>19150</strong>; <strong>6</strong> Group levels (DMSO / T4400 / T3976 ± LIPUS). Organism <strong>mmu</strong>.</p>
 
       <h4>① Load</h4>
       <ol class="guide-steps">
-        <li>Omics → Transcriptomics; Data → Course Demo → RNA-seq → <code>rnaseq_course</code>.</li>
+        <li>Omics → Transcriptomics; Data → Data Demo → RNA-seq → <code>rnaseq_course</code>.</li>
         <li>Set DESeq2 ref/test explicitly (e.g. <strong>DMSO vs T4400</strong>).</li>
       </ol>
 
@@ -563,7 +564,7 @@ function renderRnaseqDemoSection() {
 }
 
 function renderChipDemoSection() {
-  const zh = getLocale() === "zh";
+  const zh = ["zh","zh-TW"].includes(getLocale());
   const body = zh
     ? `
       <p class="hint">实跑核对（<code>webapp/test_outputs/chip_full_ops_guide/</code>）：PASS <strong>39</strong> / SKIP <strong>4</strong>（联合包 EXPECTED_GATE）/ FAIL <strong>0</strong>。峰样本 <code>tests/ChIP/HA_summits_0.05.bed</code>（mm）；BAM 本地 <code>HA3/4</code> vs <code>IgG1/3</code>（勿提交 BAM）。</p>
@@ -586,7 +587,7 @@ function renderChipDemoSection() {
 
       <h4>③ 联合包（Peak × 组学）</h4>
       <ol class="guide-steps">
-        <li>先在 <strong>数据</strong> 页导入 RNA / 16S / 代谢 / 临床（Course Demo 或上传），并跑出差异结果（或导入 DE CSV）。</li>
+        <li>先在 <strong>数据</strong> 页导入 RNA / 16S / 代谢 / 临床（Data Demo 或上传），并跑出差异结果（或导入 DE CSV）。</li>
         <li>再回 ChIP Step2 跑 <code>rna_protein</code> / <code>microbiome_16s_mgx</code> / <code>metabolomics</code> / <code>clinical</code>。</li>
         <li>仅有峰、无 DE/临床表时 API 返回 <strong>EXPECTED_GATE</strong>（依赖缺失，非故障）。</li>
       </ol>
@@ -657,14 +658,14 @@ function renderChipDemoSection() {
 }
 
 function renderFlowSection() {
-  const zh = getLocale() === "zh";
+  const zh = ["zh","zh-TW"].includes(getLocale());
   return `
     <div class="card">
       <h3>${L("flowTitle")}</h3>
       <div class="guide-flow">
-        <div class="guide-flow-step"><strong>1 Course</strong><span>${zh ? "视频+测验 / 示例数据" : "Videos + demo data"}</span></div>
+        <div class="guide-flow-step"><strong>1 Data</strong><span>${zh ? "导入或加载示例" : "Import or demo data"}</span></div>
         <div class="guide-flow-arrow">→</div>
-        <div class="guide-flow-step"><strong>2 Data</strong><span>${zh ? "上传或 demo" : "Upload or demo"}</span></div>
+        <div class="guide-flow-step"><strong>2 Workbench</strong><span>${zh ? "核对分组与流程" : "Review groups and workflow"}</span></div>
         <div class="guide-flow-arrow">→</div>
         <div class="guide-flow-step"><strong>3 Prepare</strong><span>${zh ? "推荐参数" : "Recommended defaults"}</span></div>
         <div class="guide-flow-arrow">→</div>
@@ -678,7 +679,7 @@ function renderFlowSection() {
 }
 
 function renderFaqSection() {
-  const zh = getLocale() === "zh";
+  const zh = ["zh","zh-TW"].includes(getLocale());
   if (zh) {
     return `<div class="card"><h3>${L("faqTitle")}</h3><dl class="guide-faq">
       <dt>8080 打不开？</dt><dd>Mac: 双击 Stop-EMP-Web-Mac.command 后重启；Windows: Stop-EMP-Web-Windows.bat 或 Restart-EMP-Web.bat</dd>

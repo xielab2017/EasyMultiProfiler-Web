@@ -704,6 +704,7 @@ tr:hover td { background: rgba(59,110,245,.04); }
 
 /* ─── OMICS FILTERING (hide tabs not relevant to current omics) ─ */
 /* multiomics / customize intentionally omit filter classes (same as "all") */
+body.omics-proteomics [data-omics]:not([data-omics~="proteomics"]),
 body.omics-transcriptomics [data-omics]:not([data-omics~="transcriptomics"]),
 body.omics-microbiome_16s  [data-omics]:not([data-omics~="microbiome_16s"]),
 body.omics-metagenomics    [data-omics]:not([data-omics~="metagenomics"]),
@@ -1666,3 +1667,14 @@ pre.guide-cmd,
 }
 .nav-item--chipds-alias.hidden { display: none !important; }
 .upload-card--diff .upload-diff-only { display: block; }
+
+/* Visualization has an explicit ChIP catalogue; do not inherit RNA-only panels. */
+body.omics-chipseq #page-visualization [data-omics]:not([data-omics~="chipseq"]) { display:none !important; }
+/* Equal export cards and actions across all interface languages. */
+.export-grid{align-items:stretch}
+.export-card{display:flex;flex-direction:column;align-items:stretch;gap:12px;padding:22px 18px;min-width:0}
+.export-card>svg{align-self:center;flex-shrink:0}
+.export-card h3{margin:0;line-height:1.5;min-height:3em;display:flex;align-items:center;justify-content:center}
+.export-card p{margin:0;line-height:1.65;flex:1;min-height:3.3em}
+.export-card>.btn{box-sizing:border-box;width:100%;height:48px;min-height:48px;max-height:48px;margin-top:auto;padding:7px 10px;display:flex;align-items:center;justify-content:center;line-height:1.25;white-space:normal;overflow:hidden;background:#fff;color:var(--clr-primary);border:1px solid var(--clr-primary)}
+.export-card>.btn:hover{background:#eef3ff}

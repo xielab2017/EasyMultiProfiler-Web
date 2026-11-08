@@ -12,6 +12,7 @@ export function initMatrixPanel(doc=document, transport=fetch, ask=confirm) {
   let paperContext=null,paperAccessions=[],pollTimer=null;const automaticJobs=new Set(),annotationAttempts=new Set();
   const remember=()=>{if(job?.job_id)studyContexts.set(job.job_id,{accession:jobAccession,paper:paperContext,annotations:job.status==='completed'?annotations:null});};
   const set=(id,value,vars={})=>{if(typeof value==='string')labelNode(get(id),value,vars);else{get(id).dataset??={};delete get(id).dataset.featureMessage;get(id).textContent=JSON.stringify(value,null,2);}};
+  const getAgentDownloadPermission=()=>doc.getElementById('analysis-agent-mode')?.checked===true;
   const accession=()=>get('accession').value.trim().toUpperCase();
   const validGSE=x=>/^GSE[0-9]+$/.test(x);
   function reset(){revision++;manifest=null;download=null;annotations=null;get('files').replaceChildren();get('save').replaceChildren();get('samples').replaceChildren();set('receipt','');get('export-samples').disabled=true;get('export-provenance').disabled=true;get('export-provenance').removeAttribute('href');get('export-provenance').setAttribute('aria-disabled','true');get('export-receipt').disabled=true;}
@@ -66,7 +67,7 @@ export function initMatrixPanel(doc=document, transport=fetch, ask=confirm) {
     for(const file of result.manifest.files){
       const row=doc.createElement('div');row.className='card';const title=doc.createElement('p');labelNode(title,'{name} | {format} | {size} | 数据类型待来源确认',{name:file.name,format:file.format_hint,size:Number.isSafeInteger(file.bytes)?file.bytes.toLocaleString()+' bytes':ft('大小未知')});row.append(title);
       const source=doc.createElement('p');labelNode(source,'来源：{url}',{url:file.url});row.append(source);
-      const button=doc.createElement('button');button.type='button';labelNode(button,'查看下载计划并确认');
+      const button=doc.createElement('button');button.type='button';button.setAttribute('data-agent-file',file.id);button.setAttribute('data-agent-name',file.name);labelNode(button,'查看下载计划并确认');
       button.disabled=/\.(fastq|fq|sra|bam|cram)(\.gz)?$/i.test(file.name||'');
       if(button.disabled){const reason=doc.createElement('p');labelNode(reason,'这是原始reads/比对文件，本矩阵入口不下载。');row.append(reason);}
       button.onclick=()=>run(async()=>{
@@ -74,7 +75,7 @@ export function initMatrixPanel(doc=document, transport=fetch, ask=confirm) {
         const cap=Number(get('budget').value);if(!Number.isFinite(cap)||cap<0.001||cap>100)throw Error(ft('下载额度应为0.001–100 GiB，且仍受可用磁盘限制'));
         const prepared=await api('matrix/plan',{manifest_id:result.manifest_id,file_id:file.id,max_bytes:Math.floor(cap*1024**3)});unchanged(v,a);if(Number(get('budget').value)!==cap)throw Error(ft('下载额度已改变，请重新审核计划'));set('plan',prepared.plan);
         if(prepared.plan.status!=='ready_for_confirmation'||!prepared.plan.download_enabled)throw Error((prepared.plan.blockers||[]).join('; ')||ft('当前文件不能下载'));
-        if(!ask(ft('下载原文件 {name}\n大小：{size} bytes\n本次最大额度：{cap} GiB\n{url}\n注意：{warnings}\n文件内容未必是适用的矩阵。不自动解包、调用 AI、下载其他文件或执行分析。是否确认？',{name:file.name,size:file.bytes??ft('未知'),cap,url:file.url,warnings:(prepared.plan.warnings||[]).join('; ')}))){set('status',ft('已取消，没有发起下载。'));return;}
+        if(!getAgentDownloadPermission()&&!ask(ft('下载原文件 {name}\n大小：{size} bytes\n本次最大额度：{cap} GiB\n{url}\n注意：{warnings}\n文件内容未必是适用的矩阵。不自动解包、调用 AI、下载其他文件或执行分析。是否确认？',{name:file.name,size:file.bytes??ft('未知'),cap,url:file.url,warnings:(prepared.plan.warnings||[]).join('; ')}))){set('status',ft('已取消，没有发起下载。'));return;}
         const started=await api('matrix/start',{plan_id:prepared.plan_id,plan_sha256:prepared.plan_sha256,confirmed:true});if(v!==revision||a!==accession())throw Error(ft('选择已改变；已确认的下载可能仍在运行。请保存任务 ID 后读取进度或取消：{id}',{id:started.job_id}));job=started;jobAccession=a;automaticJobs.add(job.job_id);get('job-id').value=job.job_id;displayJob(job);
       });row.append(button);get('files').append(row);
     }

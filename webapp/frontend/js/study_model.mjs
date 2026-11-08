@@ -26,11 +26,21 @@ export function annotationRows(sampleIds,annotations={},field=''){
   return sampleIds.map(id=>{
     const match=(annotations.matches||[]).find(row=>row.column===id);
     const sample=(match?.status==='exact'||(match?.status==='manual'&&match.confirmed===true))?match.sample:(annotations.records||[]).find(row=>row.accession===id);
-    const values=[...new Set(fieldsFor(sample)[field]||[])];
+    let keys=[field];if(field.startsWith('@fields:')){try{keys=JSON.parse(field.slice(8));}catch{keys=[];}}
+    const source=fieldsFor(sample),parts=keys.map(key=>[...new Set(source[key]||[])]);
+    const values=keys.length>1?(parts.every(v=>v.length===1)?[keys.map((key,i)=>key+'='+parts[i][0]).join(' | ')]:[]):[...new Set(source[field]||[])];
     return{id,group:values.length===1?values[0]:'',gsm:sample?.accession||'',match:sample?(match?.status==='manual'?'manual':'exact'):match?.status||'unmatched',
-      evidence:field&&sample?(sample.characteristics||[]).filter(line=>line.slice(0,line.indexOf(':')).trim()===field).join(' | '):'',
+      evidence:field&&sample?(sample.characteristics||[]).filter(line=>keys.includes(line.slice(0,line.indexOf(':')).trim())).join(' | '):'',
       title:sample?.title||'',ambiguous:values.length>1};
   });
+}
+export function suggestGrouping(sampleIds,annotations={}){
+ const keys=annotationFields(annotations.records||[]).filter(f=>f.samples===(annotations.records||[]).length&&f.values.length>=2&&f.values.length<=12&&!/replicat|batch|subject|patient|individual|sample|library|批次|个体|重复/i.test(f.name)).map(f=>f.name).sort();
+ if(!keys.length)return null;const field=keys.length===1?keys[0]:'@fields:'+JSON.stringify(keys),rows=annotationRows(sampleIds,annotations,field),groups=[...new Set(rows.map(r=>r.group))];
+ if(rows.some(r=>!r.group||r.match!=='exact')||groups.length<2||groups.length>12)return null;
+ const excluded=annotationFields(annotations.records||[]).filter(f=>f.values.length>=2&&!keys.includes(f.name));
+ const warnings=excluded.map(f=>({field:f.name,values:f.values,missing:Math.max(0,(annotations.records||[]).length-f.samples)}));
+ return {field,keys,rows,groups,warnings,source:'exact_geo_characteristics',design_verified:false};
 }
 export function comparisonPairs(samples,mode,reference,targets=[]){
   if(!Array.isArray(samples)||!samples.length||samples.some(row=>!row.id||!row.group?.trim()))throw Error('missing_groups');

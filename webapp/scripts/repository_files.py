@@ -16,6 +16,8 @@ def pride_files(accession):
         records=json.loads(raw)
     except (OSError,ValueError) as error:raise RepositoryError('Unable to read PRIDE project files; open the official project page to continue.') from error
     if not isinstance(records,list):raise RepositoryError('Unexpected PRIDE file response')
+    if not records and len(accession)>9:
+        raise RepositoryError(f'PRIDE returned no files for {accession}. The identifier may include a PDF citation suffix; verify it against the paper project URL (possible prefix: {accession[:9]}). No identifier was silently changed.')
     files=[]
     for row in records[:100]:
         if not isinstance(row,dict):continue
@@ -33,4 +35,5 @@ def pride_files(accession):
             category = row.get('fileCategory')
             files.append({'name':name,'size_bytes':size,'category':category.get('value','') if isinstance(category,dict) else '', 'url':'https://ftp.pride.ebi.ac.uk'+parsed.path})
             break
+    files.sort(key=lambda f: (0 if re.search(r'[.]pg_matrix[.]',f['name'],re.I) and 'first-pass' not in f['name'] else 1 if re.search(r'[.](?:pg|gg|unique_genes)_matrix[.]',f['name'],re.I) else 2, f['size_bytes'] if f['size_bytes'] is not None else float('inf')))
     return {'accession':accession,'repository':'PRIDE','source_url':url,'files':files[:30],'records_inspected':len(records[:100]),'may_have_more':len(records)>=100 or len(files)>30,'downloaded':False,'matrix_verified':False}

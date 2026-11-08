@@ -305,6 +305,10 @@ save_plot_pdf <- function(p, path, width = 9, height = 6) {
     }
   )
   grDevices::dev.off()
+  if (identical(getOption("emp.viz_style", list())$figure_method, "self_built") && inherits(p, "ggplot")) {
+    archive <- tempfile(pattern = paste0(tools::file_path_sans_ext(basename(path)), "_"), tmpdir = dirname(path))
+    emp_export_figure_methods(p, archive, width, height, dpi = 300)
+  }
   path
 }
 
@@ -415,6 +419,8 @@ emp_prepare_preview_rows <- function(empt, n = 30L) {
 
 # Wrap a block so plumber returns a tidy error JSON on failure
 safe_api <- function(expr, res) {
+  old_viz_style <- getOption("emp.viz_style", NULL)
+  on.exit(options(emp.viz_style = old_viz_style), add = TRUE)
   t0 <- Sys.time()
   result <- tryCatch(
     expr,
@@ -437,4 +443,12 @@ safe_api <- function(expr, res) {
     result$server_ts  <- format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3%z")
   }
   result
+}
+
+# Web release and installed R package are distinct components.
+emp_web_version <- function() {
+  path <- file.path(Sys.getenv("BACKEND_DIR", unset="webapp/backend"), "..", "..", "DESCRIPTION")
+  value <- tryCatch(read.dcf(path, fields = "Version")[[1]], error=function(e) NA_character_)
+  if (is.na(value) || !nzchar(value)) stop("Repository DESCRIPTION version is unavailable")
+  as.character(value)
 }

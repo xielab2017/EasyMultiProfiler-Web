@@ -20,6 +20,15 @@ import agent_adapter
 RAW = b'gene\tLength\tA1\tA2\tB1\tB2\ng1\t500\t10\t12\t30\t32\ng2\t800\t50\t55\t9\t8\ng0\t900\t0\t0\t0\t0\n'
 
 
+class MatrixProfileTests(unittest.TestCase):
+    def test_numeric_profile_is_evidence_not_an_omics_or_group_claim(self):
+        p=wb.matrix_profile(wb.inspect(RAW,'counts.tsv'))
+        self.assertTrue(p['count_compatible']);self.assertEqual(p['candidate_sample_columns'],4)
+        self.assertEqual(p['omics_candidates'],[]);self.assertFalse(p['raw_count_provenance_verified'])
+        p=wb.matrix_profile(wb.inspect(b'Protein.Group\tProtein.Ids\tA\tB\nP1\tU1\t1.5\tNA\nP2\tU2\t2.5\t-1\n','protein.tsv'))
+        self.assertFalse(p['count_compatible']);self.assertEqual(p['omics_candidates'],['proteomics'])
+        self.assertEqual(p['missing_or_nonfinite_cells'],1);self.assertEqual(p['negative_cells'],1)
+
 class WorkbenchTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

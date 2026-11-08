@@ -4,6 +4,45 @@
 # UI.  Plots are tuned for journal output (300 dpi, journal-friendly palette,
 # clear axes, statistical annotations where appropriate).
 
+# Plotting must preserve the selected statistical metric and input values.
+.viz_selected_p <- function(df, use_padj = TRUE) {
+  key <- if (isTRUE(use_padj)) "padj" else "pvalue"
+  values <- suppressWarnings(as.numeric(df[[key]]))
+  if (length(values) != nrow(df) || !any(is.finite(values))) {
+    stop("Selected ", key, " values are unavailable. Choose the intended metric explicitly; no automatic p-value substitution is performed.")
+  }
+  if (any(is.finite(values) & (values < 0 | values > 1))) {
+    stop("Selected ", key, " values must lie between 0 and 1.")
+  }
+  omitted <- sum(!is.finite(values))
+  if (omitted) warning(omitted, " rows have unavailable ", key, " values and cannot be plotted or selected as significant.", call. = FALSE)
+  values
+}
+
+.viz_finite_fc <- function(values) {
+  out <- suppressWarnings(as.numeric(values))
+  if (!length(out) || any(!is.finite(out))) {
+    stop("Fold-change values contain missing or non-finite entries. Resolve them in the analysis results before plotting; values are not replaced or clipped.")
+  }
+  out
+}
+
+.viz_heatmap_matrix <- function(mat, log_transform = TRUE) {
+  out <- as.matrix(mat)
+  if (!is.numeric(out) || !length(out) || any(!is.finite(out))) {
+    stop("Heatmap matrix must contain finite numeric values; missing values are not replaced with zero.")
+  }
+  if (isTRUE(log_transform)) {
+    if (any(out < 0)) stop("Heatmap log1p requires non-negative values. Use the appropriate transformed input or disable log transformation explicitly.")
+    out <- log1p(out)
+  }
+  spread <- apply(out, 1, stats::sd)
+  if (any(!is.finite(spread) | spread == 0)) {
+    stop("Heatmap row z-scores are undefined for zero-variance rows. Review these rows explicitly before plotting.")
+  }
+  out
+}
+
 # -----------------------------------------------------------------------------
 # Helper: pick a colour-friendly group vector + level order
 # -----------------------------------------------------------------------------
@@ -322,6 +361,7 @@
   if (ng >= 2L && ng <= 8L) {
     ell <- emp_conf_ellipse(scores$PC_x, scores$PC_y, scores$group, level = 0.95)
     if (!is.null(ell) && nrow(ell) > 0) {
+      caption <- paste(c(caption, "95% covariance dispersion regions; not mean confidence intervals (groups n >= 3). Small-group regions are unstable."), collapse = " | ")
       p_main <- p_main + ggplot2::geom_polygon(
         data = ell,
         ggplot2::aes(x = x, y = y, fill = group, group = group),
@@ -329,6 +369,9 @@
       )
     }
   }
+
+  missing_groups <- setdiff(levels(scores$group), if (exists("ell") && !is.null(ell)) unique(as.character(ell$group)) else character())
+  if (length(missing_groups)) caption <- paste(c(caption, paste0("Ellipse omitted (n < 3 or singular covariance): ", paste(missing_groups, collapse = ", "), ".")), collapse = " | ")
 
   # Double-circle points (outer halo + inner core) per group.
   p_main <- emp_add_ordination_double_points(p_main)
@@ -647,9 +690,7 @@ make_boxplot <- function(session_id, experiment, group = NULL, feature = NULL,
   if (!requireNamespace("pheatmap", quietly = TRUE)) {
     stop("Package 'pheatmap' is required for heatmap.")
   }
-  mat_in <- as.matrix(mat)
-  mat_in[!is.finite(mat_in)] <- 0
-  if (isTRUE(log_transform)) mat_in <- log1p(mat_in)
+  mat_in <- .viz_heatmap_matrix(mat, log_transform)
 
   grp <- as.factor(grp)
   if (length(grp) != ncol(mat_in)) {
@@ -845,42 +886,15 @@ make_volcano <- function(session_id, experiment, fc_cutoff = 1.0, p_cutoff = 0.0
     )
   }
 
-  # Decide which p-value column to use.  If the caller asks for padj but the
-  # dataset has no significant padj at the chosen cutoff we transparently
-  # fall back to the raw p-value and annotate the subtitle.
-  padj_vec <- suppressWarnings(as.numeric(df$padj))
-  pval_vec <- suppressWarnings(as.numeric(df$pvalue))
-  fallback_msg <- NULL
-  if (isTRUE(use_padj) && any(is.finite(padj_vec))) {
-    n_sig <- sum(is.finite(padj_vec) & padj_vec <= p_cutoff, na.rm = TRUE)
-    if (n_sig == 0 && any(is.finite(pval_vec))) {
-      use_padj <- FALSE
-      fallback_msg <- "No features pass padj cutoff; using raw p-value instead"
-    }
-  }
-  p_use <- if (isTRUE(use_padj) && any(is.finite(padj_vec))) padj_vec else pval_vec
-  df$p_plot <- p_use
-  df$fc <- suppressWarnings(as.numeric(df$log2FoldChange))
-
-  fin <- is.finite(df$fc)
-  if (any(fin) && any(!fin)) {
-    cap <- max(abs(df$fc[fin]), na.rm = TRUE)
-    df$fc[!fin & df$fc > 0] <-  cap
-    df$fc[!fin & df$fc < 0] <- -cap
-  }
-  df <- df[is.finite(df$fc) & is.finite(df$p_plot), , drop = FALSE]
+  df$p_plot <- .viz_selected_p(df, use_padj)
+  df$fc <- .viz_finite_fc(df$log2FoldChange)
+  df <- df[is.finite(df$p_plot), , drop = FALSE]
   if (!nrow(df)) stop("Differential result has no usable FC/p values.")
 
-  # Soft 99th-percentile clipping to keep the bulk of the cloud readable.
-  fc_q <- as.numeric(stats::quantile(abs(df$fc), probs = 0.99, na.rm = TRUE))
-  if (is.finite(fc_q) && fc_q > 0) {
-    fc_clip <- max(fc_q, fc_cutoff * 2, 2)
-    df$fc <- pmax(pmin(df$fc, fc_clip), -fc_clip)
-  }
-
+  # Preserve all finite fold changes. The floor only handles p=0 for -log10.
   df$neg_log10p <- -log10(pmax(df$p_plot, 1e-300))
-  df$change <- ifelse(df$p_plot <= p_cutoff & df$fc >=  fc_cutoff, "Up",
-               ifelse(df$p_plot <= p_cutoff & df$fc <= -fc_cutoff, "Down", "NS"))
+  df$change <- ifelse(df$p_plot < p_cutoff & df$fc >=  fc_cutoff, "Up",
+               ifelse(df$p_plot < p_cutoff & df$fc <= -fc_cutoff, "Down", "NS"))
   df$change <- factor(df$change, levels = c("Down", "NS", "Up"))
   df$label  <- if (!is.null(df$symbol)) df$symbol else df$feature
 
@@ -895,8 +909,8 @@ make_volcano <- function(session_id, experiment, fc_cutoff = 1.0, p_cutoff = 0.0
   p_label <- if (isTRUE(use_padj)) expression(-log[10]~italic("padj")) else
     expression(-log[10]~italic("p-value"))
   sub <- paste0("|log2FC| >= ", fc_cutoff, ", ",
-                if (isTRUE(use_padj)) "padj" else "p", " <= ", p_cutoff)
-  if (!is.null(fallback_msg)) sub <- paste0(sub, "  (", fallback_msg, ")")
+                if (isTRUE(use_padj)) "padj" else "p", " < ", p_cutoff)
+  if (any(df$p_plot == 0)) sub <- paste0(sub, "; zero p-values displayed at 1e-300")
 
   p <- ggplot2::ggplot(df, ggplot2::aes(x = fc, y = neg_log10p, color = change)) +
     ggplot2::geom_point(alpha = 0.8, size = 1.75, na.rm = TRUE) +
@@ -976,20 +990,11 @@ make_deg_heatmap <- function(session_id, experiment, group = NULL,
     stop("Run differential analysis first – no cached DEG table found.")
   }
   df <- as.data.frame(raw$data, stringsAsFactors = FALSE)
-  padj_vec <- suppressWarnings(as.numeric(df$padj))
-  pval_vec <- suppressWarnings(as.numeric(df$pvalue))
-  if (isTRUE(use_padj) && any(is.finite(padj_vec))) {
-    n_sig <- sum(is.finite(padj_vec) & padj_vec <= p_cutoff, na.rm = TRUE)
-    if (n_sig == 0 && any(is.finite(pval_vec))) {
-      use_padj <- FALSE
-      message("[deg_heatmap] No padj-significant genes – using raw p-value.")
-    }
-  }
-  df$p_plot <- if (isTRUE(use_padj) && any(is.finite(padj_vec))) padj_vec else pval_vec
-  df$fc     <- suppressWarnings(as.numeric(df$log2FoldChange))
-  df <- df[is.finite(df$fc) & is.finite(df$p_plot), , drop = FALSE]
+  df$p_plot <- .viz_selected_p(df, use_padj)
+  df$fc <- .viz_finite_fc(df$log2FoldChange)
+  df <- df[is.finite(df$p_plot), , drop = FALSE]
 
-  sig <- df[df$p_plot <= p_cutoff & abs(df$fc) >= fc_cutoff, , drop = FALSE]
+  sig <- df[df$p_plot < p_cutoff & abs(df$fc) >= fc_cutoff, , drop = FALSE]
   if (!nrow(sig)) stop("No differentially expressed genes pass the selected cutoffs.")
   sig <- sig[order(-abs(sig$fc)), , drop = FALSE]
 
@@ -1055,7 +1060,7 @@ make_deg_heatmap <- function(session_id, experiment, group = NULL,
 
   title <- paste0("DEG heatmap (", nrow(mat), " genes)")
   subtitle <- paste0("|log2FC| >= ", fc_cutoff, ", ",
-                     if (isTRUE(use_padj)) "padj" else "p", " <= ", p_cutoff,
+                     if (isTRUE(use_padj)) "padj" else "p", " < ", p_cutoff,
                      if (min_row_sum > 0) paste0(", rowSum > ", min_row_sum) else "")
 
   show_rn <- isTRUE(show_rownames) && nrow(mat) <= 200

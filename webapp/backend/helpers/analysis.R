@@ -522,6 +522,34 @@ run_alpha <- function(session_id, experiment, method = "shannon", source = "curr
   empt
 }
 
+.diff_counts_valid <- function(x) {
+  is.numeric(x) && length(x) > 0L && all(is.finite(x)) &&
+    all(x >= 0) && all(x == floor(x)) && all(x <= .Machine$integer.max)
+}
+
+# Recover imported counts by exact identifiers, retaining the current sample
+# annotations, feature selection and order. Never repair values or infer IDs.
+.diff_count_input <- function(empt, raw = NULL) {
+  current <- SummarizedExperiment::assays(empt)[[1]]
+  if (.diff_counts_valid(current)) return(list(empt = empt, source = "current_counts"))
+  fail <- function() stop(paste0(
+    "计数模型需要原始非负整数计数。当前矩阵可能经过 log、CLR 或标准化处理，",
+    "且无法从原始导入快照恢复对应计数。请导入 raw counts；",
+    "若仅有已变换表达量，请审核后选择适用的连续表达量分析方法，不能直接使用 DESeq2/edgeR。"
+  ), call. = FALSE)
+  if (is.null(raw)) fail()
+  counts <- SummarizedExperiment::assays(raw)[[1]]
+  ids <- list(rownames(current), colnames(current), rownames(counts), colnames(counts))
+  if (any(vapply(ids, function(x) is.null(x) || anyNA(x) || any(!nzchar(x)) || anyDuplicated(x) > 0L, logical(1)))) fail()
+  if (!all(rownames(current) %in% rownames(counts)) || !all(colnames(current) %in% colnames(counts))) fail()
+  counts <- counts[rownames(current), colnames(current), drop = FALSE]
+  if (!.diff_counts_valid(counts)) fail()
+  values <- SummarizedExperiment::assays(empt)
+  values[[1]] <- counts
+  SummarizedExperiment::assays(empt) <- values
+  list(empt = empt, source = "original_import_counts", recovered = TRUE)
+}
+
 run_diff <- function(session_id, experiment, method = "DESeq2",
                      group_var = NULL, ref_group = NULL, test_group = NULL,
                      filter_low = TRUE, subset_two_groups = TRUE,
@@ -591,6 +619,7 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
   }
 
   method_use <- method_raw
+  input_audit <- list(source = "current_assay", recovered = FALSE)
   alias_map <- c(
     "wilcox" = "wilcox.test",
     "t.test" = "t.test",
@@ -599,6 +628,22 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
     "limma" = "limma_voom"
   )
   if (method_use %in% names(alias_map)) method_use <- alias_map[[method_use]]
+
+  count_methods <- c("deseq2", "edger", "edger_quasi_likelihood", "edger_likelihood_ratio",
+                     "edger_robust_likelihood_ratio", "limma_voom", "limma_voom_sample_weights")
+  if (tolower(method_use) %in% count_methods) {
+    raw <- if (.diff_counts_valid(SummarizedExperiment::assays(empt)[[1]])) NULL else load_raw_empt(session_id, experiment)
+    resolved <- .diff_count_input(empt, raw)
+    empt <- resolved$empt
+    input_audit <- list(source = resolved$source, recovered = isTRUE(resolved$recovered),
+                        sample_count = ncol(empt), feature_count = nrow(empt))
+    if (isTRUE(resolved$recovered)) {
+      notice <- "已自动使用原始导入计数快照；保留当前特征、样本顺序和分组，未修改负值或切换统计方法。"
+      bump(6, notice)
+      message("[diff] ", notice)
+    }
+    empt@metadata$diff_input_source <- resolved$source
+  }
 
   # 1. Subset samples to only ref + test groups (huge speed-up for bulk RNAseq).
   if (isTRUE(subset_two_groups)) {
@@ -646,10 +691,12 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
   test_eff <- test_group
 
   if (comparison_mode %in% c("multi_lrt", "all_pairwise") && multi_capable) {
-    return(.diff_run_native_multi(
+    result <- .diff_run_native_multi(
       session_id, experiment, empt, group_var, method_raw,
       comparison_mode, filter_low, on_progress
-    ))
+    )
+    attr(result, "input_audit") <- input_audit
+    return(result)
   }
 
   if (using_tidybulk) {
@@ -737,6 +784,7 @@ run_diff <- function(session_id, experiment, method = "DESeq2",
   })
 
   bump(100, "Done")
+  attr(result, "input_audit") <- input_audit
   result
 }
 
@@ -1009,6 +1057,9 @@ run_correlation <- function(session_id, experiment, use = "spearman") {
   })
 
   if (is.null(result)) result <- data.frame()
+  if (is.list(result) && !is.data.frame(result) && !is.null(result$cor_p)) {
+    result <- as.data.frame(result$cor_p, stringsAsFactors = FALSE)
+  }
   result
 }
 
@@ -1345,16 +1396,10 @@ install_orgdb <- function(orgdb, on_progress = NULL) {
   df <- as.data.frame(raw_list$data, stringsAsFactors = FALSE)
   padj_vec <- suppressWarnings(as.numeric(df$padj))
   pval_vec <- suppressWarnings(as.numeric(df$pvalue))
-  # Transparent fallback: if user asks for padj but nothing passes, use raw p
-  # with a message so small RNAseq runs still produce enrichment input.
-  if (isTRUE(use_padj) && any(is.finite(padj_vec))) {
-    n_sig <- sum(is.finite(padj_vec) & padj_vec <= p_cutoff, na.rm = TRUE)
-    if (n_sig == 0 && any(is.finite(pval_vec))) {
-      use_padj <- FALSE
-      message("[enrichment] No padj-significant genes – using raw p-value.")
-    }
-  }
-  p <- if (isTRUE(use_padj) && any(is.finite(padj_vec))) padj_vec else pval_vec
+  metric <- if (isTRUE(use_padj)) "padj" else "pvalue"
+  if (!metric %in% names(df)) stop("Selected enrichment P metric unavailable.")
+  p <- suppressWarnings(as.numeric(df[[metric]]))
+  if (!any(is.finite(p))) stop("Selected enrichment P metric has no valid values.")
   df$p_plot <- p
   df$fc <- suppressWarnings(as.numeric(df$log2FoldChange))
   df <- df[is.finite(df$fc) & is.finite(df$p_plot), , drop = FALSE]

@@ -1,5 +1,5 @@
 import {WORKFLOW_LIBRARY,WorkflowComposer,dependencies,textPair} from './workflow_library.mjs';
-import {getLocale} from './locale.js?v=i18n-zh-default-v1';
+import {getLocale} from './locale.js?v=nav-language-20261108';
 const words={required:['必需 · 锁定','Required · locked'],optional:['可选','Optional'],conditional:['依赖所需','Required dependency'],
  count:['工作台可执行','Workbench execution'],gate:['必需审核 / 交付','Review / delivery gate'],page:['需在已有页面执行','Use existing analysis page'],planning:['仅编排 · 未连接执行','Planning only · execution not connected'],
  omics:['组学类型','Omics type'],type:['输入类型（需核对）','Input type (verify)'],preset:['流程模板','Workflow template'],minimal:['最小必需流程','Required steps only'],exploratory:['探索性分析','Exploratory analysis'],differential:['差异 / 比较分析','Differential / comparative analysis'],

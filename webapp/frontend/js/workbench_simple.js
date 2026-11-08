@@ -1,4 +1,4 @@
-import {getLocale} from './locale.js?v=i18n-zh-default-v1';
+import {getLocale} from './locale.js?v=nav-language-20261108';
 const tx=(zh,en)=>['zh','zh-TW'].includes(getLocale())?zh:en;
 export function mountSimpleWorkbench({onStart,describe,isNative}){
  const page=document.getElementById('page-workbench'),get=id=>document.getElementById('wb-'+id);
@@ -17,7 +17,7 @@ export function mountSimpleWorkbench({onStart,describe,isNative}){
  const legacyGroup=get('group-reviewed')?.closest('label'),legacyIndependent=get('independent')?.closest('label');if(legacyGroup)legacyGroup.hidden=true;if(legacyIndependent)legacyIndependent.hidden=true;
  get('template').hidden=true;get('preset').addEventListener('change',()=>get('template').click());
  consent.onchange=()=>{get('group-reviewed').checked=consent.checked;get('independent').checked=consent.checked;};
- start.onclick=()=>onStart();ai.onclick=()=>{aiPanel.open=true;get('question').focus();};
+ start.onclick=()=>onStart();ai.onclick=()=>window.dispatchEvent(new CustomEvent('emp:agent-question',{detail:{question:'请根据已上传矩阵的检查摘要推荐适用的组学流程，并说明待核对的数据类型、分组与设计。',profile:window._empWorkbenchProfile}}));
  function labels(){dataTitle.textContent=tx('1. 导入数据与分组','1. Import data and groups');flowTitle.textContent=tx('2. 选择分析流程','2. Choose a workflow');startTitle.textContent=tx('3. 开始分析','3. Start analysis');advancedTitle.textContent=tx('高级设置：步骤、参数、随机种子与检查记录','Advanced: steps, parameters, random seed and validation records');aiTitle.textContent=tx('AI 帮我选择或调整流程','Ask AI to choose or adjust the workflow');ai.textContent=tx('让 AI 帮我选流程','Ask AI about this workflow');columnTitle.textContent=tx('数据列设置（自动排除已识别的注释列）','Column settings (recognized annotation columns excluded)');sampleTitle.textContent=tx('样本分组与对应表','Sample groups and mapping');consentText.textContent=tx('我已核对分组、比较方向和数据来源；本次为独立样本原始计数，无需批次或配对调整。','I reviewed groups, contrast directions and provenance. These are independent raw-count samples requiring no batch or paired-design adjustment.');update();}
  function update(){const native=isNative(),summary=describe();consentLabel.hidden=!native;start.textContent=native?tx('开始分析','Start analysis'):tx('进入所选组学分析','Continue to selected omics analysis');flowSummary.textContent=summary.steps||'';review.replaceChildren();for(const line of summary.lines||[]){const p=make('p');p.textContent=line;review.append(p);}sampleDetails.hidden=!get('samples').children.length;}
  window.addEventListener('emp:locale-change',labels);labels();

@@ -1,4 +1,4 @@
-import {getLocale} from './locale.js?v=i18n-zh-default-v1';
+import {getLocale} from './locale.js?v=nav-language-20261108';
 const tx=(zh,en)=>['zh','zh-TW'].includes(getLocale())?zh:en;
 const make=(tag,text)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el;};
 export function mountModelConnections(root,{readConfiguration,load}){
@@ -13,7 +13,16 @@ export function mountModelConnections(root,{readConfiguration,load}){
  function labels(){regionText.textContent=tx('MiniMax 站点','MiniMax region');protocolText.textContent=tx('兼容协议','Compatible protocol');regionWrap.hidden=provider.value!=='minimax';detect.textContent=tx('检测可用模型','Detect available models');test.textContent=tx('测试真实对话与流程工具（固定测试问题）','Test live chat and workflow tool (fixed test prompt)');latestText.textContent=tx('检测后选择服务返回创建时间的最新文本模型（可手动修改）','After detection select the newest dated text model (editable)');note.textContent=tx('保存配置后可自动恢复；检测模型只请求服务的模型列表。','Saved settings can be restored automatically; detection requests only the model list.');}
 
  function syncBase(){if(provider.value==='minimax'){base.value=(region.value==='international'?'https://api.minimax.io':'https://api.minimax.cn')+(protocol.value==='anthropic'?'/anthropic':'/v1');base.readOnly=true;}}
- function applyCatalog(data,choose=false){const current=model.value;let rows=data.models.filter(row=>!/(?:embed|rerank|whisper|tts|transcri|imagen|veo|dall-e|moderation)/i.test(row.id));if(!rows.length)rows=data.models;for(const row of rows){if(![...model.options].some(opt=>opt.value===row.id)){const opt=make('option',row.id);opt.value=row.id;model.append(opt);}}if(choose&&rows.some(row=>row.created!=null)){model.value=rows.find(row=>row.created!=null).id;model.dispatchEvent(new Event('change',{bubbles:true}));}else model.value=current;status.textContent=tx('服务返回模型：','Provider models: ')+data.models.length+' · '+tx(data.latest_is_known?'按服务提供的创建时间排序，非聊天验证。':'创建时间未知；不推断哪个最新。',data.latest_is_known?'Sorted by provider creation time; chat unverified.':'Creation dates unknown; latest is not inferred.');}
+ function applyCatalog(data,choose=false){
+  const current=model.value==='__custom__'?(document.getElementById('code-lab-llm-model-custom')?.value||''):model.value;
+  let rows=data.models.filter(row=>!/(?:embed|rerank|whisper|tts|transcri|imagen|veo|dall-e|moderation)/i.test(row.id));if(!rows.length)rows=data.models;
+  model.replaceChildren();for(const row of rows){const opt=make('option',row.id);opt.value=row.id;model.append(opt);}
+  const custom=make('option',tx('自定义模型','Custom model'));custom.value='__custom__';model.append(custom);
+  model.value=choose&&rows.some(row=>row.created!=null)?rows.find(row=>row.created!=null).id:(rows.some(row=>row.id===current)?current:rows[0].id);
+  model.dispatchEvent(new Event('change',{bubbles:true}));
+  status.textContent=tx('服务返回模型：','Provider models: ')+data.models.length+' · '+tx(data.latest_is_known?'按服务提供的创建时间排序，非聊天验证。':'创建时间未知；不推断哪个最新。',data.latest_is_known?'Sorted by provider creation time; chat unverified.':'Creation dates unknown; latest is not inferred.');
+ }
+
  function changeProvider(){const cfg=readConfiguration().config,profile=cfg.profiles?.minimax||{};region.value=profile.region||'china';protocol.value=profile.protocol||'openai';syncBase();if(catalogs[cacheID()])applyCatalog(catalogs[cacheID()]);labels();}
  for(const control of [region,protocol])control.onchange=()=>{syncBase();status.textContent='';};provider.addEventListener('change',changeProvider);
  detect.onclick=async()=>{detect.disabled=true;status.textContent=tx('正在读取服务的模型列表…','Reading provider model list…');try{const selected=readConfiguration(),cfg=selected.config;const body={provider:selected.provider==='chatgpt'?'openai':selected.provider,model:cfg.model,api_key:cfg.api_key||'',base_url:cfg.base_url||'',enabled:true,...(selected.provider==='minimax'?{region:region.value,protocol:protocol.value}:{})};const response=await fetch('/api/public-data/agent/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),credentials:'omit',redirect:'error'});const data=await response.json();if(!response.ok)throw Error(data.error||'Model discovery unavailable');catalogs[cacheID()]=data;localStorage.setItem('emp_model_catalogs_v1',JSON.stringify(catalogs));applyCatalog(data,latest.checked);}catch(error){status.textContent=tx('未获取到模型列表；保留现有模型，可手动填写。','Could not obtain models; existing selection retained, manual entry available.')+' '+error.message;}finally{detect.disabled=false;}};

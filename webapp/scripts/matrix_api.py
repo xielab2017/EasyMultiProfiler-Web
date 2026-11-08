@@ -95,6 +95,15 @@ def install(Handler,root):
                 else:result['provenance_download_note']='Provenance exceeds the 2 MiB export limit; no attachment created.'
                 return self.reply(200,result)
             op=path.removeprefix(PREFIX+'matrix/');m=manager(self,root)
+            if op=='resolve':
+                fields(req,{'accession'});accession=req.get('accession','')
+                if re.fullmatch(r'GSE[0-9]{1,9}',accession):manifest=processed_data.discover(accession)
+                elif re.fullmatch(r'PXD[0-9]{5,9}',accession):
+                    import repository_files
+                    found=repository_files.pride_files(accession)
+                    manifest={'accession':accession,'repository':'PRIDE','status':'processed_candidates','sample_accessions':[],'title':accession,'files':[{'id':str(i),'name':r['name'],'url':r['url'],'bytes':r['size_bytes'],'format_hint':'tabular_candidate','checksum':None} for i,r in enumerate(found['files'])]}
+                else:raise ValueError('Automatic managed downloads currently accept public GEO GSE or PRIDE PXD accessions; no arbitrary URLs')
+                return self.reply(200,{'manifest':manifest,'manifest_id':self.server.store.put(manifest)})
             if op=='plan':
                 fields(req,{'manifest_id','file_id','max_bytes'});key=req.get('manifest_id')
                 if not isinstance(key,str):raise ValueError('Stored matrix manifest required')

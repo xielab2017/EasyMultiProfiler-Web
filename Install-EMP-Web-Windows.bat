@@ -1,5 +1,5 @@
 @echo off
-REM Install-EMP-Web-Windows.bat - EasyMultiProfiler Web v9.1.3 one-click installer (Windows).
+REM Install-EMP-Web-Windows.bat - EasyMultiProfiler Web one-click installer (Windows).
 REM Double-click this file in File Explorer.
 REM
 REM Behaviour:
@@ -12,10 +12,15 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 
+set "EMP_WEB_VERSION="
+if exist "%SCRIPT_DIR%\DESCRIPTION" for /f "tokens=2" %%V in ('findstr /b "Version:" "%SCRIPT_DIR%\DESCRIPTION"') do set "EMP_WEB_VERSION=%%V"
+set "EMP_WEB_RELEASE="
+if defined EMP_WEB_VERSION set "EMP_WEB_RELEASE= v%EMP_WEB_VERSION%"
+
 echo.
 echo  ============================================================
-echo   EasyMultiProfiler Web v9.1.3 - Windows one-click installer
-echo   EasyMultiProfiler Web v9.1.3 - Windows 一键安装
+echo   EasyMultiProfiler Web%EMP_WEB_RELEASE% - Windows one-click installer
+echo   EasyMultiProfiler Web%EMP_WEB_RELEASE% - Windows 一键安装
 echo  ============================================================
 echo   This installer checks for Git / Python 3 / R, installs what
 echo   is missing, installs EasyMultiProfiler, and starts the web

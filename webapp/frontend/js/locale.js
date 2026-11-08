@@ -1,10 +1,14 @@
+import {UI_LOCALES_FULL} from './ui_locales_full.mjs';
+import {UI_LANGUAGE_ALIASES} from './ui_language_aliases.mjs';
+import {buildUIIndex,localizeUI,observeUILanguage} from './ui_language.mjs';
+import {UI_LANGUAGE_PAIRS} from './ui_language_catalog.mjs';
 /**
- * UI locale (v9.1.0): Auto (IP country -> browser language) or a manual
+ * UI locale (v9.3.0): Auto (IP country -> browser language) or a manual
  * choice from SUPPORTED_LOCALES (zh, zh-TW, en, ja, ko, ar, es, fr, de,
  * pt, ru). Arabic resolves to an RTL document direction.
  * Dispatches emp:locale-change when the active locale changes.
  */
-import { I18N_CATALOG } from "./i18n_catalog.js?v=i18n-zh-default-v1";
+import { I18N_CATALOG } from "./i18n_catalog.js?v=nav-language-20261108";
 import { EXTRA_LOCALES } from "./i18n_extra_locales.js?v=i18n-v910";
 import {
   SUPPORTED_LOCALES,
@@ -14,8 +18,8 @@ import {
   bcp47,
   localeDisplayName,
 } from "./i18n_geo.js?v=i18n-v910";
-import { applyDomI18n } from "./ui_dom_i18n.js?v=i18n-zh-default-v1";
-import { applyPagesI18n } from "./i18n_pages.js?v=i18n-zh-default-v1";
+import { applyDomI18n } from "./ui_dom_i18n.js?v=nav-language-20261108";
+import { applyPagesI18n } from "./i18n_pages.js?v=nav-language-20261108";
 import { FEATURE_NAV, applyFeatureLocale } from "./feature_i18n.mjs?v=2";
 
 const LS_MODE = "emp_ui_locale_mode"; // auto | any SUPPORTED_LOCALES code
@@ -241,12 +245,14 @@ const I18N = {
 };
 for (const [locale, entries] of Object.entries(FEATURE_NAV)) Object.assign(I18N[locale], entries);
 
+const uiIndex=buildUIIndex(I18N,UI_LANGUAGE_PAIRS,UI_LOCALES_FULL,UI_LANGUAGE_ALIASES);
+let uiObserver=null;
 let _resolved = "zh";
 let _mode = "auto";
 let _autoMeta = { country: "", source: "browser" };
 
 export function getLocale() {
-  // v9.1.0: returns the actual resolved locale code (for example "ja",
+  // v9.3.0: returns the actual resolved locale code (for example "ja",
   // "ko", "ar", "zh-TW"), not the old binary zh/en. Callers that compare
   // ==="zh" keep zh behaviour for Simplified Chinese only; long-tail
   // strings for other locales fall back through t().
@@ -266,7 +272,10 @@ export function getLocaleMode() {
 /** Translate key; supports {name} style placeholders in values. */
 export function t(key, locale = null, vars = null) {
   const loc = locale || getLocale();
-  let s = I18N[loc]?.[key] ?? I18N.en[key] ?? I18N.zh[key] ?? key;
+  const english=I18N.en[key];
+  let s = I18N[loc]?.[key] ?? UI_LOCALES_FULL[english]?.[loc] ?? english ?? I18N.zh[key] ?? key;
+  // Feature navigation and old aliases may still contain an English fallback.
+  if(loc!=='en'&&s===english)s=UI_LOCALES_FULL[english]?.[loc]||s;
   if (vars && typeof vars === "object") {
     Object.entries(vars).forEach(([k, v]) => {
       s = s.replaceAll(`{${k}}`, String(v ?? ""));
@@ -307,7 +316,7 @@ async function fetchIpCountry() {
 }
 
 async function detectLocaleAuto() {
-  // Manual-less resolution chain (v9.1.0):
+  // Manual-less resolution chain (v9.3.0):
   //   1. IP country (fetchIpCountry) -> localeForCountry
   //   2. browser language -> localeForBrowserLang
   //   3. product default "zh" (preserved product decision: the primary
@@ -361,9 +370,9 @@ function applyCourseBanner() {
   if (!root) return;
   const loc = getLocale();
   if (!isZhFamily(loc)) {
-    root.innerHTML = `<strong>v9.1.0</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
+    root.innerHTML = `<strong>v9.3.0</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
   } else {
-    root.innerHTML = `<strong>v9.1.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
+    root.innerHTML = `<strong>v9.3.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
   }
   document.getElementById("btn-course-to-guide")?.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent("emp:navigate", { detail: { page: "guide" } }));
@@ -431,6 +440,8 @@ function applyDocumentLocale() {
   }
 
   window.dispatchEvent(new CustomEvent("emp:locale-change", { detail: { locale: loc, mode: _mode } }));
+  const uiOptions=()=>({locale:getLocale(),index:uiIndex,translate:t,doc:document});
+  if(!uiObserver)uiObserver=observeUILanguage(document,uiOptions);else uiObserver.apply();
 }
 
 export async function setLocaleMode(mode) {

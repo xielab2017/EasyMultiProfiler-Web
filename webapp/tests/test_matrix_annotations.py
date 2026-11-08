@@ -12,6 +12,15 @@ from urllib.error import HTTPError
 sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
 import processed_data as p
 
+class LibraryNameTests(unittest.TestCase):
+    def test_named_library_field_is_exact_and_ambiguities_remain_unmatched(self):
+        records=[{'accession':'GSM1','descriptions':['Library name: A1']},{'accession':'GSM2','descriptions':['Library name: A2']}]
+        matched=p.match_samples(['A1','A2','A','a1'],records)
+        self.assertEqual([x['sample']['accession'] for x in matched[:2]],['GSM1','GSM2'])
+        self.assertEqual(matched[0]['matched_fields'],['Sample_description.Library_name'])
+        self.assertIsNone(matched[2]['sample']);self.assertIsNone(matched[3]['sample'])
+        self.assertIsNone(p.match_samples(['A1'],records+[{'accession':'GSM3','descriptions':['Library name: A1']}])[0]['sample'])
+
 ACCESSION = 'GSE60450'
 BASE = 'https://ftp.ncbi.nlm.nih.gov/geo/series/GSE60nnn/GSE60450'
 MATRIX_URL = BASE + '/matrix/GSE60450_series_matrix.txt.gz'

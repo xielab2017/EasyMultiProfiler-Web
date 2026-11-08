@@ -11,3 +11,10 @@ webapp/frontend/js/runtime_auth.local.js
 
 # Nonsecret per-machine API/UI port discovery.
 webapp/frontend/js/runtime_ports.local.js
+
+# Local execution and verification artifacts; preserve them outside releases.
+__pycache__/
+*.py[cod]
+/Rplots.pdf
+/output/
+/tests/bridge_acceptance_*/

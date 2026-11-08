@@ -12,3 +12,7 @@ window.EMP_RUNTIME_PORTS.api=70000; assert.equal(apiBase(),'/api');
 window.API_BASE='/explicit'; assert.equal(apiBase(),'/explicit');
 delete window.API_BASE; delete window.EMP_RUNTIME_PORTS; window.location.port='8080'; assert.equal(apiBase(),'http://localhost:8000/api');
 console.log('runtime port discovery assertions passed');
+
+const html = readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+assert.ok(!/window\.API_BASE\s*=/.test(html),'HTML bootstrap must not override configured API ports');
+window.location.port='8080';window.EMP_RUNTIME_PORTS={api:8003,web:8080};assert.equal(apiBase(),'http://localhost:8003/api');

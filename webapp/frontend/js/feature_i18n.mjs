@@ -1,3 +1,4 @@
+import {UI_LOCALES_FULL} from './ui_locales_full.mjs';
 // New feature text uses the same resolved locale as the application.
 // Other long-tail locales use the application's established English fallback.
 export const FEATURE_TEXT = {
@@ -151,7 +152,7 @@ export const FEATURE_TEXT = {
   '取消任务':'Cancel job',
   '下载完整结果与审计 JSON':'Download full results and audit JSON',
   '下载完整差异结果 TSV':'Download full differential TSV',
-  'v9.2.0 · 新功能在这里 / New features':'v9.2.0 · New features',
+  'v9.3.0 · 新功能在这里 / New features':'v9.3.0 · New features',
   '完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。':'The full launcher starts matrix and AI workflow services together. For metadata only, the metadata service can also run separately.',
   '在主页面下载矩阵 / Matrix download':'Download matrices in the main page',
   '计数质量检查':'Count QC',
@@ -278,7 +279,8 @@ export const FEATURE_TEXT = {
 const reverse = new Map(Object.entries(FEATURE_TEXT).map(([zh,en])=>[en,zh]));
 export function featureText(source, locale = 'zh', vars = {}) {
   const original = reverse.get(source) || source;
-  let text = locale === 'zh' ? original : (FEATURE_TEXT[original] || original);
+  const english=FEATURE_TEXT[original]||original;
+  let text=UI_LOCALES_FULL[english]?.[locale]||(['zh','zh-TW'].includes(locale)?original:english);
   for (const [key,value] of Object.entries(vars || {})) text = text.replaceAll(`{${key}}`, String(value ?? ''));
   return text;
 }

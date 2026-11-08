@@ -17,7 +17,7 @@ def install(Handler):
 
     def post(self):
         route=urlsplit(self.path).path
-        if route not in {path,'/api/public-data/agent/models','/api/public-data/agent/test'}: return old_post(self)
+        if route not in {path,'/api/public-data/agent/models','/api/public-data/agent/test','/api/public-data/agent/ui-localize'}: return old_post(self)
         if not local_owner(self): return self.reply(403, {'error': 'Local owner origin required'})
         if self.headers.get('Transfer-Encoding') or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
             return self.reply(415, {'error': 'Bounded JSON settings required'})
@@ -27,6 +27,9 @@ def install(Handler):
             self.connection.settimeout(15)
             value = json.loads(self.rfile.read(size))
             if not isinstance(value,dict):raise ValueError('Settings object required')
+            if route.endswith('/ui-localize'):
+                import ui_translation_build
+                return self.reply(200,ui_translation_build.translate(value))
             if route.endswith('/test'):
                 import agent_adapter
                 if value.pop('consent',False) is not True:return self.reply(400,{'error':'Explicit test consent required'})
@@ -36,6 +39,7 @@ def install(Handler):
             if route.endswith('/models'):return self.reply(200,model_catalog.discover(value))
             if value == {'reset_runtime': True}: return self.reply(200, model_settings.clear())
             return self.reply(200, model_settings.configure(value))
-        except (ValueError, TypeError, OSError):
+        except (ValueError, TypeError, OSError) as exc:
+            if route.endswith('/ui-localize'):return self.reply(400,{'error':str(exc)[:220]})
             return self.reply(400, {'error': 'Choose one chat model, a supported provider/Base URL and its API key. Settings were not loaded.'})
     Handler.do_GET, Handler.do_POST = get, post

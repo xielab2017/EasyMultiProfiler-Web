@@ -1,9 +1,16 @@
+import {initAppVersion} from './app_version.mjs';
+import {syncTopNavigation,RETIRED_PAGES} from './navigation_sync.mjs';
+import {attachResultPlot} from './plot_attachment.mjs';
+import {initRunallCoverage,readRunallCoverageOptions} from './runall_coverage.js?v=1';
+import {initMethodLibraryVisualization} from './viz_method_library.js?v=1';
+import {initEnrichmentVisualization} from './viz_enrichment.js?v=1';
 // Main application – routing, state, page wiring.
 // The ?v= query string is a cache-buster: browsers treat each unique URL
 // as a separate module, so bumping this value forces clients to drop any
 // stale copy of api.js held in the HTTP cache or the module map.  Keep
 // this value in lock-step with the one used in index.html (app.js ?v=).
-import * as API from "./api.js?v=i18n-zh-default-v1";
+import {initGseaAnalysis} from './gsea_analysis.js';
+import * as API from "./api.js?v=nav-language-20261108";
 import {
   initCodeLab,
   notifyCodeLabNavigate,
@@ -12,17 +19,17 @@ import {
   refreshCodeLabContext,
   openCodeLabPanel,
   applyCopilotAction,
-} from "./code_lab.js?v=i18n-zh-default-v1";
+} from "./code_lab.js?v=nav-language-20261108";
 import {
   initTeaching,
   onTeachingPage,
   setupTeachingTraceHooks,
-} from "./teaching.js?v=i18n-zh-default-v1";
-import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=i18n-zh-default-v1";
-import { initGuide, openGuideInstallTab } from "./guide.js?v=i18n-zh-default-v1";
-import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=i18n-zh-default-v1";
-import { applyPagesI18n } from "./i18n_pages.js?v=i18n-zh-default-v1";
-import { initFontScale } from "./font_scale.js?v=i18n-zh-default-v1";
+} from "./teaching.js?v=nav-language-20261108";
+import { applyOmicsDefaults, omicsDefaultsHint } from "./omics_defaults.js?v=nav-language-20261108";
+import { initGuide, openGuideInstallTab } from "./guide.js?v=nav-language-20261108";
+import { initLocale, getLocale, t, pageTitleKey } from "./locale.js?v=nav-language-20261108";
+import { applyPagesI18n } from "./i18n_pages.js?v=nav-language-20261108";
+import { initFontScale } from "./font_scale.js?v=nav-language-20261108";
 import { initEvolution, trackPromptButtonClick } from "./evolution.js?v=2026-07-16-multi-demo-v2";
 import { initGithubSync } from "./github_sync.js?v=editable-repo-v1";
 import { initJobTray } from "./job_tray.js?v=i18n-v910-r2";
@@ -137,6 +144,12 @@ export function hideGlobalProgress() {
   setGlobalProgressCancellable(null);
 }
 
+window.addEventListener('emp:job-submitted', () => {
+  hideGlobalProgress();
+  setLoading(false);
+  toast('任务已转入后台，可在后台任务列表查看进度。', 'info');
+});
+
 // Submit an async backend call that returns `{ job_id }`, then poll until
 // completion while driving the global progress bar.  The caller receives
 // the final result object from `/api/jobs/<id>/result`.
@@ -167,7 +180,7 @@ export async function withGlobalProgress(label, jobPromiseOrId, opts = {}) {
     clearInterval(driftTimer);
     updateGlobalProgress(100, "Done");
     setTimeout(hideGlobalProgress, 600);
-    return result;
+    return {...result,_job_id:jobId};
   } catch (e) {
     clearInterval(driftTimer);
     updateGlobalProgress(100, `Failed: ${e.message}`);
@@ -206,9 +219,7 @@ export async function withBusy(label, workPromiseOrFn, opts = {}) {
   let drift = 0, driftTimer = null;
   const driftLoop = () => {
     const elapsed = _busyElapsedLabel(t0);
-    const msg = baseMsg
-      ? `${baseMsg}（已用时 ${elapsed}）`
-      : (mode === "hold" ? `已用时 ${elapsed}` : "");
+    const msg = `${baseMsg ? baseMsg + " · " : ""}等待服务器返回（已用时 ${elapsed}；无实际进度）`;
     if (mode === "hold") {
       const sec = (Date.now() - t0) / 1000;
       if (sec < 1.2) {
@@ -223,8 +234,9 @@ export async function withBusy(label, workPromiseOrFn, opts = {}) {
     } else {
       // Climb asymptotically toward 92% – never reach 100 until we actually finish.
       drift = Math.min(drift + (92 - drift) * 0.08, 92);
-      updateGlobalProgress(drift, msg || opts.message || "");
+      updateGlobalProgress(drift, msg);
     }
+    const g = _gp(); if (g.pct) g.pct.textContent = "处理中";
   };
   driftTimer = setInterval(driftLoop, mode === "hold" ? 400 : 300);
   driftLoop();
@@ -295,6 +307,16 @@ function coerceTableRows(payload) {
     return [x];
   }
   return [];
+}
+
+function showDiffInputNotice(audit) {
+  if (!audit?.recovered) return;
+  const notice = document.createElement('p');
+  notice.className = 'alert alert-info';
+  notice.textContent = ['zh','zh-TW'].includes(getLocale())
+    ? '已自动使用原始导入计数进行分析，保留当前特征、样本顺序和分组。原有变换值未被修正。'
+    : 'Analysis used the original imported counts, retaining current features, sample order and groups. Transformed values were not repaired.';
+  document.getElementById('diff-result')?.prepend(notice);
 }
 
 export function showResultTable(containerId, jsonStr, maxRows = 500, options = {}) {
@@ -720,136 +742,31 @@ function renderInterpretCards(sections, promptButtons, baseContext) {
 }
 
 function attachAiCopilot(container, baseContext) {
-  if (!container || container.querySelector(".ai-copilot")) return;
-  const wrap = document.createElement("div");
-  wrap.className = "ai-copilot";
-  wrap.innerHTML = `
-    <button type="button" class="btn btn-outline ai-copilot-btn">
-      <i data-lucide="sparkles"></i> <span class="ai-copilot-btn-label">${t("copilot.btn")}</span>
-    </button>
-    <div class="ai-copilot-panel hidden"></div>
-  `;
-  container.appendChild(wrap);
-  if (window.lucide) lucide.createIcons({ nodes: [wrap] });
-  const btn = wrap.querySelector(".ai-copilot-btn");
-  const panel = wrap.querySelector(".ai-copilot-panel");
-
-  btn.addEventListener("click", async () => {
-    panel.classList.remove("hidden");
-    panel.innerHTML = `<p class="ai-copilot-loading">${t("copilot.loading")}</p>`;
-    btn.disabled = true;
+  if (!container || container.querySelector('.ai-copilot')) return;
+  const wrap=document.createElement('div');wrap.className='ai-copilot';
+  const button=document.createElement('button');button.type='button';button.className='btn btn-outline ai-copilot-btn';button.textContent=t('copilot.btn');wrap.append(button);container.append(wrap);
+  button.onclick=async()=>{
+    button.disabled=true;
     try {
-      const ctx = { ...baseContext };
-      // Enrich with table data if present.
-      const table = container.querySelector("table");
-      if (table) {
-        const cols = [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
-        const bodyRows = [...table.querySelectorAll("tbody tr")].slice(0, 8).map((tr) => {
-          const cells = [...tr.querySelectorAll("td")];
-          const obj = {};
-          cells.forEach((td, i) => { obj[cols[i] || `c${i}`] = (td.getAttribute("title") || td.textContent).trim(); });
-          return obj;
-        });
-        const allRows = [...table.querySelectorAll("tbody tr")].map((tr) => {
-          const cells = [...tr.querySelectorAll("td")];
-          const obj = {};
-          cells.forEach((td, i) => { obj[cols[i] || `c${i}`] = (td.getAttribute("title") || td.textContent).trim(); });
-          return obj;
-        });
-        ctx.table = { columns: cols, n_rows: allRows.length, rows: bodyRows };
-        ctx.stats = { ...deriveTableStats(allRows, cols), ...(ctx.stats || {}) };
-      }
-      const dsExp = (window._emp?.experiments || []).find((e) => e.name === window._emp?.currentExp);
-      if (dsExp) ctx.dataset = { n_samples: dsExp.samples, n_features: dsExp.features };
-      const gSel = document.getElementById("global-experiment")?.closest("#main") &&
-        (document.querySelector("#tx-group, #m16s-group, #mbx-group, [id$='-group']")?.value);
-      if (gSel) ctx.group = gSel;
-      const plotImg = container.querySelector("img[src^='data:image']");
-      if (plotImg) {
-        ctx.plot_present = true;
-        // Send the actual PNG so vision-capable models can critique the figure.
-        const src = plotImg.getAttribute("src") || "";
-        if (src.length <= 6_000_000) ctx.plot_image = src;
-      }
-      ctx.locale = getLocale();
-      ctx.lang = ctx.locale;
-      const res = await API.aiInterpret(ctx);
-      const sourceBadge = res.source === "llm"
-        ? `<span class="ai-copilot-src ai-src-llm">${t("copilot.src.llm")}</span>${
-            res.vision ? `<span class="ai-copilot-src ai-src-vision">${t("copilot.src.vision")}</span>` : ""}`
-        : `<span class="ai-copilot-src ai-src-offline">${t("copilot.src.offline")}</span>`;
-      const sections = res.sections || {};
-      const promptButtons = res.prompt_buttons || [];
-      const actions = res.actions || [];
-      const checklist = res.visual_checklist || [];
-      const bodyHtml = (sections.interpretation || sections.limitations)
-        ? renderInterpretCards(sections, promptButtons, baseContext)
-        : `<div class="ai-copilot-body">${renderMiniMarkdown(res.interpretation)}</div>`;
-      const checklistHtml = (baseContext.kind === "plot" && checklist.length)
-        ? `<details class="ai-copilot-checklist"><summary class="hint">${t("copilot.checklist.summary")} (${checklist.length})</summary><ol class="ai-checklist-ol">${
-            checklist.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
-          }</ol></details>`
-        : "";
-      const actionsHtml = actions.length
-        ? `<div class="ai-copilot-actions"><p class="hint">${t("copilot.actions.hint")}</p>${
-            actions.map((a) => `
-              <button type="button" class="btn btn-outline btn-sm ai-copilot-action"
-                data-workflow="${escapeHtml(a.workflow || "")}"
-                data-tab="${escapeHtml(a.tab || "")}"
-                data-instruction="${escapeHtml(a.instruction || "")}"
-                data-auto="${a.auto_optimize ? "1" : "0"}">${escapeHtml(a.label || t("copilot.action.default"))}</button>`).join("")
-          }</div>`
-        : "";
-      panel.innerHTML = `
-        <div class="ai-copilot-head">${sourceBadge}
-          <span class="ai-copilot-hint">${t("copilot.disclaimer")}</span>
-        </div>
-        ${bodyHtml}
-        ${checklistHtml}
-        ${actionsHtml}`;
-      const wfPage = baseContext.kind === "plot" ? "visualization" : "analysis";
-      const wfTab = baseContext.analysis_type === "heatmap" ? "viz-heatmap" : null;
-      panel.querySelectorAll(".ai-prompt-btn").forEach((pb) => {
-        pb.addEventListener("click", () => {
-          const idx = Number(pb.dataset.promptIdx);
-          const item = promptButtons[idx];
-          if (!item?.prompt) return;
-          trackPromptButtonClick(item.label || "", { analysis_type: ctx.analysis_type });
-          window.dispatchEvent(new CustomEvent("emp:apply-copilot-action", {
-            detail: {
-              page: wfPage,
-              tab: wfTab,
-              instruction: item.prompt,
-              autoOptimize: false,
-            },
-          }));
-          toast(t("copilot.toast.applied"), "success");
-        });
-      });
-      panel.querySelectorAll(".ai-copilot-action").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const page = btn.dataset.workflow || "analysis";
-          window.dispatchEvent(new CustomEvent("emp:apply-copilot-action", {
-            detail: {
-              page,
-              tab: btn.dataset.tab || null,
-              instruction: btn.dataset.instruction || "",
-              autoOptimize: btn.dataset.auto === "1",
-            },
-          }));
-          toast(t("copilot.toast.applied"), "success");
-        });
-      });
-      if (window.lucide) lucide.createIcons({ nodes: [panel] });
-      window.dispatchEvent(new CustomEvent("emp:ai-interpret", {
-        detail: { analysis_type: ctx.analysis_type, source: res.source, locale: ctx.locale },
-      }));
-    } catch (e) {
-      panel.innerHTML = `<p class="ai-copilot-error">${escapeHtml(t("copilot.error"))}${escapeHtml(e.message)}</p>`;
-    } finally {
-      btn.disabled = false;
-    }
-  });
+    const attachment=await attachResultPlot(container);
+    const table=container.querySelector('table');
+    const columns=table?[...table.querySelectorAll('thead th')].map(node=>node.textContent.trim()):[];
+    const rows=table?[...table.querySelectorAll('tbody tr')].map(row=>Object.fromEntries([...row.querySelectorAll('td')].map((cell,i)=>[columns[i]||`c${i}`,cell.textContent.trim()]))):[];
+    const dataset=baseContext.source_job?null:(window._emp?.experiments||[]).find(row=>row.name===window._emp.currentExp);
+    const allowed=new Set(['feature','symbol','gene','log2FoldChange','log2FC','logFC','pvalue','p_value','padj','p_adj','p.adjust','qvalue','FDR','BgRatio','RichFactor','FoldEnrichment','Description','ID','GeneRatio','Count']);
+    const features=rows.slice(0,8).map(row=>Object.fromEntries(Object.entries(row).filter(([key])=>allowed.has(key)).map(([key,value])=>[key,String(value).slice(0,160)])));
+    const summary={analysis_type:baseContext.analysis_type,omics:baseContext.omics,kind:baseContext.kind,
+      n_samples:dataset?.samples,n_features:dataset?.features,visible_rows:rows.length,
+      display_statistics:container.querySelector('.ord-stats-card')?.textContent?.trim().slice(0,1100),
+      synthetic_test:/^SYNTHETIC_/i.test(window._emp?.currentExp||''),
+      stats:deriveTableStats(rows,columns),features,plot_present:!!container.querySelector('img'),
+      scope:attachment?'Selected result image attached; plotted labels are visible. No raw matrix attached.':'Visible result summary only; no raw matrix or image attached.',
+      plot_parameters:Object.fromEntries([...(container.closest('.tab-panel')||container).querySelectorAll('input[id],select[id]')].filter(n=>!['file','password'].includes(n.type)).map(n=>[n.id,n.type==='checkbox'?n.checked:n.value]).slice(0,35))};
+    const question=(['zh','zh-TW'].includes(getLocale())?'请深入解读当前结果：结合定量证据解释主要发现、统计限制、生物学假设及下一步分析或验证。明确区分已观察结果与推测；未提供图像时不要声称看过图。仅解读，不重新执行分析。结果摘要：':'Interpret this result using quantitative evidence, statistical limitations, biological hypotheses and next steps. Separate observations from inference. Inspect the attached result image when present; otherwise do not claim visual inspection. Interpret only; do not rerun. Summary: ')+JSON.stringify(summary).slice(0,2600);
+    openCodeLabPanel(document.querySelector('.page.active')?.id?.replace('page-',''));
+    window.dispatchEvent(new CustomEvent('emp:interpret-result',{detail:{question,analysis_type:summary.analysis_type,attachments:attachment?[attachment]:[]}}));
+    }catch(error){toast(error.message,'error');}finally{button.disabled=false;}
+  };
 }
 
 function toStringArray(value) {
@@ -882,6 +799,9 @@ async function ensureWorkflowReady(workflowId, exp, opts = {}) {
   const resp = await checker(exp, opts.params || {});
   const validation = resp.validation || {};
   const checks = validation.checks || {};
+  if (workflowId === "microbiome_16s" && typeof checks.taxonomy_depth_ok !== "boolean") {
+    throw new Error("无法确认 16S 分类信息，请核对实验和 R 服务状态后重试。");
+  }
   const failed = Object.entries(checks).filter(([, v]) => v === false).map(([k]) => k);
   const checkLabelMap = {
     has_assay: "数据矩阵为空或未加载",
@@ -924,24 +844,10 @@ const pageTitles = {
   export: "Export Results",
 };
 
-const WORKFLOW_ORDER = [
-  "guide", "course", "prompts", "import", "summary", "inspector",
-  "preparation", "analysis", "clinical", "runall", "visualization", "export",
-];
-
-function updateWorkflowStepper(page) {
-  const stepper = document.getElementById("workflow-stepper");
-  if (!stepper) return;
-  const activeIdx = WORKFLOW_ORDER.indexOf(page);
-  stepper.querySelectorAll(".wf-step").forEach(el => {
-    const stepIdx = WORKFLOW_ORDER.indexOf(el.dataset.wf);
-    const isActive = el.dataset.wf === page;
-    el.classList.toggle("is-active", isActive);
-    el.classList.toggle("is-done", activeIdx >= 0 && stepIdx >= 0 && stepIdx < activeIdx);
-  });
-}
+function updateWorkflowStepper() { syncTopNavigation(); }
 
 function navigateTo(page) {
+  if(RETIRED_PAGES.has(page))page="guide";
   // Unified ChIP page: downstream checklist lives under Step2 / Advanced.
   let chipStep = null;
   if (page === "chipseq_downstream") {
@@ -1049,7 +955,7 @@ document.getElementById("btn-course-to-guide")?.addEventListener("click", () => 
 document.getElementById("btn-help-course")?.addEventListener("click", () => navigateTo("course"));
 document.getElementById("btn-welcome-course")?.addEventListener("click", () => {
   document.getElementById("welcome-card")?.classList.add("hidden");
-  navigateTo("course");
+  navigateTo("guide");
 });
 document.getElementById("btn-welcome-dismiss")?.addEventListener("click", () => {
   document.getElementById("welcome-card")?.classList.add("hidden");
@@ -1176,7 +1082,7 @@ async function loadDemoDatasetButtons() {
 async function importAllDemos() {
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     const datasets = await listDemoDatasetsWithFallback();
     const available = datasets.filter(d => d.available);
     const targets = available.filter(d => ["m16s_course", "rnaseq_course", "clinical_course"].includes(d.id));
@@ -1220,7 +1126,7 @@ async function importAllDemos() {
 async function importDemoById(datasetId, omics) {
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     const res = await withBusy("Loading demo data", () => API.importDemoDataset(datasetId));
     if (omics && omics !== "clinical") {
       const sel = document.getElementById("omics-pipeline");
@@ -1351,7 +1257,7 @@ document.querySelectorAll(".tab-bar").forEach(bar => {
       ? [...bar.parentElement.querySelectorAll(".tab-panel")] : [];
     // Find panels in same section
     const section = tab.closest("section");
-    section.querySelectorAll(".tab-panel").forEach(p => p.classList.add("hidden"));
+    section.querySelectorAll(".tab-panel").forEach(p => {p.classList.add("hidden");p.classList.remove("active");});
     panel.classList.remove("hidden");
     panel.classList.add("active");
     // Side-effects on tab activation.
@@ -2442,6 +2348,9 @@ function bindUploadCard(omicsType) {
   const modeSel   = card.querySelector(".upload-import-mode");
   const btn       = card.querySelector(".upload-btn");
   if (!dataInput || !btn) return;
+  if(expName)expName.id='agent-upload-name-'+omicsType;
+  if(modeSel)modeSel.id='agent-upload-mode-'+omicsType;
+  const assayInput=card.querySelector('.upload-assay-name');if(assayInput)assayInput.id='agent-upload-assay-'+omicsType;
 
   if (!btn.dataset.labelMatrixKey) {
     const short = ({
@@ -2474,7 +2383,8 @@ function bindUploadCard(omicsType) {
 
   bindUploadDropZoneForCard(card);
 
-  btn.addEventListener("click", async () => {
+  btn.id="agent-upload-"+omicsType;
+  btn.onclick=async () => {
     const dataFile = dataInput.files[0];
     if (!dataFile) {
       toast(t("import.noDataFile"), "error");
@@ -2487,7 +2397,7 @@ function bindUploadCard(omicsType) {
 
     setLoading(true);
     try {
-      if (!localStorage.getItem("emp_session_id")) await API.createSession();
+      await API.ensureSession();
       let res;
       if (importMode === "diff_raw") {
         res = await withBusy(`Importing DE (${omicsType})`, () => API.importDiffRaw(fd));
@@ -2540,7 +2450,7 @@ function bindUploadCard(omicsType) {
     } finally {
       setLoading(false);
     }
-  });
+  };
 }
 
 function bindUploadDropZoneForCard(card) {
@@ -2596,7 +2506,7 @@ function bindChipseqUploadCard() {
     if (!file) { toast("Choose a peak file first (.bed / .narrowPeak / .broadPeak / .gff).", "error"); return; }
     setLoading(true);
     try {
-      if (!localStorage.getItem("emp_session_id")) await API.createSession();
+      await API.ensureSession();
       const genome = genomeSel?.value || "mm";
       const preset = presetSel?.value || "cutrun_tf_p05";
       const res = await withBusy("Uploading pre-called peaks",
@@ -2740,7 +2650,7 @@ document.getElementById("btn-import").addEventListener("click", async () => {
 
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     const res = await withBusy("Importing data", () => API.importData(fd));
     if (res.import_mode === "clinical_merge" || res.import_mode === "clinical_standalone") {
       const modeMsg = res.import_mode === "clinical_standalone"
@@ -3277,7 +3187,7 @@ async function runAnalysis(btnId, resultId, apiFn) {
     try {
       await ensurePageSnapshot("analysis");
       const res = await withBusy(label, () => apiFn(exp));
-      showResultTable(resultId, res.data);
+      showResultTable(resultId, res.data,500,{sourceJob:res._job_id});
       toast("Analysis complete.", "success");
       noteUiResultChanged();
     } catch(e) {
@@ -3338,6 +3248,7 @@ document.getElementById("btn-diff").addEventListener("click", async () => {
       const res = await API.analyzeDiff(exp, method, grp, refG, testG, opts);
       updateDiffProgress(100, "Done");
       showResultTable("diff-result", res.data);
+      showDiffInputNotice(res.input_audit);
       reportLastRun("Differential (sync)", performance.now() - t0, res.backend_ms);
       toast(`Differential done in ${((performance.now()-t0)/1000).toFixed(1)}s`, "success");
     } else {
@@ -3348,6 +3259,7 @@ document.getElementById("btn-diff").addEventListener("click", async () => {
       });
       updateDiffProgress(100, "Done");
       showResultTable("diff-result", result.data);
+      showDiffInputNotice(result.input_audit);
       reportLastRun("Differential (async)", performance.now() - t0, result.backend_ms);
       toast(`Differential done in ${((performance.now()-t0)/1000).toFixed(1)}s`, "success");
     }
@@ -3500,6 +3412,9 @@ document.getElementById("btn-enrich").addEventListener("click", async () => {
         enriched terms: <code>${r.n_rows ?? 0}</code>.`;
     }
     showResultTable("enrich-result", r.data, 100);
+    const plotButton=document.createElement('button');plotButton.className='btn btn-outline';plotButton.textContent='富集气泡图：设置参数并出图';
+    plotButton.onclick=()=>window.dispatchEvent(new CustomEvent('emp:plot-enrichment',{detail:{source_job:r._job_id||r.job_id,kind:'ora'}}));
+    tbl.prepend(plotButton);
     if (r.plot) {
       plot.classList.remove("hidden");
       plot.innerHTML = `<img src="${r.plot}" alt="${r.database} enrichment"/>`;
@@ -3788,7 +3703,7 @@ async function uploadChipBams(inputId, group, label) {
   let hideTimer = null;
   const clearHideTimer = () => { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } };
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     for (const f of files) {
       clearHideTimer();
       const ac = new AbortController();
@@ -4183,7 +4098,7 @@ async function uploadChipPeaksFromAnalysis() {
   }
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     // Genome at upload is optional metadata; user picks species before Annotate (Advanced §4).
     const genome = document.getElementById("chip-anno-genome")?.value
       || document.getElementById("chip-genome")?.value
@@ -4255,7 +4170,7 @@ async function onChipFolderPicked(ev) {
   let hideTimer = null;
   const clearHideTimer = () => { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } };
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     for (const f of bamLike) {
       clearHideTimer();
       const ac = new AbortController();
@@ -4396,7 +4311,7 @@ document.getElementById("chip-btn-scan-folder")?.addEventListener("click", async
   }
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     const res = await withBusy("Scan BAM folder", () => API.chipScanFolder(folder, "t"));
     await refreshChipBamTable();
     showAlert("chip-profile-result", `✓ Registered ${res.n_files || 0} file(s) as Treatment. Reassign Control samples in the table.`, "success");
@@ -5090,7 +5005,7 @@ async function refreshChipdsToolStatus() {
 async function runChipHomerOnPage() {
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     // Refresh badge / peaks metadata only — do not clobber a manual genome choice.
     const peaks = await refreshChipdsLastPeaks({ forceList: true, preserveGenomeSelects: true });
     const peaksUi = chipGenomeToUi(chipEffectivePeakGenome(peaks));
@@ -5137,7 +5052,7 @@ async function runChipHomerOnPage() {
 async function runChipDiffBindOnPage() {
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     const res = await API.chipDiffBind({
       method: document.getElementById("chipds-db-method")?.value || "DESeq2",
       fdr: +document.getElementById("chipds-db-fdr")?.value || 0.05,
@@ -5174,7 +5089,7 @@ async function runChipDiffBindOnPage() {
 async function runChipDeepToolsOnPage() {
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     const mode = document.getElementById("chipds-dt-mode")?.value || "heatmap";
     const res = await API.chipDeepTools({
       mode,
@@ -5394,7 +5309,7 @@ async function refreshChipdsLastPeaks(opts = {}) {
   let peakFiles = window._emp.chipPeakFiles || [];
   let activeId = window._emp.chipActivePeakId || "";
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     const res = await API.chipListPeaks();
     peakFiles = Array.isArray(res?.peak_files) ? res.peak_files : [];
     activeId = res?.active_peak_id || "";
@@ -5467,7 +5382,7 @@ async function onChipPeakSelectChange(ev) {
   if (!peakId) return;
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     const res = await API.chipSelectPeak({ peak_id: peakId });
     if (!res?.success && res?.error) throw new Error(res.error);
     window._emp.chipLastPeaks = adoptChipLastPeaks(res.last_peaks || {});
@@ -5522,7 +5437,7 @@ function collectChipPeaksOpsParams(op) {
 async function runChipPeaksOpsOnPage(op) {
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     await refreshChipdsLastPeaks({ forceList: true, preserveGenomeSelects: true });
     const params = collectChipPeaksOpsParams(op);
     const needsB = ["overlap", "idr", "bivalent", "chromatin_proxy"].includes(op);
@@ -5691,7 +5606,7 @@ function renderChipPeakQcResult(res) {
 async function runChipPeakQcOnPage() {
   setLoading(true);
   try {
-    if (!localStorage.getItem("emp_session_id")) await API.createSession();
+    await API.ensureSession();
     const res = await API.chipPeakQc();
     renderChipPeakQcResult(res);
     document.getElementById("chipds-qc-status")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -6264,6 +6179,7 @@ function currentColorOptions() {
   return {
     color_panel: document.getElementById("viz-color-panel")?.value || "npg",
     custom_colors: useCustom ? (picks.join(",") || null) : null,
+    figure_method: document.getElementById("viz-figure-method")?.value || "original",
     figure_scale: Number.isFinite(sc) && sc > 0 ? sc : 1,
     axis_text_x: Number.isFinite(atx) && atx > 0 ? atx : 11,
     axis_text_y: Number.isFinite(aty) && aty > 0 ? aty : 11,
@@ -6728,6 +6644,7 @@ function ensureChipseqNavVisible() {
     '.nav-item[data-page="chipseq"], .nav-item[data-page="chipseq_downstream"]'
   ).forEach((el) => {
     el.classList.remove("hidden");
+    el.removeAttribute("aria-hidden");
     el.style.removeProperty("display");
   });
 }
@@ -6746,10 +6663,16 @@ function applyOmicsPreset(omics) {
   document.querySelectorAll(".tab-bar").forEach((bar) => {
     const section = bar.closest("section");
     if (!section) return;
-    const visibleTabs = [...bar.querySelectorAll(".tab")].filter(
-      (t) => t.offsetParent !== null
-    );
-    if (!visibleTabs.length) return;
+    const visibleTabs = [...bar.querySelectorAll(".tab")].filter(tab => {
+      const supported=(tab.dataset.omics||'').split(/\s+/).filter(Boolean);
+      return showAll || !supported.length || supported.includes(omics) ||
+        (omics==='chipseq' && section.id!=='page-visualization' && supported.includes('transcriptomics'));
+    });
+    if (!visibleTabs.length) {
+      bar.querySelectorAll('.tab').forEach(tab=>tab.classList.remove('active'));
+      section.querySelectorAll('.tab-panel').forEach(panel=>{panel.classList.add('hidden');panel.classList.remove('active');});
+      return;
+    }
     const activeTab = visibleTabs.find((t) => t.classList.contains("active")) || visibleTabs[0];
     bar.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
     activeTab.classList.add("active");
@@ -6965,6 +6888,7 @@ window.addEventListener("emp:timing", (ev) => {
       let submit;
       if (pipeline === "rnaseq") {
         submit = await API.runAllRnaseq(exp, {
+          ...readRunallCoverageOptions('rnaseq'),
           group_var:   group,
           ref_group:   document.getElementById("ra-ref").value || null,
           test_group:  document.getElementById("ra-test").value || null,
@@ -6977,6 +6901,7 @@ window.addEventListener("emp:timing", (ev) => {
         });
       } else {
         submit = await API.runAllM16s(exp, {
+          ...readRunallCoverageOptions('m16s'),
           group_var:      group,
           taxonomy_level: document.getElementById("ra-tax-level").value,
           alpha_index:    document.getElementById("ra-alpha").value,
@@ -6995,8 +6920,10 @@ window.addEventListener("emp:timing", (ev) => {
         /*intervalMs*/ 800,
         /*timeoutMs */ 1800000, // 30 min
       );
-      setProgress(100, "Done");
-      updateGlobalProgress(100, "Done");
+      window.dispatchEvent(new CustomEvent('emp:runall-result',{detail:{result,job_id:submit.job_id}}));
+      const runOutcome=result?.partial?'Finished — review skipped/failed stages':'Finished';
+      setProgress(100, runOutcome);
+      updateGlobalProgress(100, runOutcome);
       setTimeout(hideGlobalProgress, 600);
       appendLog(`elapsed ${result.elapsed_s}s   bundle ${result.zip_name}`);
 
@@ -7008,7 +6935,7 @@ window.addEventListener("emp:timing", (ev) => {
         a.classList.remove("hidden");
         if (window.lucide) window.lucide.createIcons();
       }
-      toast("Bundle ready – click Download to save the zip.", "success");
+      toast(result?.partial?"结果包已生成；请检查逐阶段的跳过与失败原因。":"Bundle ready – click Download to save the zip.", result?.partial?"info":"success");
       refreshBundlesList();
     } catch(e) {
       appendLog("ERROR: " + e.message);
@@ -7868,6 +7795,7 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
 
 // ── INITIALISE ────────────────────────────────────
 (async () => {
+  try{await initAppVersion();}catch(error){console.warn("Web version metadata unavailable",error.message);}
   await initLocale();
   initFontScale();
   try { initJobTray(); } catch (e) { console.warn("[emp-jobtray] init failed", e); }
@@ -7904,6 +7832,10 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
     loadChipRecipePacks().catch(() => {});
   });
   await initCodeLab();
+  initRunallCoverage();
+  initMethodLibraryVisualization({API,showPlot,navigateTo,currentColorOptions});
+  initGseaAnalysis({API,showResultTable,navigateTo});
+  initEnrichmentVisualization({API,showPlot,navigateTo,currentColorOptions});
   initEvolution();
   await initTeaching();
   setupTeachingTraceHooks();
@@ -7923,7 +7855,7 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
   if (savedPage && document.getElementById(`page-${savedPage}`)) {
     navigateTo(savedPage);
   } else {
-    navigateTo("course");
+    navigateTo("guide");
   }
-  updateWorkflowStepper(document.querySelector(".page.active")?.id?.replace("page-", "") || "course");
+  updateWorkflowStepper(document.querySelector(".page.active")?.id?.replace("page-", "") || "guide");
 })();

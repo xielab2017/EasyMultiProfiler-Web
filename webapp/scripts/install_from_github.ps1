@@ -100,6 +100,6 @@ if (Test-Path (Join-Path $TargetDir ".git")) {
 $Root = Resolve-Path $TargetDir
 Set-Location $Root
 
-Write-EmpLog "Running v9.1.0 bootstrap (auto-installs R, python3, EMP)…"
+Write-EmpLog "Running repository bootstrap (auto-installs R, python3, EMP)…"
 & "$Root\webapp\scripts\bootstrap_and_start.ps1"
 if ($LASTEXITCODE -ne 0) { throw "bootstrap_and_start.ps1 failed." }

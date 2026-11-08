@@ -263,12 +263,15 @@ def match_samples(labels, records):
         raise m.MetadataError('Column labels must be strings')
     matches = []
     for label in labels:
-        candidates = [r for r in records if label and (label == r['accession'] or label in r['descriptions'])]
+        def library_names(record):
+            return [match.group(1).strip() for line in record.get('descriptions',[]) if (match:=re.fullmatch(r'\s*Library\s+name\s*:\s*(\S.*?)\s*',line,re.I))]
+        candidates = [r for r in records if label and (label == r['accession'] or label in r['descriptions'] or label in library_names(r))]
         sample = candidates[0] if len(candidates) == 1 else None
         fields = []
         if sample is not None:
             if label == sample['accession']: fields.append('Sample_geo_accession')
             if label in sample['descriptions']: fields.append('Sample_description')
+            if label in library_names(sample): fields.append('Sample_description.Library_name')
         matches.append({'column': label, 'status': 'exact' if sample else 'unmatched_or_ambiguous',
                         'sample': sample, 'matched_fields': fields})
     used = {}

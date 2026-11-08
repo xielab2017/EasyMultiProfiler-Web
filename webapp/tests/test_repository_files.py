@@ -21,4 +21,17 @@ class RepositoryTests(unittest.TestCase):
         self.assertFalse(result['matrix_verified']);self.assertFalse(result['downloaded'])
         with self.assertRaises(repositories.RepositoryError):repositories.pride_files('PXD006933/../../')
 
+    @patch.object(repositories,'build_opener')
+    def test_matrix_candidate_prioritized_before_giant_search_report(self,opener):
+        base='ftp://ftp.pride.ebi.ac.uk/pride/data/archive/2026/01/PXD067973/'
+        rows=[{'fileName':name,'fileSizeBytes':size,'publicFileLocations':[{'value':base+name}]} for name,size in [('report.tsv',1_000_000_000),('report-first-pass.pg_matrix.tsv',1_500_000),('report.pg_matrix.tsv',2_500_000)]]
+        opener.return_value.open.return_value=Response(json.dumps(rows).encode())
+        self.assertEqual(repositories.pride_files('PXD067973')['files'][0]['name'],'report.pg_matrix.tsv')
+
+    @patch.object(repositories,'build_opener')
+    def test_empty_long_accession_reports_possible_citation_suffix(self,opener):
+        opener.return_value.open.return_value=Response(b'[]')
+        with self.assertRaisesRegex(repositories.RepositoryError,'PDF citation suffix'):
+            repositories.pride_files('PXD06797315')
+
 if __name__=='__main__':unittest.main()

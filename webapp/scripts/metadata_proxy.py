@@ -41,10 +41,11 @@ def proxy(handler):
     if path == '/api/public-data/advanced/qc/upload': limit = 12 * 1024 * 1024
     if path == '/api/public-data/workbench/upload': limit = 12 * 1024 * 1024
     elif path.startswith('/api/public-data/workbench/'): limit = 512 * 1024
+    if path == '/api/public-data/agent/attachments':limit = MAX_PDF if handler.headers.get('Content-Type','').split(';')[0]=='application/pdf' else 5*1024**2
     if length < 0 or length > limit:
         fail(413, 'Request too large'); return True
     headers = {}
-    for key in ('Content-Type', 'Range', 'X-Matrix-Name'):
+    for key in ('Content-Type', 'Range', 'X-Matrix-Name', 'X-Attachment-Name'):
         if handler.headers.get(key): headers[key] = handler.headers[key]
     # Host and origin are validated above. Do not forward cookies/auth/private headers.
     handler.connection.settimeout(30)

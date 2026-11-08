@@ -16,10 +16,14 @@ source(file.path(.BACKEND_DIR, "helpers/session.R"))
 source(file.path(.BACKEND_DIR, "helpers/utils.R"))
 source(file.path(.BACKEND_DIR, "helpers/auth.R"))
 source(file.path(.BACKEND_DIR, "helpers/projects.R"))
+source(file.path(.BACKEND_DIR, "helpers/figure_method_rules.R"))
 source(file.path(.BACKEND_DIR, "helpers/plot_theme.R"))
 source(file.path(.BACKEND_DIR, "helpers/import.R"))
 source(file.path(.BACKEND_DIR, "helpers/analysis.R"))
+source(file.path(.BACKEND_DIR, "helpers/analysis_gsea.R"))
 source(file.path(.BACKEND_DIR, "helpers/viz.R"))
+source(file.path(.BACKEND_DIR, "helpers/viz_enrichment.R"))
+source(file.path(.BACKEND_DIR, "helpers/viz_method_library.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_registry.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_metabolomics.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_metagenomics.R"))
@@ -29,6 +33,7 @@ source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/clinical.R"))
 source(file.path(.BACKEND_DIR, "helpers/jobs.R"))
+source(file.path(.BACKEND_DIR, "helpers/background_tasks.R"))
 source(file.path(.BACKEND_DIR, "helpers/i18n_locale.R"))
 source(file.path(.BACKEND_DIR, "helpers/platform_info.R"))
 source(file.path(.BACKEND_DIR, "helpers/qc_rigor.R"))
@@ -831,7 +836,7 @@ function(session_id, experiment, offset = 1, limit = 20, res) {
       total = total,
       offset = offset_i,
       limit = limit_i,
-      rows = jsonlite::toJSON(df, na = "null", auto_unbox = TRUE)
+      rows = jsonlite::toJSON(df, na = "null", auto_unbox = TRUE, digits = NA)
     )
   }, res)
 }
@@ -910,7 +915,7 @@ function(session_id, experiment, result_name, res) {
       success = TRUE,
       result_name = result_name,
       n_rows = nrow(result_df),
-      rows = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE)
+      rows = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA)
     )
   }, res)
 }
@@ -1181,9 +1186,10 @@ function(req, res) {
 
     list(
       success = TRUE,
+      input_audit = attr(result, "input_audit"),
       n_rows = nrow(result_df),
       columns = names(result_df),
-      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE)
+      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA)
     )
   }, res)
 }
@@ -1211,7 +1217,7 @@ function(req, res) {
       success = TRUE,
       n_rows = nrow(result_df),
       columns = names(result_df),
-      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE)
+      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA)
     )
   }, res)
 }
@@ -1240,7 +1246,7 @@ function(req, res) {
       mode = "correlation_fallback",
       n_rows = nrow(result_df),
       columns = names(result_df),
-      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE)
+      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA)
     )
   }, res)
 }
@@ -2006,7 +2012,7 @@ function(req, res) {
       success = TRUE,
       n_rows = nrow(result_df),
       columns = names(result_df),
-      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE)
+      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA)
     )
   }, res)
 }
@@ -2036,7 +2042,7 @@ function(req, res) {
       success = TRUE,
       n_rows = nrow(result_df),
       columns = names(result_df),
-      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE)
+      data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA)
     )
   }, res)
 }
@@ -2111,9 +2117,10 @@ function(req, res) {
     result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
     list(success = TRUE,
+         input_audit = attr(result, "input_audit"),
          n_rows  = nrow(result_df),
          columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
   }, res)
 }
 
@@ -2137,13 +2144,13 @@ function(req, res) {
     result <- run_diff(session_id, experiment, method, group_var, ref_group,
                       test_group, filter_low = filter_low,
                       subset_two_groups = subset_two_groups,
-                      comparison_mode = comparison_mode, cores = cores)
+                      comparison_mode = comparison_mode, cores = cores, on_progress = req$emp_on_progress %||% NULL)
     result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
     list(success = TRUE,
          n_rows  = nrow(result_df),
          columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
   }, res)
 }
 
@@ -2179,6 +2186,33 @@ function(req, res) {
   }, res)
 }
 
+#* Registered background analysis routes
+#* @get /api/tasks/capabilities
+#* @serializer unboxedJSON
+function(req, res) {
+  list(success = TRUE, routes = as.list(names(emp_background_handlers())))
+}
+
+#* Submit a registered analysis without blocking the API
+#* @post /api/tasks/submit
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    if (!identical(sort(names(b)), c("payload", "route")) ||
+        !is.character(b$route) || length(b$route) != 1L ||
+        !b$route %in% names(emp_background_handlers()) || !is.list(b$payload)) {
+      stop("Invalid background analysis request.")
+    }
+    principal <- emp_request_principal(req)
+    emp_assert_session_owner(b$payload$session_id, principal)
+    id <- submit_job(kind = paste0("analysis:", b$route), fn = "emp_run_background_request",
+      args = list(route = b$route, payload = b$payload, principal = principal),
+      session_id = b$payload$session_id, owner_id = principal)
+    list(success = TRUE, job_id = id)
+  }, res)
+}
+
 #* List recent background jobs (job tray)
 #* @get /api/jobs
 #* @serializer unboxedJSON
@@ -2186,7 +2220,7 @@ function(req, res) {
   safe_api({
     limit <- suppressWarnings(as.integer(req$args$limit %||% 20L))
     if (is.na(limit) || limit < 1L) limit <- 20L
-    list(success = TRUE, jobs = list_jobs(limit = limit))
+    list(success = TRUE, jobs = list_jobs(limit = limit, owner_id = emp_request_principal(req)))
   }, res)
 }
 
@@ -2221,6 +2255,7 @@ function(job_id, res) {
       res$status <- 500
       return(list(success = FALSE, error = "Result not available"))
     }
+    if (startsWith(st$kind %||% "", "analysis:")) return(result_obj)
     if (identical(st$kind, "count_workbench") && is.list(result_obj) &&
         identical(result_obj$contract, EMP_WB_CONTRACT)) return(result_obj)
     if (identical(st$kind, "integration_exploration") && is.list(result_obj) &&
@@ -2238,7 +2273,7 @@ function(job_id, res) {
         !is.null(result_obj$data) && is.data.frame(result_obj$data)) {
       df <- result_obj$data
       out <- result_obj
-      out$data    <- jsonlite::toJSON(df, na = "null", auto_unbox = TRUE)
+      out$data    <- jsonlite::toJSON(df, na = "null", auto_unbox = TRUE, digits = NA)
       out$n_rows  <- nrow(df)
       out$columns <- names(df)
       out$success <- TRUE
@@ -2246,9 +2281,10 @@ function(job_id, res) {
     }
     result_df <- tryCatch(as.data.frame(result_obj), error = function(e) data.frame())
     list(success = TRUE,
+         input_audit = attr(result_obj, "input_audit"),
          n_rows  = nrow(result_df),
          columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
   }, res)
 }
 
@@ -2289,7 +2325,16 @@ function(req, res) {
         p_cutoff      = as.numeric(b$p_cutoff  %||% 0.05),
         use_padj      = if (is.null(b$use_padj)) TRUE else isTRUE(b$use_padj),
         min_row_sum   = as.numeric(b$min_row_sum %||% 0),
-        do_enrichment = if (is.null(b$do_enrichment)) TRUE else isTRUE(b$do_enrichment)
+        do_enrichment = if (is.null(b$do_enrichment)) TRUE else isTRUE(b$do_enrichment),
+        do_gsea = isTRUE(b$do_gsea),
+        gsea_database = b$gsea_database %||% "GO_BP",
+        gsea_top_n = as.integer(b$gsea_top_n %||% 3L),
+        do_correlation = if (is.null(b$do_correlation)) TRUE else isTRUE(b$do_correlation),
+        do_cluster = if (is.null(b$do_cluster)) TRUE else isTRUE(b$do_cluster),
+        do_method_figures = if (is.null(b$do_method_figures)) TRUE else isTRUE(b$do_method_figures),
+        feature_top_n = as.integer(b$feature_top_n %||% 100L),
+        network_cutoff = as.numeric(b$network_cutoff %||% 0.6),
+        seed = as.integer(b$seed %||% 1L)
       ),
       session_id = b$session_id
     )
@@ -2313,7 +2358,14 @@ function(req, res) {
         taxonomy_level = b$taxonomy_level %||% "Genus",
         alpha_index    = b$alpha_index %||% "shannon",
         beta_method    = b$beta_method %||% "bray",
-        ord_method     = b$ord_method  %||% "PCoA"
+        ord_method     = b$ord_method  %||% "PCoA",
+        do_correlation = if (is.null(b$do_correlation)) TRUE else isTRUE(b$do_correlation),
+        do_cluster = if (is.null(b$do_cluster)) TRUE else isTRUE(b$do_cluster),
+        do_method_figures = if (is.null(b$do_method_figures)) TRUE else isTRUE(b$do_method_figures),
+        ternary_groups = b$ternary_groups %||% NULL,
+        feature_top_n = as.integer(b$feature_top_n %||% 100L),
+        network_cutoff = as.numeric(b$network_cutoff %||% 0.6),
+        seed = as.integer(b$seed %||% 1L)
       ),
       session_id = b$session_id
     )
@@ -2410,7 +2462,7 @@ function(req, res) {
     list(success = TRUE,
          n_rows  = nrow(result_df),
          columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
   }, res)
 }
 
@@ -2430,7 +2482,7 @@ function(req, res) {
     list(success = TRUE,
          n_rows  = nrow(result_df),
          columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
   }, res)
 }
 
@@ -2451,7 +2503,7 @@ function(req, res) {
     list(success = TRUE,
          n_rows  = nrow(result_df),
          columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
   }, res)
 }
 
@@ -2474,7 +2526,7 @@ function(req, res) {
     list(success = TRUE,
          n_rows  = nrow(result_df),
          columns = names(result_df),
-         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE))
+         data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
   }, res)
 }
 
@@ -2510,7 +2562,7 @@ function(req, res) {
       mapped_count = out$mapped_count,
       n_rows       = nrow(result_df),
       columns      = names(result_df),
-      data         = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE),
+      data         = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA),
       plot         = out$plot
     )
   }, res)
@@ -2603,8 +2655,7 @@ function(req, res) {
 # ══════════════════════════════════════════════════════════
 
 .viz_api_style <- function(b) {
-  old <- emp_viz_style_begin(b)
-  on.exit(emp_viz_style_end(old), add = TRUE)
+  emp_viz_style_begin(b)
   invisible(NULL)
 }
 
@@ -3055,7 +3106,7 @@ function(session_id, experiment, res) {
       test_group = raw$test_group,
       n_rows     = nrow(df),
       columns    = names(df),
-      data       = jsonlite::toJSON(df, na = "null", auto_unbox = TRUE)
+      data       = jsonlite::toJSON(df, na = "null", auto_unbox = TRUE, digits = NA)
     )
   }, res)
 }
@@ -3897,7 +3948,7 @@ function(req, res) {
 #* @get /api/health
 #* @serializer unboxedJSON
 function() {
-  list(status = "ok", version = as.character(packageVersion("EasyMultiProfiler")))
+  list(status = "ok", version = emp_web_version(), web_version = emp_web_version(), emp_package_version = as.character(packageVersion("EasyMultiProfiler")))
 }
 
 #* System / platform info (v9.1.0: Windows / macOS / Linux auto-detection)
@@ -3905,7 +3956,8 @@ function() {
 #* @serializer unboxedJSON
 function() {
   info <- emp_platform_info()
-  info$emp_version <- "9.1.0"
+  info$emp_version <- as.character(packageVersion("EasyMultiProfiler"))
+  info$web_version <- emp_web_version()
   info
 }
 
@@ -3925,4 +3977,86 @@ function(req) {
   accept_language <- req$HTTP_ACCEPT_LANGUAGE
   locale <- emp_negotiate_locale(country, accept_language)
   list(locale = locale, dir = emp_locale_dir(locale))
+}
+
+#* List saved enrichment analyses for figure sources
+#* @get /api/visualize/enrichment/sources/<session_id>
+#* @serializer unboxedJSON
+function(session_id, req, res, experiment = "", omics = "", scope = "single") {
+  safe_api({ enrich_viz_sources(session_id, experiment, emp_request_principal(req), omics=omics, scope=scope) }, res)
+}
+
+#* Fetch one saved enrichment result table
+#* @post /api/visualize/enrichment/results
+#* @serializer unboxedJSON list(digits=NA, na="null", null="null")
+function(req, res) {
+  safe_api({ b <- jsonlite::fromJSON(req$postBody); out <- enrich_viz_source(b,emp_request_principal(req)); c(list(success=TRUE),out) }, res)
+}
+
+#* Replot an owned frozen enrichment result
+#* @post /api/visualize/enrichment/dotplot
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({ b <- jsonlite::fromJSON(req$postBody); .viz_api_style(b); enrich_viz_dotplot(b,emp_request_principal(req)) }, res)
+}
+
+#* Running enrichment score from an explicit complete ranked list
+#* @post /api/visualize/enrichment/gsea
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({ b <- jsonlite::fromJSON(req$postBody); .viz_api_style(b); enrich_viz_gsea(b,emp_request_principal(req)) }, res)
+}
+
+#* Download a versioned enrichment figure or its provenance
+#* @get /api/visualize/enrichment/file/<session_id>/<filename>
+#* @serializer octet
+function(session_id, filename, req, res) {
+  emp_assert_session_owner(session_id,emp_request_principal(req))
+  if(length(filename)!=1L || !grepl("^(enrichment_dotplot|gsea_running_es)_[A-Za-z0-9]+[.](png|pdf|svg|manifest[.]json|data[.]csv)$",filename)) { res$status<-400; return(charToRaw("Invalid figure filename")) }
+  path<-file.path(session_path(session_id),'plots',filename)
+  if(!file.exists(path)){res$status<-404;return(charToRaw("Figure not found"))}
+  ext<-tools::file_ext(filename);type<-switch(ext,png='image/png',pdf='application/pdf',svg='image/svg+xml',json='application/json',csv='text/csv','application/octet-stream')
+  res$setHeader('Content-Type',type);res$setHeader('Content-Disposition',sprintf('attachment; filename="%s"',filename));res$setHeader('Cache-Control','no-store')
+  readBin(path,'raw',n=file.info(path)$size)
+}
+
+#* Preranked GSEA on complete cached differential statistics
+#* @post /api/analyze/gsea
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody)
+    emp_assert_session_owner(b$session_id, emp_request_principal(req))
+    emp_run_gsea(b$session_id, b$experiment, database=b$database %||% "GO_BP",
+      organism=b$organism %||% "hsa", metric=b$metric %||% "stat",
+      id_type=b$id_type %||% "SYMBOL", exponent=b$exponent %||% 1,
+      min_size=b$min_size %||% 15L, max_size=b$max_size %||% 500L,
+      seed=b$seed %||% 20261108L, on_progress=req$emp_on_progress %||% NULL)
+  }, res)
+}
+
+#* Applicable live figure methods and library availability
+#* @get /api/visualize/method-library/catalog
+#* @serializer unboxedJSON
+function(req, res) { safe_api({emp_viz_method_catalog()},res) }
+
+#* Plot from current data using a trusted live method
+#* @post /api/visualize/method-library
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({ b<-jsonlite::fromJSON(req$postBody);emp_viz_method_library(b,emp_request_principal(req)) },res)
+}
+
+#* Download a versioned live-method figure and provenance
+#* @get /api/visualize/method-library/file/<session_id>/<filename>
+#* @serializer octet
+function(session_id, filename, req, res) {
+  emp_assert_session_owner(session_id,emp_request_principal(req))
+  if(length(filename)!=1L || !grepl("^method_plot_[A-Za-z0-9]+[.](png|pdf|svg|manifest[.]json|derived[.]csv)$",filename)) {res$status<-400;return(charToRaw("Invalid figure filename"))}
+  path<-file.path(session_path(session_id),'plots',filename)
+  if(!file.exists(path)){res$status<-404;return(charToRaw("Figure not found"))}
+  ext<-tools::file_ext(filename)
+  res$setHeader('Content-Type',switch(ext,png='image/png',pdf='application/pdf',svg='image/svg+xml',json='application/json',csv='text/csv','application/octet-stream'))
+  res$setHeader('Content-Disposition',sprintf('attachment; filename="%s"',filename));res$setHeader('Cache-Control','no-store')
+  readBin(path,'raw',n=file.info(path)$size)
 }

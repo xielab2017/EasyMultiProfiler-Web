@@ -82,3 +82,10 @@ test('a different article query removes previous PDF evidence instead of attachi
  h.find('discovery-pdf').files=[{name:'old.pdf',size:1000}];await h.find('discovery-pdf').onchange();await h.search('10.1234/new');
  assert.ok(!flatten(h.root).some(el=>el.textContent==='Old paper'));assert.equal(h.find('discovery-pdf').value,'');assert.equal(h.events.at(-1).type,'emp:study-reset');
 });
+test('multiple PDFs remain independently selectable after one batch',async()=>{
+ const h=harness({'papers/pdf':file=>({paper_title_candidate:file.name,accessions:[{accession:file.name==='one.pdf'?'GSE1':'GSE2'}],dois:[],pdf_sha256:file.name})});
+ const input=h.find('discovery-pdf');input.files=[{name:'one.pdf',size:1000},{name:'two.pdf',size:1000}];await input.onchange();
+ assert.equal(h.calls.length,2);assert.ok(h.button('one.pdf'));assert.ok(h.button('two.pdf'));
+ h.button('one.pdf').click();assert.ok(flatten(h.root).some(el=>el.textContent==='GSE1 ·  · '));
+ h.button('two.pdf').click();assert.ok(flatten(h.root).some(el=>el.textContent==='GSE2 ·  · '));
+});

@@ -12,6 +12,7 @@ import gzip
 import hashlib
 import io
 import json
+import math
 import re
 import threading
 import uuid
@@ -22,6 +23,33 @@ MAX_BYTES = 12 * 1024 * 1024
 MAX_FEATURES = 50000
 MAX_SAMPLES = 256
 MAX_CELLS = 1000000
+ANNOTATION_COLUMNS = {'length','gene_length','symbol','gene_name','description','entrezid','entrez_id','ensembl','ensembl_id','gene_id','protein.ids','protein.names','genes','first.protein.description','protein.group','uniprot','accession'}
+
+def matrix_profile(parsed):
+    """Numerical schema evidence only; cannot establish biological provenance."""
+    positions=[i for i,name in enumerate(parsed['header'][1:],1) if name.lower() not in ANNOTATION_COLUMNS]
+    numeric=missing=non_numeric=negative=decimal=0
+    minimum=maximum=None
+    for row in parsed['rows']:
+        for i in positions:
+            text=row[i].strip()
+            if text.lower() in {'','na','nan','null','none','n/a'}:missing+=1;continue
+            try:value=float(text)
+            except ValueError:non_numeric+=1;continue
+            if not math.isfinite(value):missing+=1;continue
+            numeric+=1;negative+=value<0;decimal+=not value.is_integer()
+            minimum=value if minimum is None else min(minimum,value)
+            maximum=value if maximum is None else max(maximum,value)
+    count_compatible=bool(positions and numeric and not (missing or non_numeric or negative or decimal) and maximum<=2147483647)
+    headers={name.lower() for name in parsed['header']}
+    return {'feature_count':len(parsed['rows']),'candidate_sample_columns':len(positions),
+            'numeric_cells':numeric,'missing_or_nonfinite_cells':missing,'nonnumeric_cells':non_numeric,
+            'negative_cells':negative,'noninteger_cells':decimal,'min':minimum,'max':maximum,
+            'count_compatible':count_compatible,
+            'value_type':'count_compatible_unverified' if count_compatible else 'transformed_or_centered' if negative else 'continuous_or_mixed',
+            'omics_candidates':['proteomics'] if {'protein.ids','protein.group'} & headers else [],
+            'grouping':'not_inferred','raw_count_provenance_verified':False,
+            'scope':'Numerical summary only; integers alone cannot identify RNA-seq, counts provenance, groups, batch or paired design.'}
 OPERATIONS = {
     'qc': {'label': '计数质量检查', 'parameters': {}},
     'normalize': {'label': 'DESeq2 size-factor 归一化', 'parameters': {}},
@@ -267,7 +295,8 @@ class Workbench:
             self.records[key] = {**parsed, 'source': source, 'source_name': name}
         return {'input_id': key, 'source_name': name, 'source_sha256': parsed['source_sha256'],
                 'feature_count': len(parsed['rows']), 'columns': parsed['header'][1:],
-                'suggested_annotation_columns': [x for x in parsed['header'][1:] if x.lower() in {'length', 'gene_length', 'symbol', 'gene_name', 'description', 'entrezid', 'entrez_id', 'ensembl', 'ensembl_id', 'gene_id'}],
+                'suggested_annotation_columns': [x for x in parsed['header'][1:] if x.lower() in ANNOTATION_COLUMNS],
+                'profile': matrix_profile(parsed),
                 'data_type': 'unknown', 'raw_count_provenance_verified': False}
 
     def select(self, input_id, columns):

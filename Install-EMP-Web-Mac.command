@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install-EMP-Web-Mac.command - EasyMultiProfiler Web v9.1.3 one-click
+# Install-EMP-Web-Mac.command - EasyMultiProfiler Web one-click
 # installer (macOS). Double-click this file in Finder.
 #
 # Behaviour:
@@ -13,10 +13,12 @@ set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${ROOT_DIR}"
+EMP_WEB_RELEASE=""
+if [[ -f "${ROOT_DIR}/DESCRIPTION" ]]; then EMP_WEB_RELEASE=" v$(awk '/^Version:/{print $2;exit}' "${ROOT_DIR}/DESCRIPTION")"; fi
 
 echo "============================================================"
-echo "  EasyMultiProfiler Web v9.1.3 - macOS one-click installer"
-echo "  EasyMultiProfiler Web v9.1.3 - macOS 一键安装"
+echo "  EasyMultiProfiler Web${EMP_WEB_RELEASE} - macOS one-click installer"
+echo "  EasyMultiProfiler Web${EMP_WEB_RELEASE} - macOS 一键安装"
 echo "  Folder: ${ROOT_DIR}"
 echo "  Windows users: use Install-EMP-Web-Windows.bat instead"
 echo "============================================================"

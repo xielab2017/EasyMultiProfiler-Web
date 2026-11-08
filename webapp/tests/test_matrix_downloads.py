@@ -100,6 +100,12 @@ def lock_probe(root, result):
 
 
 class MatrixDownloadTests(unittest.TestCase):
+    def test_pride_managed_download_is_bound_to_its_official_project(self):
+        source={'status':'processed_candidates','accession':'PXD067973','files':[{'id':'0','name':'report.pg_matrix.tsv','url':'https://ftp.pride.ebi.ac.uk/pride/data/archive/2025/08/PXD067973/report.pg_matrix.tsv','bytes':40,'checksum':None}]}
+        plan=self.manager.plan(source,'0');self.assertEqual(plan['status'],'ready_for_confirmation')
+        for url in ['https://evil.test/pride/data/archive/PXD067973/report.pg_matrix.tsv','https://ftp.pride.ebi.ac.uk/pride/data/archive/PXD000001/report.pg_matrix.tsv','https://ftp.pride.ebi.ac.uk/pride/data/archive/PXD067973/../report.pg_matrix.tsv']:
+            data=json.loads(json.dumps(source));data['files'][0]['url']=url
+            with self.assertRaises(md.DownloadError):self.manager.plan(data,'0')
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=Path(tempfile.gettempdir()).resolve())
         self.root = Path(self.temp.name) / 'downloads'

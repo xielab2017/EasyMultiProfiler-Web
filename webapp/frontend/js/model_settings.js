@@ -1,4 +1,4 @@
-import {getLocale} from './locale.js?v=i18n-zh-default-v1';
+import {getLocale} from './locale.js?v=nav-language-20261108';
 import {mountModelConnections} from './model_connections.js';
 const TEXT={
  title:['模型与 API','Models and API'],intro:['在这里统一管理模型服务、模型名称与 API。原右侧面板的配置已移到此处；分析引导和代码优化继续使用各自的明确操作入口。','Manage providers, model names and APIs here. Configuration from the right-side panel is consolidated here; analysis guidance and code optimization retain their explicit action buttons.'],

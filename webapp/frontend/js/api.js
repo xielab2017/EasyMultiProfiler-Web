@@ -289,7 +289,21 @@ function requestMultipartWithProgress(path, formData, opts = {}) {
   })();
 }
 
+let backgroundRoutes = null;
 async function request(method, path, body = null, multipart = false, optsExtra = {}) {
+  if (method === 'POST' && !multipart && body?.session_id &&
+      /^\/(analyze|prepare|clinical|workflows)\//.test(path) && !path.endsWith('/async')) {
+    if (!backgroundRoutes) {
+      backgroundRoutes = request('GET', '/tasks/capabilities').then(value => new Set(value.routes || []));
+      backgroundRoutes.catch(() => { backgroundRoutes = null; });
+    }
+    const routes = await backgroundRoutes;
+    if (routes.has(path)) {
+      const submitted = await request('POST', '/tasks/submit', {route:path, payload:body});
+      const {result} = await pollJobUntilDone(submitted.job_id, null, 1500, 24*60*60*1000);
+      return {...result,_job_id:submitted.job_id};
+    }
+  }
   const authHeaders = headers();
   if (optsExtra.skipSessionHeader) delete authHeaders["X-Session-Id"];
   if (multipart) {
@@ -376,6 +390,9 @@ async function request(method, path, body = null, multipart = false, optsExtra =
       throw err;
     }
     data._total_ms = Math.round(totalMs);
+    if (method === 'POST' && data.job_id) {
+      window.dispatchEvent(new CustomEvent('emp:job-submitted', {detail:{job_id:data.job_id, route:path,task_route:body?.route||path,experiment:body?.experiment||body?.payload?.experiment}}));
+    }
     // Emit a lightweight timing event so app.js can surface it.
     try {
       window.dispatchEvent(new CustomEvent("emp:timing", {
@@ -452,7 +469,7 @@ export async function deleteSession() {
 // ── USER R (local learning; runs on Plumber host — trusted use only) ──
 // POST /api/user_r/run (legacy: /api/exec/user_r)
 export async function execUserR(params = {}) {
-  if (!sessionId()) await createSession();
+  await ensureSession();
   return request("POST", "/user_r/run", {
     session_id: sessionId(),
     experiment: params.experiment ?? null,
@@ -500,7 +517,7 @@ export async function probeOpenRouterModels(params = {}) {
 // AI copilot: interpret an analysis result and suggest next steps. Reuses the
 // Code Lab LLM config if the student configured one; otherwise the backend
 // falls back to a deterministic offline interpretation.
-import { getLocale } from "./locale.js?v=i18n-zh-default-v1";
+import { getLocale } from "./locale.js?v=nav-language-20261108";
 
 export async function aiInterpret(context = {}, opts = {}) {
   let provider = opts.provider ?? null;
@@ -555,8 +572,8 @@ export async function evolutionProfile(userId = null) {
 }
 
 export async function listExperiments() {
-  const sid = sessionId();
-  if (!sid) return [];
+  if (!sessionId()) return [];
+  const sid = await ensureSession();
   const data = await request("GET", `/session/${sid}/experiments`);
   return data.experiments || [];
 }
@@ -564,7 +581,7 @@ export async function listExperiments() {
 // ── IMPORT ────────────────────────────────────────
 /** Cache a pre-computed DE / marker CSV as session diff_raw_<experiment>.rds */
 export async function importDiffRaw(formData) {
-  if (!sessionId()) await createSession();
+  await ensureSession();
   const sid = sessionId();
   const body = new FormData();
   let sawSession = false;
@@ -587,7 +604,7 @@ export async function importDiffRaw(formData) {
 }
 
 export async function importData(formData) {
-  if (!sessionId()) await createSession();
+  await ensureSession();
   const sid = sessionId();
 
   // Normalize file parts to application/octet-stream. Some browsers/Windows
@@ -755,7 +772,8 @@ export async function getJobStatus(jobId) {
 }
 
 export async function getJobResult(jobId) {
-  return request("GET", `/jobs/${encodeURIComponent(jobId)}/result`);
+  const value=await request("GET", `/jobs/${encodeURIComponent(jobId)}/result`);
+  return {...value,_job_id:jobId};
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -800,6 +818,7 @@ export async function pollJobUntilDone(jobId, onProgress = null, intervalMs = 70
     }
     if (job.status === "done")  return { job, result: await getJobResult(jobId) };
     if (job.status === "error") throw new Error(job.error || "Job failed");
+    if (job.status === "cancelled" || job.status === "cancel_requested") throw new Error("Task cancelled");
     await new Promise(r => setTimeout(r, intervalMs));
   }
   throw new Error("Job timed out");
@@ -1148,7 +1167,7 @@ function asOctetStreamFile(file, fallbackName = "upload.bin") {
 }
 
 export async function chipUploadPeaks(file, genome = "mm", preset = "chipseq_tf") {
-  if (!sessionId()) await createSession();
+  await ensureSession();
   const sid = sessionId();
   const fd = new FormData();
   fd.append("session_id", sid || "");
@@ -1192,7 +1211,7 @@ export async function chipListBams() {
 
 export async function chipUploadBam(file, group = "t", onProgress = null, opts = {}) {
   // Same auth/session path as importData — missing session previously caused silent/401 failures.
-  if (!sessionId()) await createSession();
+  await ensureSession();
   const sid = sessionId();
   const size = (file && typeof file.size === "number") ? file.size : 0;
   const signal = opts?.signal || null;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install-EMP-Web-Linux.sh - EasyMultiProfiler Web v9.1.3 one-click
+# Install-EMP-Web-Linux.sh - EasyMultiProfiler Web one-click
 # installer (Linux).
 #
 # Run from a terminal:
@@ -16,10 +16,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${ROOT_DIR}"
+EMP_WEB_VERSION=""
+if [[ -f "${ROOT_DIR}/DESCRIPTION" ]]; then
+  EMP_WEB_VERSION=" v$(awk '/^Version:/{print $2;exit}' "${ROOT_DIR}/DESCRIPTION")"
+fi
 
 echo "============================================================"
-echo "  EasyMultiProfiler Web v9.1.3 - Linux one-click installer"
-echo "  EasyMultiProfiler Web v9.1.3 - Linux 一键安装"
+echo "  EasyMultiProfiler Web${EMP_WEB_VERSION} - Linux one-click installer"
+echo "  EasyMultiProfiler Web${EMP_WEB_VERSION} - Linux 一键安装"
 echo "  Folder: ${ROOT_DIR}"
 echo "  Windows users: use Install-EMP-Web-Windows.bat instead"
 echo "  macOS users:   use Install-EMP-Web-Mac.command instead"

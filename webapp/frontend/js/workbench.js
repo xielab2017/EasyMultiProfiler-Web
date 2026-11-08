@@ -1,18 +1,22 @@
 import {mountWorkflowDesigner} from './workflow_designer.js?v=1';
 import {textPair,proposeForScope} from './workflow_library.mjs';
 import {featureText, applyFeatureLocale} from './feature_i18n.mjs?v=2';
-import {getLocale} from './locale.js?v=i18n-zh-default-v1';
-import {request as rRequest} from './api.js?v=i18n-zh-default-v1';
+import {getLocale} from './locale.js?v=nav-language-20261108';
+import {request as rRequest} from './api.js?v=nav-language-20261108';
 import {CONTRACT, WorkflowState, resultTSV} from './workbench_core.mjs';
 import {studyContexts} from './study_model.mjs';
 import {mountSampleReview} from './sample_review.js';
 import {mountSimpleWorkbench} from './workbench_simple.js';
+import {agentMemory} from './agent_memory.mjs';
+import {openSampleDesignDialog} from './sample_design.mjs';
 
 const ft = (source, vars) => featureText(source, getLocale(), vars);
 const $ = id => document.getElementById(`wb-${id}`);
 const state = new WorkflowState(ft);
 let catalog, input, busy = false, provider = null, proposal = null, result = null, pollTimer = null;
 let agentInfo = null, runtimeInfo = null, designer = null, sampleReview = null, quickUI = null, selectedDifferential = 0, readinessVisible = false;
+const learnedJobs=new Set();
+const jobPatterns=new Map();
 const labels = {qc:ft('计数质量检查'), normalize:ft('Size-factor 归一化'), pca:'PCA', deseq2:ft('DESeq2 差异分析'), heatmap:ft('高变基因热图')};
 const paramLabels = {alpha:ft('FDR 阈值'), min_count:ft('最低计数'), min_samples:ft('至少满足的样本数'), components:ft('主成分数'), top_n:ft('展示基因数')};
 function message(id, source, vars = {}) { const el=$(id); el.dataset.featureMessage=source; el.dataset.featureVars=JSON.stringify(vars); el.textContent=ft(source,vars); }
@@ -35,12 +39,14 @@ async function perform(action) {
   finally { busy = false; document.getElementById('page-workbench')?.removeAttribute('aria-busy'); }
 }
 function edited() {
+  state.sampleDesignReview=null;
   state.change(); $('confirm').checked = false; $('run').disabled = true; $('export-plan').disabled = true;
   $('confirm').disabled=true;message('run','请先完成输入与准备检查');$('review-summary').replaceChildren();if(readinessVisible)renderReadiness();
   $('cloud-consent').checked = false; $('context-result').textContent = '';
   message('review', '数据或流程已改变，请重新检查。'); quickUI?.invalidate();guide();
 }
 function guide() {
+  window._empWorkbenchState={has_input:!!input,has_dataset:!!state.dataset,source_sha256:input?.source_sha256,scope:designer?.composer.scope,accession:sampleReview?.context?.accession,steps:designer?.composer.steps.map(s=>s.operation),group_count:new Set(samples().map(s=>s.group).filter(Boolean)).size,unassigned:samples().filter(s=>!s.group).length,prepared:!!state.prepared,sample_relationship:state.sampleDesignReview?.relationship||'unreviewed',grouping_warnings:state.groupingWarnings||[],pairing_review:state.sampleDesignReview?{relationship:state.sampleDesignReview.relationship,subject_count:state.sampleDesignReview.subject_count,batch_adjustment:state.sampleDesignReview.batch_adjustment}:null,needs_design_review:!$('independent')?.checked};
   quickUI?.update();
   if(designer&&(designer.composer.scope!=='bulk_rnaseq'||designer.composer.inputType!=='raw_counts')){message('guide','已切换组学流程：从步骤库组合并审核依赖，再到对应页面导入和分析。');return;}
   message('guide', !input ? ft('引导已启动：在矩阵页下载后送入工作台，或上传本地矩阵。')
@@ -57,7 +63,8 @@ function save(value, name, type = 'application/json') {
 function renderSteps() { designer?.render(); }
 
 async function acceptInput(value) {
-  input = value; state.dataset = null; edited(); $('samples').replaceChildren();
+  window._empWorkbenchProfile=value.profile||null;
+  input = value; state.dataset = null;state.groupingWarnings=[]; edited(); $('samples').replaceChildren();
   $('input-info').textContent = `${value.source_name} · ${value.feature_count} features · SHA-256 ${value.source_sha256}`;
   $('columns').replaceChildren();
   for (const column of value.columns) {
@@ -72,7 +79,14 @@ async function acceptInput(value) {
   }
   $('select').disabled = false;
   if(!$('evidence').value.trim())$('evidence').value=[sampleReview.context?.accession,sampleReview.context?.paper?.doi,value.source_name,'SHA-256 '+value.source_sha256].filter(Boolean).join(' · ');
+  if(value.profile){
+    window._empWorkbenchProfile=value.profile;
+  }
+  if(value.profile&&!value.profile.count_compatible){
+    say('已识别为非计数或含缺失的矩阵；保留原始文件，请由 AI 推荐并核对对应组学流程。');guide();window.dispatchEvent(new CustomEvent('emp:dataset-profile',{detail:{profile:value.profile}}));return;
+  }
   await selectColumns();guide();
+  if(value.profile)window.dispatchEvent(new CustomEvent('emp:dataset-profile',{detail:{profile:value.profile}}));
 }
 async function ingest() {
   const id = $('job').value.trim(), revision = state.revision;
@@ -220,7 +234,7 @@ async function refreshJob() {
   $('cancel').disabled=!['queued','running'].includes(job.status);
   if(job.status==='done') {
     const value=await rRequest('GET',`/jobs/${encodeURIComponent(id)}/result`,null,false,{skipSessionHeader:true,timeoutMs:30000});
-    if(id===$('analysis-job').value.trim())displayResult(value);
+    if(id===$('analysis-job').value.trim()){displayResult(value);if(!learnedJobs.has(id)&&jobPatterns.has(id)){learnedJobs.add(id);const pattern=jobPatterns.get(id);agentMemory.success(pattern.scope,pattern.operations);}}
   } else if(['queued','running','cancel_requested'].includes(job.status)) {
     pollTimer=setTimeout(()=>refreshJob().catch(e=>say('查询中断：{error}。任务可能仍在运行，可手动刷新。',{error:e.message})),2000);
   }
@@ -238,7 +252,7 @@ $('upload').onchange=()=>perform(async()=>{
   delete $('file-name').dataset.featureText;$('file-name').textContent=file.name;
   if(file.size>12*1024**2)throw Error(ft('导入上限 12 MiB'));
   sampleReview.setContext(null);
-  input=null;state.dataset=null;edited();const rev=state.revision;
+  input=null;state.dataset=null;window._empWorkbenchProfile=null;edited();const rev=state.revision;
   const data=await api('workbench/upload',null,{headers:{'Content-Type':'application/octet-stream','X-Matrix-Name':encodeURIComponent(file.name)},body:file});
   if(rev!==state.revision)throw Error(ft('输入已改变，旧响应已丢弃'));await acceptInput(data);
 });
@@ -249,7 +263,8 @@ async function selectColumns(){
   if(rev!==state.revision)throw Error(ft('样本列已改变，请重新确认'));
   const context=sampleReview.context;
   if(context?.accession){try{const annotations=await api('processed/annotations',{accession:context.accession,columns:data.sample_ids});if(rev!==state.revision)throw Error(ft('样本列已改变，请重新确认'));sampleReview.setContext({...context,annotations});}catch(error){if(rev!==state.revision)throw error;say(error.message);}}
-  state.dataset=data;edited();renderSampleTable(data.sample_ids);
+  state.dataset=data;edited();renderSampleTable(data.sample_ids);const suggested=sampleReview.autoFill();
+  if(suggested){state.groupingWarnings=suggested.warnings;say('已按精确 GEO 元数据填写候选分组 '+data.sample_ids.length+' 个样本、'+suggested.groups.length+' 组；请核对配对/批次与比较设计。');guide();return;}
   say('已选择 {count} 样本，明确排除列：{excluded}。请填写组别。',{count:data.sample_ids.length,excluded:data.excluded_columns.join(', ')||ft('无')});guide();
 }
 $('select').onclick=()=>perform(selectColumns);
@@ -284,8 +299,10 @@ async function runPrepared(){
   if(state.prepared.plan?.design?.contrasts&&!caps.multiple_contrasts)throw Error(ft('R 服务尚未加载多组比较功能，请使用更新后的服务。'));
   const payload=await api(`workbench/prepared/${encodeURIComponent(state.prepared.prepared_id)}`);
   if(rev!==state.revision)throw Error(ft('计划已改变，请重新审核'));const request=state.executionRequest(payload,$('confirm').checked);
+  const executedPattern=JSON.parse(payload.plan_json);
   const submitted=await rRequest('POST','/workbench/run',request,false,{skipSessionHeader:true,timeoutMs:60000});
   if(submitted.contract!==CONTRACT||!submitted.job_id)throw Error(ft('未收到可验证的任务 ID；请先查看任务列表，避免重复提交'));
+  jobPatterns.set(submitted.job_id,{scope:executedPattern.omics,operations:executedPattern.steps.map(s=>s.operation)});
   state.active={job_id:submitted.job_id,plan_sha256:submitted.plan_sha256};$('analysis-job').value=submitted.job_id;
   localStorage.setItem('emp_workbench_last_job',JSON.stringify(state.active));$('confirm').checked=false;$('run').disabled=true;
   clearTimeout(pollTimer);await refreshJob();
@@ -356,6 +373,7 @@ window.addEventListener('focus',refreshAgentConnection);
 window.addEventListener('storage',event=>{if(event.key==='emp_agent_config_revision')refreshAgentConnection();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAgentConnection();});
 function editorChanged(composer){
+  window._empWorkbenchBlueprint=composer.blueprint();
   state.steps=composer.steps;edited();
   const native=composer.scope==='bulk_rnaseq'&&composer.inputType==='raw_counts';
   $('count-inputs').hidden=!native;$('external-data').hidden=native;
@@ -365,6 +383,7 @@ function editorChanged(composer){
 designer=mountWorkflowDesigner({onChange:editorChanged,onNavigate:openWorkflowPage});
 sampleReview=mountSampleReview($('study-review'),{getSamples:samples,onChange:edited,onGroups:rows=>{for(const control of $('samples').querySelectorAll('input[data-sample]'))control.value=rows.find(row=>row.id===control.dataset.sample)?.group||'';}});
 window.addEventListener('emp:study-reset',()=>{
+  window._empWorkbenchProfile=null;
   input=null;state.dataset=null;proposal=null;sampleReview.setContext(null);
   for(const id of ['job','reference','test','evidence','upload'])$(id).value='';
   $('independent').checked=false;$('select').disabled=true;$('apply-ai').disabled=true;
@@ -381,13 +400,36 @@ quickUI=mountSimpleWorkbench({
   if(!input){quickUI.focus('upload');throw Error(ft('请先导入矩阵'));}
   if(!state.dataset){await selectColumns();quickUI.focus('samples');return;}
   if(samples().some(row=>!row.group)){quickUI.focus('samples');throw Error(ft('填写全部样本的真实分组'));}
+  if(!quickUI.reviewed()){window.dispatchEvent(new CustomEvent('emp:agent-review-samples'));return;}
   try{sampleReview.design();}catch{quickUI.focus('reference');throw Error(ft('选择有效的参考组与比较方向'));}
-  if(!quickUI.reviewed()){quickUI.focus('simple-consent');throw Error(ft('请核对分组、比较方向和来源后确认本次分析。'));}
   $('group-reviewed').checked=true;$('independent').checked=true;
   await preparePlan();if(!state.prepared)return;$('confirm').checked=true;await runPrepared();quickUI.invalidate();
  })
 });
 $('external-open').onclick=()=>openWorkflowPage(designer.composer.scope);
 window.addEventListener('emp:workbench-proposal',event=>{try{const {proposal,question}=event.detail||{};if(!proposal)return;designer.applyCountProposal(proposal);if(typeof question==='string')$('question').value=question;}catch(e){say(e.message);}});
+window.addEventListener('emp:agent-download-ready',event=>{const {job,annotations}=event.detail;studyContexts.set(job.job_id,{accession:job.accession,annotations,paper:null});window.dispatchEvent(new CustomEvent('emp:agent-flow',{detail:{...job,stage:'importing',message:'下载完成，自动读取矩阵并匹配样本…'}}));perform(async()=>{$('job').value=job.job_id;window._empAgentImporting=true;try{await ingest();}finally{window._empAgentImporting=false;}window.dispatchEvent(new CustomEvent('emp:agent-flow',{detail:{...job,stage:'ready',message:'矩阵已导入；可用的精确元数据分组已填入。',readiness:window._empWorkbenchState}}));});});
+window.addEventListener('emp:agent-review-samples',()=>{
+ const values=samples();
+ if(!state.dataset||values.some(r=>!r.group)){say('样本证据仍有缺项，无法声明分组已完成；请先读取矩阵和元数据。');return;}
+ openSampleDesignDialog({samples:values,warnings:state.groupingWarnings||[],reference:$('reference').value,getRevision:()=>state.revision,locale:getLocale,
+  onIndependent:async({review,reference,mode})=>{
+   $('reference').value=reference;$('reference').dispatchEvent(new Event('input',{bubbles:true}));
+   $('comparison-mode').value=mode;$('comparison-mode').dispatchEvent(new Event('change',{bubbles:true}));
+   if(mode==='one_to_many')for(const control of document.querySelectorAll('#wb-study-review input[data-test-group]')){control.checked=true;control.onchange?.();}
+   const consent=$('simple-consent');consent.checked=true;consent.dispatchEvent(new Event('change',{bubbles:true}));
+   await preparePlan();if(!state.prepared)throw Error('输入检查尚未通过，请查看具体缺项。');
+   $('confirm').checked=true;await runPrepared();state.sampleDesignReview={...review,dataset_id:state.dataset.dataset_id,execution_allowed:true};guide();
+  },
+  onReview:async review=>{
+   $('independent').checked=false;$('group-reviewed').checked=false;quickUI.invalidate();state.change();
+   $('confirm').checked=false;$('run').disabled=true;
+   state.sampleDesignReview={...review,dataset_id:state.dataset.dataset_id};guide();
+   const kind=review.relationship==='paired'?'配对/重复测量（用户已填写 '+review.subject_count+' 个个体编号）':review.relationship==='unknown'?'样本关系暂不确定':'独立样本';
+   say('已保存本次设计选择；当前执行器不支持配对、重复测量或批次调整，不会按独立样本强行运行。');
+   window.dispatchEvent(new CustomEvent('emp:agent-question',{detail:{question:'用户已在弹窗确认：'+kind+(review.batch_adjustment?'，存在批次/混杂因素':'')+'。请继续核对论文中的实验设计并推荐适用流程。当前计数工作台只支持独立样本，不得假设配对模型已接入，不得再重复弹出同一确认窗。',designReview:{relationship:review.relationship,subject_count:review.subject_count,batch_adjustment:review.batch_adjustment}}}));
+  }
+ });
+});
 
 boot();

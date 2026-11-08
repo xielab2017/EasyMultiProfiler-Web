@@ -1,32 +1,37 @@
+import {UI_LOCALES_FULL} from './ui_locales_full.mjs';
 /**
  * Code lab: reference snippets + optional **real** R execution via POST /api/user_r/run.
  * Drafts + edit history remain in localStorage.
  */
 import { CODE_LAB_TEMPLATES } from "./code_lab_templates.js?v=2026-07-16-multi-demo";
 import { codeLabArtifactURL, execUserR, getOpenRouterVerified, optimizeRCode, probeOpenRouterModels } from "./api.js?v=2026-07-22-script-fusion-v1";
-import { t, getLocale } from "./locale.js?v=i18n-zh-default-v1";
+import { t, getLocale } from "./locale.js?v=nav-language-20261108";
 import { featureText } from "./feature_i18n.mjs?v=2";
+import {pageAgentContext} from './page_agent.mjs';
 import { mountAnalysisGuide } from "./analysis_guide.js?v=1";
 import { mountModelSettings } from './model_settings.js';
+import {bindPanelResize} from './chat_layout.mjs';
+import {savedChatModels} from './chat_composer.mjs';
+import {agentMemory,mountAgentMemory} from './agent_memory.mjs';
+import {installAgentPipeline} from './agent_pipeline.mjs';
 
 const guideText = source => featureText(source, getLocale());
 let guideController = null;
 
-function setPanelMode(mode) {
+function setPanelMode() {
   if (!rootEl) return;
-  rootEl.dataset.mode = mode === 'code' ? 'code' : 'guide';
-  for (const name of ['guide','code']) {
-    rootEl.querySelector(`#code-lab-${name}-panel`).hidden = name !== rootEl.dataset.mode;
-    const button=rootEl.querySelector(`[data-panel-mode="${name}"]`);
-    button.classList.toggle('active',name===rootEl.dataset.mode);
-    button.setAttribute('aria-selected',String(name===rootEl.dataset.mode));
-  }
+  rootEl.dataset.mode = 'chat';
+  rootEl.querySelector('#code-lab-guide-panel').hidden=false;
+  rootEl.querySelector('#code-lab-code-panel').hidden=true;
   setHeadTitle();syncDockLayout();
 }
 
 function guideSnapshot() {
   const group=document.getElementById('clin-three-group')?.value||'';
-  return {workflow:state.workflow,tab:state.tab,omics:document.getElementById('omics-pipeline')?.value||'',
+  const page=document.querySelector('.page.active')?.id?.replace('page-','')||state.workflow,tab=detectActiveTabInPage(page)||DEFAULT_TAB[page];
+  return {workflow:page,tab,pageContext:pageAgentContext(page),omics:document.getElementById('omics-pipeline')?.value||'',
+    plotSettings:state.tab==='viz-heatmap'?{width_inches:Number(document.getElementById('heat-width')?.value),height_inches:Number(document.getElementById('heat-height')?.value),top_n:Number(document.getElementById('heat-topn')?.value)}:null,
+    settingsKey:JSON.stringify([...document.querySelectorAll('.page.active input,.page.active select,.page.active textarea')].map(node=>[node.id,node.type==='checkbox'?node.checked:node.value])),
     experimentName:window._emp?.currentExp||'',hasExperiment:!!window._emp?.currentExp,
     hasStandaloneClinical:!!window._emp?.standaloneClinical,hasGroup:!!group,
     groupSelection:state.workflow==='clinical'?group:'',clinicalSource:state.workflow==='clinical'?clinicalSourceValue():''};
@@ -71,21 +76,21 @@ const OPENROUTER_PROBE_CANDIDATES = [
 ];
 const OPENROUTER_MODEL_LABELS = {
   "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
-  "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash（快）",
+  "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash",
   "moonshotai/kimi-k2.7-code": "Kimi K2.7 Code",
   "qwen/qwen3.7-max": "Qwen3.7 Max",
   "z-ai/glm-5.2": "GLM 5.2",
   "z-ai/glm-5": "GLM 5",
   "openai/gpt-5.6-sol": "GPT-5.6 Sol",
   "openai/gpt-5.6-terra": "GPT-5.6 Terra",
-  "openai/gpt-5.6-luna": "GPT-5.6 Luna（快）",
+  "openai/gpt-5.6-luna": "GPT-5.6 Luna",
   "openai/gpt-5.5": "GPT-5.5",
   "openai/gpt-5.5-pro": "GPT-5.5 Pro",
   "anthropic/claude-fable-5": "Claude Fable 5",
   "anthropic/claude-sonnet-5": "Claude Sonnet 5",
   "anthropic/claude-opus-4.8": "Claude Opus 4.8",
   "google/gemini-3.1-pro-preview": "Gemini 3.1 Pro",
-  "google/gemini-3.5-flash": "Gemini 3.5 Flash（快）",
+  "google/gemini-3.5-flash": "Gemini 3.5 Flash",
   "openai/gpt-4o-mini": "GPT-4o mini",
   "deepseek/deepseek-chat": "DeepSeek Chat",
   "meta-llama/llama-3.3-70b-instruct": "Llama 3.3 70B",
@@ -212,11 +217,11 @@ let lastLlmOptimizeMeta = null;
 
 /** NVIDIA NIM chat / instruct LLMs (from integrate.api.nvidia.com/v1/models). */
 const NVIDIA_NIM_CHAT_MODELS = [
-  { id: "nvidia/nemotron-3-ultra-550b-a55b", label: "nemotron-3-ultra-550b-a55b（旗舰）" },
+  { id: "nvidia/nemotron-3-ultra-550b-a55b", label: "nemotron-3-ultra-550b-a55b" },
   { id: "nvidia/nemotron-3-super-120b-a12b", label: "nemotron-3-super-120b-a12b" },
   { id: "nvidia/llama-3.1-nemotron-ultra-253b-v1", label: "llama-3.1-nemotron-ultra-253b-v1" },
   { id: "deepseek-ai/deepseek-v4-pro", label: "deepseek-v4-pro" },
-  { id: "deepseek-ai/deepseek-v4-flash", label: "deepseek-v4-flash（快）" },
+  { id: "deepseek-ai/deepseek-v4-flash", label: "deepseek-v4-flash" },
   { id: "z-ai/glm-5.2", label: "glm-5.2" },
   { id: "qwen/qwen3.5-397b-a17b", label: "qwen3.5-397b-a17b" },
   { id: "meta/llama-3.3-70b-instruct", label: "llama-3.3-70b-instruct" },
@@ -333,9 +338,9 @@ const LLM_PROVIDER_CATALOG = {
   },
   chatgpt: {
     models: [
-      { id: "gpt-5.6-sol", label: "gpt-5.6-sol（旗舰）" },
+      { id: "gpt-5.6-sol", label: "gpt-5.6-sol" },
       { id: "gpt-5.6-terra", label: "gpt-5.6-terra" },
-      { id: "gpt-5.6-luna", label: "gpt-5.6-luna（快）" },
+      { id: "gpt-5.6-luna", label: "gpt-5.6-luna" },
       { id: "gpt-5.5", label: "gpt-5.5" },
       { id: "gpt-5.5-pro", label: "gpt-5.5-pro" },
       { id: "gpt-4o-mini", label: "gpt-4o-mini" },
@@ -353,7 +358,7 @@ const LLM_PROVIDER_CATALOG = {
   deepseek: {
     models: [
       { id: "deepseek-v4-pro", label: "deepseek-v4-pro（推荐）" },
-      { id: "deepseek-v4-flash", label: "deepseek-v4-flash（快）" },
+      { id: "deepseek-v4-flash", label: "deepseek-v4-flash" },
       { id: "deepseek-chat", label: "deepseek-chat" },
       { id: "deepseek-reasoner", label: "deepseek-reasoner" },
       { id: "__custom__", label: "自定义模型…" },
@@ -379,13 +384,12 @@ const LLM_PROVIDER_CATALOG = {
   },
   minimax: {
     models: [
-      { id: "MiniMax-M3.1-Flash", label: "MiniMax-M3.1-Flash" },
-      { id: "MiniMax-M3", label: "MiniMax-M3" },
+      { id: "MiniMax-M2.7", label: "MiniMax-M2.7" },
       { id: "MiniMax-M2.5", label: "MiniMax-M2.5" },
       { id: "MiniMax-Text-01", label: "MiniMax-Text-01" },
       { id: "__custom__", label: "自定义模型…" },
     ],
-    defaultModel: "MiniMax-M3",
+    defaultModel: "MiniMax-M2.7",
     baseUrl: "https://api.minimax.cn/v1",
     baseUrlEditable: false,
     keyRequired: true,
@@ -437,21 +441,21 @@ const LLM_PROVIDER_CATALOG = {
     models: [
       { id: "fusion", label: "Auto 融合 5 模型（推荐）" },
       { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-      { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash（快）" },
+      { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
       { id: "moonshotai/kimi-k2.7-code", label: "Kimi K2.7 Code" },
       { id: "qwen/qwen3.7-max", label: "Qwen3.7 Max" },
       { id: "z-ai/glm-5.2", label: "GLM 5.2" },
       { id: "z-ai/glm-5", label: "GLM 5" },
       { id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol" },
       { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra" },
-      { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna（快）" },
+      { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna" },
       { id: "openai/gpt-5.5", label: "GPT-5.5" },
       { id: "openai/gpt-5.5-pro", label: "GPT-5.5 Pro" },
       { id: "anthropic/claude-fable-5", label: "Claude Fable 5" },
       { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5" },
       { id: "anthropic/claude-opus-4.8", label: "Claude Opus 4.8" },
       { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
-      { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash（快）" },
+      { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
       { id: "openai/gpt-4o-mini", label: "GPT-4o mini" },
       { id: "deepseek/deepseek-chat", label: "DeepSeek Chat" },
       { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B" },
@@ -486,9 +490,11 @@ const DEFAULT_LLM_PRESET = {
   task_type: "code_optimize",
   campus_models: CAMPUS_LLM_PRESET.campus_models,
 };
-const PAGES = new Set(["preparation", "analysis", "clinical", "runall", "visualization"]);
+const PAGES = new Set(['guide','course','models','prompts','import','summary','inspector','chipseq','chipseq_downstream','export','preparation','analysis','clinical','runall','visualization','matrix','integration','workbench']);
 
 const DEFAULT_TAB = {
+  guide:'main',course:'main',models:'main',prompts:'main',import:'main',summary:'main',inspector:'main',chipseq:'main',chipseq_downstream:'main',export:'main',
+  matrix: "matrix-main", integration:"integration-main", workbench:"workbench-main",
   preparation: "prep-filter",
   analysis: "ana-alpha",
   clinical: "overview",
@@ -914,7 +920,7 @@ function saveCurrentProviderProfile() {
   cfg.provider = provider;
   cfg.task_type = llmConfigEls.task_type?.value || cfg.task_type || "code_optimize";
   saveLlmConfig(cfg);
-  setLlmStatus(`已保存 ${provider} 的配置（本机浏览器，切换 Provider 会自动恢复）`, "ok");
+  setLlmStatus((UI_LOCALES_FULL['Saved settings for {provider} in this browser; switching providers restores them automatically.']?.[getLocale()]||'Saved settings for {provider} in this browser; switching providers restores them automatically.').replace('{provider}',provider), 'ok');
 }
 
 function saveLlmConfig(cfg) {
@@ -1471,20 +1477,8 @@ function clinicalSnippetLabel(key) {
 }
 
 function setHeadTitle() {
-  const h = rootEl?.querySelector(".code-lab-head h4");
-  if (!h) return;
-  if (rootEl.dataset.mode !== 'code') {
-    h.textContent=guideText('分析助手');return;
-  }
-  if (!state.workflow) {
-    h.textContent = t("codelab.headTitle");
-    return;
-  }
-  const tabLabel =
-    state.workflow === "clinical"
-      ? clinicalSnippetLabel(state.tab) || state.tab
-      : state.tab;
-  h.textContent = `${t("codelab.workflowCode")} · ${state.workflow} · ${tabLabel}`;
+  const h=rootEl?.querySelector('.code-lab-head h4');
+  if(h)h.textContent=['zh','zh-TW'].includes(getLocale())?'AI 对话':'AI chat';
 }
 
 export function applyCodeLabI18n() {
@@ -1495,7 +1489,7 @@ export function applyCodeLabI18n() {
   const badge = q(".code-lab-badge");
   if (badge) badge.textContent = guideText('引导 · 计划 · 审核');
   const collapse=q('#code-lab-guide-collapse');if(collapse)collapse.textContent=guideText('收起助手');
-  for(const button of rootEl.querySelectorAll('[data-panel-mode]'))button.textContent=guideText(button.dataset.panelMode==='guide'?'分析引导':'代码与模型（高级）');
+  for(const button of rootEl.querySelectorAll('[data-panel-mode]'))button.textContent=guideText(button.dataset.panelMode==='guide'?'分析引导':'AI 对话与代码');
   const hint = q(".code-lab-hint");
   if (hint) hint.textContent = guideText('实现参考可能含请求变量与路由包装，不代表可独立运行。自定义脚本需审核输入、设计和执行环境。');
   const paneHeading=q('.code-lab-pane-src-head');if(paneHeading)paneHeading.textContent=guideText('代码与模型（高级）');
@@ -1655,19 +1649,16 @@ export async function initCodeLab() {
   rootEl.className = "code-lab--hidden code-lab--open";
   rootEl.dataset.mode = 'guide';
   rootEl.innerHTML = `
+    <div class="agent-panel-resizer" role="separator" aria-label="左右调整 AI 窗口宽度" title="拖动调整宽度；双击还原" aria-orientation="vertical" tabindex="0"></div>
     <div class="code-lab-head" title="Click to expand / collapse">
       <h4>分析助手</h4>
       <span class="code-lab-badge">引导 · 计划 · 审核</span>
       <button type="button" id="code-lab-guide-collapse" class="btn btn-outline">收起助手</button>
     </div>
     <div class="code-lab-body">
-      <div class="code-lab-mode-tabs" role="tablist" aria-label="Assistant mode">
-        <button type="button" role="tab" data-panel-mode="guide" aria-selected="true" class="active">分析引导</button>
-        <button type="button" role="tab" data-panel-mode="code" aria-selected="false">代码与模型（高级）</button>
-      </div>
       <div id="code-lab-guide-panel" class="analysis-guide"></div>
-      <div class="code-lab-pane-src code-lab-pane-src--full" id="code-lab-code-panel" hidden>
-        <div class="code-lab-pane-src-head">System Source vs Optimized R</div>
+      <details class="code-lab-pane-src code-lab-pane-src--full" id="code-lab-code-panel" hidden>
+        <summary class="code-lab-pane-src-head">代码与模型（高级）</summary>
         <p class="code-lab-hint">
           上方是系统生成的纯 R 原始脚本；下方可粘贴外来分析/绘图脚本，或人工/LLM 优化。
           <strong>「融合外来脚本」</strong>会把外来意图并入系统脚本。
@@ -1785,10 +1776,12 @@ export async function initCodeLab() {
           <summary>编辑历史（本机）</summary>
           <div class="code-lab-history" id="code-lab-history"></div>
         </details>
-      </div>
+      </details>
     </div>
   `;
   document.body.appendChild(rootEl);
+  if(!window.empAgentPipeline)installAgentPipeline();
+  bindPanelResize(rootEl,rootEl.querySelector('.agent-panel-resizer'));
 
   taEl = rootEl.querySelector("#code-lab-editor");
   originalEl = rootEl.querySelector("#code-lab-original");
@@ -1874,6 +1867,21 @@ export async function initCodeLab() {
   rootEl.querySelector('.code-lab-body').insertBefore(clinicalRow,rootEl.querySelector('.code-lab-mode-tabs'));
   for(const button of rootEl.querySelectorAll('[data-panel-mode]'))button.addEventListener('click',()=>setPanelMode(button.dataset.panelMode));
   guideController=mountAnalysisGuide(rootEl.querySelector('#code-lab-guide-panel'),{
+    modelBridge:{
+      list:active=>{let catalogs={};try{catalogs=JSON.parse(localStorage.getItem('emp_model_catalogs_v1')||'{}');}catch{}return savedChatModels(loadLlmConfig(),catalogs,active);},
+      select:async([provider,model])=>{
+        const saved=loadLlmConfig();if(provider==='openai'&&!saved.profiles?.openai&&saved.profiles?.chatgpt)provider='chatgpt';
+        const providerSelect=document.getElementById('code-lab-llm-provider');providerSelect.value=provider;providerSelect.dispatchEvent(new Event('change',{bubbles:true}));
+        const select=document.getElementById('code-lab-llm-model');
+        if([...select.options].some(option=>option.value===model))select.value=model;
+        else{select.value='__custom__';document.getElementById('code-lab-llm-model-custom').value=model;}
+        select.dispatchEvent(new Event('change',{bubbles:true}));
+        await document.getElementById('models-load').onclick();
+        const result=await fetch('/api/public-data/agent/status',{credentials:'omit'}).then(r=>r.json());
+        if(result.status!=='ready'||result.model!==model)throw Error('Model not loaded');
+        window.dispatchEvent(new CustomEvent('emp:agent-config-change'));
+      },
+    },
     snapshot:guideSnapshot,
     focusSettings:target=>{
       const active=document.querySelector('.page.active');
@@ -2122,6 +2130,8 @@ async function runLlmOptimize({ forceExternal = false } = {}) {
 
   const llmWrap=rootEl.querySelector('#code-lab-llm-wrap');
   mountModelSettings(document.getElementById('model-settings-root'),{legacyWrap:llmWrap,readConfiguration:(persist=false)=>{if(persist)saveCurrentProviderProfile();return collectLlmConfig({persistGlobal:persist});}});
+  mountAgentMemory(document.getElementById('model-settings-root'));
+  document.getElementById('main')?.addEventListener('change',event=>{if(!event.isTrusted)return;const key={'heat-width':'plot_width','heat-height':'plot_height','heat-topn':'plot_top_n','wb-scope':'workflow_scope'}[event.target.id];if(key)agentMemory.remember(key,event.target.id==='wb-scope'?event.target.value:Number(event.target.value));});
   const modelSettingsLink=document.createElement('button');modelSettingsLink.type='button';modelSettingsLink.className='btn btn-outline';modelSettingsLink.dataset.featureText='模型与 API';modelSettingsLink.textContent=guideText('模型与 API');modelSettingsLink.onclick=()=>document.querySelector('.nav-item[data-page="models"]')?.click();llmWrap.prepend(modelSettingsLink);
   applyCodeLabI18n();
   window.addEventListener("emp:locale-change", () => applyCodeLabI18n());

@@ -5,9 +5,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${ROOT_DIR}"
+EMP_WEB_VERSION="$(awk '/^Version:/{print $2;exit}' "${ROOT_DIR}/DESCRIPTION")"
 
 echo "════════════════════════════════════════════════════════"
-echo "  EasyMultiProfiler Web v9.1.3  (macOS launcher)"
+echo "  EasyMultiProfiler Web v${EMP_WEB_VERSION}  (macOS launcher)"
 echo "  Folder: ${ROOT_DIR}"
 echo "  Windows users: use Run-EMP-Web-Windows.bat instead"
 echo "════════════════════════════════════════════════════════"
@@ -19,7 +20,7 @@ _on_exit() {
     echo ""
     echo "════════════════════════════════════════════════════════"
     echo "  启动失败 (exit ${ec})。请阅读上方错误信息。"
-    echo "  EasyMultiProfiler Web v9.1.3 已自动尝试安装 R / python3 / EMP；若失败,"
+    echo "  EasyMultiProfiler Web v${EMP_WEB_VERSION} 已自动尝试安装 R / python3 / EMP；若失败,"
     echo "  可手动: xcode-select --install"
     echo "  或: bash webapp/scripts/launch_emp_web.sh --repair"
     echo "════════════════════════════════════════════════════════"

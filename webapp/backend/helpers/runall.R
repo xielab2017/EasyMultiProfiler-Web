@@ -2,7 +2,8 @@
 #
 # Each run produces:
 #   <session>/bundles/<run_id>/plots/*.pdf        - publication-ready figures
-#   <session>/bundles/<run_id>/plots/*.png        - PNG previews (mirror the PDFs)
+#   <session>/bundles/<run_id>/plots/*.{png,pdf,svg} - real R figure exports
+#   <session>/bundles/<run_id>/manifest.json      - per-stage status and provenance
 #   <session>/bundles/<run_id>/tables/*.xlsx      - Excel tables (one per step)
 #   <session>/bundles/<run_id>/summary.txt        - human-readable step log
 # and then zips the whole folder to:
@@ -13,7 +14,7 @@
 
 .bundle_root <- function(session_id) file.path(session_path(session_id), "bundles")
 
-.new_run_id <- function() format(Sys.time(), "%Y%m%d-%H%M%S")
+.new_run_id <- function() paste0(format(Sys.time(), "%Y%m%d-%H%M%S"), "-", basename(tempfile("run")))
 
 .bundle_init <- function(session_id) {
   run_id <- .new_run_id()
@@ -35,792 +36,240 @@
   try(cat(line, file = bundle$log, append = TRUE), silent = TRUE)
 }
 
-# Capture a standalone plot result, write both PDF and PNG, return file paths.
-# We call the same internal builders the /visualize/* endpoints use, but we
-# skip the base64 step entirely – plots are written straight to the bundle.
-.save_ggplot_bundle <- function(p, bundle, name, width = 9, height = 6) {
-  pdf  <- file.path(bundle$plots, paste0(name, ".pdf"))
-  png  <- file.path(bundle$plots, paste0(name, ".png"))
-  tryCatch({
-    save_plot_pdf(p, pdf, width = width, height = height)
-  }, error = function(e) message("[bundle] PDF ", name, ": ", conditionMessage(e)))
-  tryCatch({
-    if (requireNamespace("ragg", quietly = TRUE)) {
-      ragg::agg_png(filename = png, width = width, height = height, units = "in",
-                     res = 300, background = "white")
-    } else {
-      grDevices::png(filename = png, width = width, height = height, units = "in",
-                      res = 300, bg = "white",
-                      type = if (.Platform$OS.type == "windows") "windows" else "cairo")
-    }
-    if (inherits(p, "pheatmap")) {
-      grid::grid.newpage(); grid::grid.draw(p$gtable)
-    } else {
-      print(p)
-    }
-    grDevices::dev.off()
-  }, error = function(e) {
-    try(grDevices::dev.off(), silent = TRUE)
-    message("[bundle] PNG ", name, ": ", conditionMessage(e))
+# Backward-compatible public pipelines; implementation and stage manifest below.
+run_all_rnaseq <- function(session_id, experiment, group_var="Group", ref_group=NULL,
+ test_group=NULL, organism="mmu", fc_cutoff=1, p_cutoff=.05, use_padj=TRUE,
+ min_row_sum=0, do_enrichment=TRUE, on_progress=NULL, do_gsea=FALSE,
+ gsea_database="GO_BP", gsea_top_n=3L, do_correlation=TRUE, do_cluster=TRUE,
+ do_method_figures=TRUE, feature_top_n=100L, network_cutoff=.6, seed=1L) {
+ .runall_complete(session_id,experiment,"transcriptomics",as.list(environment()))
+}
+run_all_m16s <- function(session_id, experiment, group_var=NULL, taxonomy_level="Genus",
+ alpha_index="shannon", beta_method="bray", ord_method="PCoA", on_progress=NULL,
+ do_correlation=TRUE, do_cluster=TRUE, do_method_figures=TRUE,
+ ternary_groups=NULL, feature_top_n=100L, network_cutoff=.6, seed=1L) {
+ .runall_complete(session_id,experiment,"microbiome_16s",as.list(environment()))
+}
+
+.make_volcano_plot <- function(session_id, experiment, fc_cutoff=1,p_cutoff=.05,use_padj=TRUE,label_top=15L) {
+ env<-new.env(parent=environment(make_volcano));env$viz_emit_ggplot<-function(p,...)p
+ builder<-make_volcano;environment(builder)<-env
+ builder(session_id,experiment,fc_cutoff,p_cutoff,use_padj,label_top=label_top)
+}
+
+# Stage runner: errors never masquerade as successful missing plots. Disabled or
+# inapplicable stages have explicit reasons, and each stage records new files.
+.runall_skip <- function(reason) stop(structure(list(message=reason,call=NULL),class=c('emp_runall_skip','error','condition')))
+.runall_engine <- function(bundle,parameters,on_progress=NULL) {
+ e<-new.env(parent=emptyenv());e$stages<-list();e$parameters<-parameters
+ e$stage<-function(id,fn,enabled=TRUE,reason='Disabled by run parameters') {
+  start<-Sys.time();before<-list.files(bundle$base,recursive=TRUE)
+  warnings<-character();value<-NULL;status<-'done';detail<-''
+  if(!isTRUE(enabled)){status<-'skipped';detail<-reason}else{
+   value<-tryCatch(withCallingHandlers(fn(),warning=function(w){warnings<<-c(warnings,conditionMessage(w));invokeRestart('muffleWarning')}),
+    emp_runall_skip=function(c){status<<-'skipped';detail<<-conditionMessage(c);NULL},
+    error=function(c){status<<-'error';detail<<-conditionMessage(c);NULL})
+  }
+  elapsed<-as.numeric(difftime(Sys.time(),start,units='secs'))
+  files<-setdiff(list.files(bundle$base,recursive=TRUE),before)
+  e$stages[[length(e$stages)+1L]]<-list(id=id,status=status,reason=detail,warnings=unique(warnings),elapsed_s=round(elapsed,3),files=files)
+  .log_step(bundle,id,elapsed,status,detail)
+  jsonlite::write_json(list(schema='emp-runall-stages-v2',parameters=parameters,stages=e$stages),file.path(bundle$base,'stages.json'),auto_unbox=TRUE,pretty=TRUE,null='null')
+  if(is.function(on_progress))on_progress(min(94L,5L+length(e$stages)*4L),paste(id,status,detail))
+  value
+ }
+ e
+}
+.runall_table <- function(d,b,name) {
+ d<-as.data.frame(d);path<-file.path(b$tables,paste0(name,'.csv'));utils::write.csv(d,path,row.names=FALSE)
+ if(requireNamespace('openxlsx',quietly=TRUE))save_df_xlsx(d,file.path(b$tables,paste0(name,'.xlsx')))
+ invisible(path)
+}
+.runall_plot <- function(p,b,name,width=9,height=6) {
+ if(is.null(p))stop('No plot object was produced')
+ for(ext in c('png','pdf','svg')){
+  path<-file.path(b$plots,paste0(name,'.',ext))
+  if(file.exists(path))stop('Refusing to overwrite a figure')
+  if(ext=='svg'&&!requireNamespace('svglite',quietly=TRUE))stop('SVG export requires svglite')
+  device<-switch(ext,png=if(requireNamespace('ragg',quietly=TRUE))ragg::agg_png else 'png',pdf=grDevices::pdf,svg=svglite::svglite)
+  args<-list(filename=path,plot=p,width=width,height=height,units='in',dpi=300,device=device,bg='white')
+  if(ext=='pdf')args$useDingbats<-FALSE
+  do.call(ggplot2::ggsave,args)
+  if(!file.exists(path)||file.info(path)$size==0)stop('Figure export failed: ',ext)
+ }
+ invisible(TRUE)
+}
+.runall_copy_method <- function(out,b,name,session_id) {
+ if(!isTRUE(out$success))stop('Method figure was not produced')
+ for(key in names(out$download_urls)){
+  filename<-basename(out$download_urls[[key]]);from<-file.path(session_path(session_id),'plots',filename)
+  if(!file.exists(from))stop('Expected method artifact missing: ',filename)
+  extension<-if(key=='manifest')'manifest.json' else if(key=='data')'derived.csv' else key
+  if(!file.copy(from,file.path(if(key%in%c('png','pdf','svg'))b$plots else b$tables,paste0(name,'.',extension)),overwrite=FALSE))stop('Could not copy method output')
+ }
+}
+.runall_matrix <- function(ad) {
+ mat<-as.matrix(ad)
+ if(!is.numeric(mat)||!length(mat)||any(!is.finite(mat))||any(mat<0))stop('One-click abundance/count input must be finite and nonnegative; no missing values or negative values are repaired')
+ if(is.null(rownames(mat))||is.null(colnames(mat))||anyDuplicated(rownames(mat))||anyDuplicated(colnames(mat)))stop('Unique feature and sample IDs are required')
+ if(any(colSums(mat)<=0))stop('A sample has zero total abundance')
+ mat
+}
+.runall_heatmap <- function(mat,b,name,top_n=50,title='Top variable features') {
+ vars<-apply(mat,1,stats::var);idx<-head(order(-vars,rownames(mat)),top_n);idx<-idx[vars[idx]>0]
+ if(length(idx)<2L).runall_skip('Fewer than two nonconstant features are available')
+ z<-t(scale(t(mat[idx,,drop=FALSE])));d<-as.data.frame(as.table(z));names(d)<-c('Feature','Sample','Z')
+ .runall_table(data.frame(feature=rownames(z),z,check.names=FALSE),b,paste0(name,'_values'))
+ p<-ggplot2::ggplot(d,ggplot2::aes(Sample,Feature,fill=Z))+ggplot2::geom_tile()+ggplot2::scale_fill_gradient2(low='#2166ac',mid='white',high='#b2182b',midpoint=0)+ggplot2::labs(title=title,subtitle=paste0('Row Z scores; ',nrow(z),' selected features; no value clipping'),x=NULL,y=NULL)+emp_pub_theme()+ggplot2::theme(axis.text.x=ggplot2::element_text(angle=60,hjust=1),axis.text.y=ggplot2::element_text(size=7))
+ .runall_plot(p,b,name,10,max(6,min(14,nrow(z)*.15)))
+}
+.runall_corr <- function(mat,b,feature_top_n=100,cutoff=.6) {
+ vars<-apply(mat,1,stats::var);idx<-head(order(-vars,rownames(mat)),feature_top_n);idx<-idx[vars[idx]>0]
+ if(length(idx)<2L).runall_skip('Fewer than two nonconstant features available for correlation')
+ m<-suppressWarnings(stats::cor(t(mat[idx,,drop=FALSE]),method='spearman'))
+ if(any(!is.finite(m)))stop('Feature correlation contains undefined values')
+ .runall_table(data.frame(feature=rownames(m),m,check.names=FALSE),b,'feature_spearman_matrix')
+ pairs<-which(upper.tri(m)&abs(m)>=cutoff,arr.ind=TRUE)
+ edges<-data.frame(from=rownames(m)[pairs[,1]],to=colnames(m)[pairs[,2]],rho=m[pairs],stringsAsFactors=FALSE)
+ .runall_table(edges,b,'feature_network_edges')
+ if(!nrow(edges)).runall_skip('No feature pairs pass the descriptive absolute-correlation display cutoff; correlation tables are retained')
+ total_edges<-nrow(edges);edges<-head(edges[order(-abs(edges$rho),edges$from,edges$to),,drop=FALSE],500L)
+ # The circular layout encodes connectivity only, never biological distance.
+ ids<-unique(c(edges$from,edges$to));ang<-2*pi*seq_along(ids)/length(ids);nodes<-data.frame(id=ids,x=cos(ang),y=sin(ang))
+ .runall_table(nodes,b,'network_display_nodes')
+ edges$x<-nodes$x[match(edges$from,ids)];edges$y<-nodes$y[match(edges$from,ids)];edges$xend<-nodes$x[match(edges$to,ids)];edges$yend<-nodes$y[match(edges$to,ids)]
+ p<-ggplot2::ggplot()+ggplot2::geom_segment(data=edges,ggplot2::aes(x,y,xend=xend,yend=yend,color=rho),alpha=.3)+ggplot2::geom_point(data=nodes,ggplot2::aes(x,y),size=2)+ggplot2::scale_color_gradient2(low='#2166ac',mid='white',high='#b2182b',limits=c(-1,1))+ggplot2::coord_equal()+ggplot2::theme_void()+ggplot2::labs(title='Feature correlation network',subtitle=paste0('Top ',length(idx),' variable features; |Spearman rho| >= ',cutoff),caption=paste0('Descriptive associations, no P threshold or causality. Circular positions are not distances.\nDisplaying ',nrow(edges),' / ',total_edges,' edges ranked by |rho|; full edges and node IDs are in tables.'))
+ .runall_plot(p,b,'feature_correlation_network')
+}
+.runall_finish <- function(bundle,engine,session_id,experiment,started) {
+ versions<-vapply(c('ggplot2','EasyMultiProfiler','DESeq2','clusterProfiler','vegan','svglite','openxlsx'),function(pkg)if(requireNamespace(pkg,quietly=TRUE))as.character(utils::packageVersion(pkg)) else 'unavailable',character(1))
+ files<-list.files(bundle$base,recursive=TRUE,full.names=TRUE);files<-files[!dir.exists(files)]
+ counts<-table(factor(vapply(engine$stages,`[[`,character(1),'status'),levels=c('done','skipped','error')))
+ elapsed<-as.numeric(difftime(Sys.time(),started,units='secs'))
+ cat(sprintf('\nElapsed: %.1fs; done=%d skipped=%d error=%d\n',elapsed,counts[1],counts[2],counts[3]),file=bundle$log,append=TRUE)
+ manifest<-list(schema='emp-runall-complete-v2',run_id=bundle$run_id,experiment=experiment,parameters=engine$parameters,stages=engine$stages,counts=as.list(counts),partial=counts['error']>0L,software=as.list(versions),R_version=R.version.string,files=sub(paste0(bundle$base,'/'),'',files,fixed=TRUE),file_md5=as.list(tools::md5sum(files)),plots=list.files(bundle$plots),scientific_scope='Per-stage methods and transformations are recorded; errors and skipped methods do not represent completed analyses')
+ jsonlite::write_json(manifest,file.path(bundle$base,'manifest.json'),auto_unbox=TRUE,pretty=TRUE,null='null');capture.output(utils::sessionInfo(),file=file.path(bundle$base,'sessionInfo.txt'))
+ zip_path<-file.path(.bundle_root(session_id),paste0(bundle$run_id,'.zip'));zip_dir(bundle$base,zip_path)
+ if(!file.exists(zip_path)||file.info(zip_path)$size<=0)stop('Run completed but bundle packaging failed')
+ list(success=TRUE,partial=isTRUE(counts['error']>0L),session_id=session_id,experiment=experiment,run_id=bundle$run_id,bundle=bundle$base,zip_path=zip_path,zip_name=basename(zip_path),elapsed_s=round(elapsed,1),stages=engine$stages,counts=as.list(counts),figures=list.files(bundle$plots))
+}
+.runall_complete <- function(session_id,experiment,omics,parameters) {
+ on_progress<-parameters$on_progress;parameters$on_progress<-NULL
+ b<-.bundle_init(session_id);cat(paste('EasyMultiProfiler comprehensive',omics,'pipeline\nExperiment:',experiment,'\n'),file=b$log)
+ started<-Sys.time();engine<-.runall_engine(b,parameters,on_progress);stage<-engine$stage
+ # Keep the caller's RNG unchanged. Every stochastic display uses this seed.
+ seed<-as.integer(parameters$seed);if(length(seed)!=1L||!is.finite(seed))stop('Invalid seed')
+ old_seed<-if(exists('.Random.seed',.GlobalEnv,inherits=FALSE))get('.Random.seed',.GlobalEnv) else NULL
+ on.exit(if(is.null(old_seed)){if(exists('.Random.seed',.GlobalEnv,inherits=FALSE))rm('.Random.seed',envir=.GlobalEnv)}else assign('.Random.seed',old_seed,.GlobalEnv),add=TRUE);set.seed(seed)
+ top<-as.integer(parameters$feature_top_n);if(length(top)!=1L||!is.finite(top)||top<2L||top>300L)stop('feature_top_n must be 2–300')
+ cutoff<-as.numeric(parameters$network_cutoff);if(length(cutoff)!=1L||!is.finite(cutoff)||cutoff<0||cutoff>1)stop('network_cutoff must be between zero and one')
+ is_rna<-omics=='transcriptomics';owner<-tryCatch(emp_get_session_owner(session_id)$owner_id,error=function(e)'local');owner<-owner %||% 'local'
+ input<-stage('qc',function(){
+   empt<-get_empt_fresh(session_id,experiment);empt<-apply_merged_coldata(session_id,empt)
+   audit<-list(source='current reviewed assay')
+   if(is_rna){resolved<-.diff_count_input(empt,load_raw_empt(session_id,experiment));empt<-resolved$empt;audit$source<-resolved$source}
+   ad<-.runall_matrix(SummarizedExperiment::assays(empt)[[1]]);cd<-as.data.frame(SummarizedExperiment::colData(empt));cd<-cd[colnames(ad),,drop=FALSE]
+   .runall_table(data.frame(sample=colnames(ad),library_size=colSums(ad),detected_features=colSums(ad>0)),b,'sample_qc')
+   .runall_table(data.frame(feature=rownames(ad),total=rowSums(ad),prevalence=rowMeans(ad>0)),b,'feature_qc')
+   .runall_plot(ggplot2::ggplot(data.frame(sample=colnames(ad),total=colSums(ad)),ggplot2::aes(sample,total))+ggplot2::geom_col(fill='#4E79A7')+emp_pub_theme()+ggplot2::labs(title='Sample library size',x=NULL,y='Total abundance')+ggplot2::theme(axis.text.x=ggplot2::element_text(angle=60,hjust=1)),b,'sample_library_size')
+   jsonlite::write_json(audit,file.path(b$base,'input_audit.json'),auto_unbox=TRUE,pretty=TRUE)
+   list(ad=ad,cd=cd,empt=empt)
+ })
+ need<-function(){if(is.null(input)).runall_skip('Input QC failed; inspect the qc stage');input}
+ stage('metadata',function(){x<-need();.runall_table(data.frame(sample=rownames(x$cd),x$cd,check.names=FALSE),b,'sample_metadata');.runall_table(data.frame(feature=rownames(x$ad)),b,'feature_identifiers')})
+ group<-parameters$group_var;group_values<-if(!is.null(input)&&!is.null(group)&&nzchar(group)&&group%in%names(input$cd))as.character(input$cd[[group]]) else NULL
+ working<-if(!is.null(input))if(is_rna)log2(sweep(input$ad,2,colSums(input$ad)/1e6,'/')+1) else sweep(input$ad,2,colSums(input$ad),'/') else NULL
+ .ordination<-function(method){
+   x<-need();mat<-t(working);if(nrow(mat)<3L||ncol(mat)<2L).runall_skip('At least three samples and two features are required')
+   if(method=='PCA'){vars<-apply(mat,2,stats::var);fit<-stats::prcomp(mat[,vars>0,drop=FALSE],center=TRUE,scale.=FALSE);coords<-fit$x[,1:2,drop=FALSE];v<-fit$sdev^2/sum(fit$sdev^2);axis<-sprintf('PC%d (%.1f%%)',1:2,v[1:2]*100)}else{
+    if(!requireNamespace('vegan',quietly=TRUE)).runall_skip('vegan is unavailable for Bray-Curtis beta diversity')
+    if(!identical(tolower(parameters$beta_method),'bray')).runall_skip('This audited beta display currently supports explicit Bray-Curtis only')
+    dist<-vegan::vegdist(mat,method='bray')
+    if(method=='PCOA'){fit<-stats::cmdscale(dist,k=2,eig=TRUE);coords<-fit$points;axis<-c('PCo1','PCo2');.runall_table(data.frame(eigenvalue=fit$eig),b,'beta_pcoa_eigenvalues')}else{fit<-vegan::metaMDS(dist,k=2,trace=0,autotransform=FALSE);coords<-fit$points;axis<-c('NMDS1','NMDS2');.runall_table(data.frame(stress=fit$stress),b,'beta_nmds_stress')}
+   }
+   d<-data.frame(sample=rownames(coords),Axis1=coords[,1],Axis2=coords[,2],group=if(is.null(group_values))'All' else group_values)
+   .runall_table(d,b,paste0(tolower(method),'_coordinates'))
+   p<-ggplot2::ggplot(d,ggplot2::aes(Axis1,Axis2,color=group))+ggplot2::geom_point(size=3)+emp_pub_theme()+ggplot2::labs(title=method,subtitle=if(is_rna)'log2(CPM + 1); display only, raw counts used for differential analysis' else 'Sample relative abundance; no feature imputation',x=axis[1],y=axis[2],color=group)
+   .runall_plot(p,b,paste0(tolower(method),'_scatter'));d
+ }
+ if(is_rna)stage('pca',function().ordination('PCA')) else for(m in c('PCA','PCOA','NMDS'))stage(paste0('beta_',tolower(m)),local({method<-m;function().ordination(method)}))
+ stage('sample_correlation',function(){need();m<-suppressWarnings(stats::cor(working,method='spearman'));if(any(!is.finite(m)))stop('Undefined sample correlation; inspect constant sample profiles');.runall_table(data.frame(sample=rownames(m),m,check.names=FALSE),b,'sample_spearman');d<-as.data.frame(as.table(m));names(d)<-c('Sample1','Sample2','rho');.runall_plot(ggplot2::ggplot(d,ggplot2::aes(Sample1,Sample2,fill=rho))+ggplot2::geom_tile()+ggplot2::scale_fill_gradient2(low='#2166ac',mid='white',high='#b2182b',limits=c(-1,1))+emp_pub_theme()+ggplot2::theme(axis.text.x=ggplot2::element_text(angle=60,hjust=1))+ggplot2::labs(title='Sample Spearman correlation'),b,'sample_correlation')},parameters$do_correlation)
+ stage('sample_clustering',function(){need();if(ncol(working)<3).runall_skip('Clustering requires at least three samples');vars<-apply(working,1,stats::var);idx<-head(order(-vars),top);idx<-idx[vars[idx]>0];if(length(idx)<2).runall_skip('Fewer than two varying features');hc<-stats::hclust(stats::dist(t(working[idx,,drop=FALSE])),method='ward.D2');saveRDS(hc,file.path(b$tables,'sample_hclust.rds'));.runall_table(data.frame(sample=names(stats::cutree(hc,k=2)),cluster=stats::cutree(hc,k=2)),b,'sample_clusters');for(ext in c('pdf','png','svg')){path<-file.path(b$plots,paste0('sample_dendrogram.',ext));if(ext=='pdf')grDevices::pdf(path,width=9,height=6)else if(ext=='svg'){if(!requireNamespace('svglite',quietly=TRUE))stop('svglite unavailable');svglite::svglite(path,width=9,height=6)}else if(requireNamespace('ragg',quietly=TRUE))ragg::agg_png(path,width=9,height=6,units='in',res=300)else grDevices::png(path,width=2700,height=1800);tryCatch(plot(hc,main=paste0('Sample clustering; Top ',length(idx),' varying features'),xlab='',sub='Ward D2 / Euclidean; descriptive clustering'),finally=grDevices::dev.off())}},parameters$do_cluster)
+ stage('feature_correlation_network',function(){need();.runall_corr(working,b,top,cutoff)},parameters$do_correlation)
+ stage('top_variance_heatmap',function(){need();.runall_heatmap(working,b,'top_variance_heatmap',min(top,50),'Top variable features; transformed display data')})
+ if(!is_rna){
+  taxonomy_result<-stage('taxonomy',function(){x<-need();prepared<-m16s_prepare_taxonomy(x$empt,collapse_level=parameters$taxonomy_level,keep_top_n=0L,drop_unassigned=FALSE);mat<-SummarizedExperiment::assays(prepared)[[1]];.runall_table(data.frame(taxon=rownames(mat),as.matrix(mat),check.names=FALSE),b,'taxonomy_abundance');list(matrix=as.matrix(mat),n_taxa=nrow(mat),scope='Local aggregation; full assay and raw counts unchanged')})
+  stage('beta_group_test',function(){need();if(is.null(group_values)||anyNA(group_values)||length(unique(group_values))<2L||any(table(group_values)<2L)).runall_skip('PERMANOVA and dispersion require reviewed complete groups with at least two samples per group');if(!requireNamespace('vegan',quietly=TRUE)).runall_skip('vegan is unavailable');if(!identical(tolower(parameters$beta_method),'bray')).runall_skip('This group test uses explicit Bray-Curtis only');distance<-vegan::vegdist(t(working),method='bray');meta<-data.frame(group=factor(group_values));test<-vegan::adonis2(distance~group,data=meta,permutations=999);disp<-vegan::betadisper(distance,meta$group);disp_test<-vegan::permutest(disp,permutations=999);saveRDS(list(permanova=test,dispersion=disp,dispersion_test=disp_test,requested_permutations=999L,seed=seed),file.path(b$tables,'beta_group_test_objects.rds'));.runall_table(data.frame(term=rownames(as.data.frame(test)),as.data.frame(test),check.names=FALSE),b,'permanova_bray');.runall_table(data.frame(term=rownames(as.data.frame(disp_test$tab)),as.data.frame(disp_test$tab),check.names=FALSE),b,'beta_dispersion_test');writeLines('Up to 999 unrestricted permutations (complete enumeration for small permutation spaces); assumes independent exchangeable samples. No batch, pairing, repeated-measure, or covariate adjustment. PERMANOVA must be interpreted with dispersion results; not a causal test.',file.path(b$tables,'beta_test_assumptions.txt'))})
+  stage('alpha',function(){x<-need();if(!requireNamespace('vegan',quietly=TRUE)).runall_skip('vegan package unavailable');mat<-t(x$ad);d<-data.frame(sample=rownames(mat),observed=rowSums(mat>0),shannon=vegan::diversity(mat,index='shannon'),simpson=vegan::diversity(mat,index='simpson'),invsimpson=vegan::diversity(mat,index='invsimpson'));d$pielou<-ifelse(d$observed>1,d$shannon/log(d$observed),NA_real_)
+   if(all(mat==floor(mat))){rich<-t(vegan::estimateR(mat));d$chao1<-rich[,'S.chao1'];d$ace<-rich[,'S.ACE']}else warning('Chao1/ACE skipped because the input is not integer counts')
+   .runall_table(d,b,'alpha_indices');for(metric in setdiff(names(d),'sample')){
+    if(!any(is.finite(d[[metric]])))next
+    plotdata<-data.frame(sample=d$sample,value=d[[metric]],group=if(is.null(group_values))'All' else group_values)
+    .runall_plot(ggplot2::ggplot(plotdata,ggplot2::aes(group,value,color=group))+ggplot2::geom_boxplot(outlier.shape=NA)+ggplot2::geom_jitter(width=.15)+emp_pub_theme()+ggplot2::labs(title=paste('Alpha diversity:',metric),x=group,y=metric,caption='Descriptive values; no group test implied'),b,paste0('alpha_',metric),7,5)
+   }
   })
-  list(pdf = pdf, png = png)
+  stage('composition',function(){x<-need();if(is.null(taxonomy_result)).runall_skip('Taxonomy aggregation failed; no taxonomic classifications are invented');mat<-sweep(taxonomy_result$matrix,2,colSums(taxonomy_result$matrix),'/');idx<-head(order(-rowMeans(mat)),min(top,15L));out<-mat[idx,,drop=FALSE];other<-1-colSums(out);out<-rbind(out,Other=other);d<-as.data.frame(as.table(out));names(d)<-c('Feature','Sample','RelativeAbundance');.runall_table(d,b,'composition_relative_abundance');.runall_plot(ggplot2::ggplot(d,ggplot2::aes(Sample,RelativeAbundance,fill=Feature))+ggplot2::geom_col()+ggplot2::labs(title='Top taxa and Other',y='Relative abundance',x=NULL)+emp_pub_theme()+ggplot2::theme(axis.text.x=ggplot2::element_text(angle=60,hjust=1)),b,'composition')})
+  stage('ternary',function(){x<-need();if(is.null(group_values)||anyNA(group_values)).runall_skip('Reviewed sample groups are required');groups<-as.character(unlist(parameters$ternary_groups));if(!length(groups)){groups<-unique(group_values);if(length(groups)!=3L).runall_skip('Exactly three groups, or an explicit ternary_groups selection, are required; no groups were guessed')}
+   if(length(groups)!=3L||anyDuplicated(groups)||any(!groups%in%group_values))stop('ternary_groups must select three distinct existing groups')
+   if(!nzchar(Sys.getenv('EMP_FIGURE_METHODS_ROOT',''))).runall_skip('Live Figure Methods Lab is not configured')
+   out<-emp_viz_method_library(list(method='ternary',session_id=session_id,experiment=experiment,omics=omics,group_var=group,groups=groups,top_n=min(top,100)),owner);.runall_copy_method(out,b,'ternary',session_id)
+  },parameters$do_method_figures)
+ }
+ diff_result<-stage('differential',function(){need();if(is.null(group_values)||anyNA(group_values)||any(!nzchar(group_values))||length(unique(group_values))<2L).runall_skip('An explicitly selected reviewed group variable with at least two complete groups is required')
+   if(is_rna){ref<-parameters$ref_group;test<-parameters$test_group
+    if(length(unique(group_values))!=2L&&(is.null(ref)||is.null(test))).runall_skip('More than two groups: select explicit reference/test groups for this one-click contrast; use the analysis workspace for multiple contrasts')
+    selected_groups<-if(!is.null(ref)&&!is.null(test))group_values[group_values%in%c(ref,test)] else group_values
+    if(any(table(selected_groups)<2L)).runall_skip('Differential count analysis requires independent biological replicates; at least two samples per selected group')
+    if(!requireNamespace('DESeq2',quietly=TRUE)).runall_skip('DESeq2 is not installed; no substitute differential method was run')
+    result<-run_diff(session_id,experiment,method='DESeq2',group_var=group,ref_group=ref,test_group=test,filter_low=TRUE,subset_two_groups=TRUE,cores='auto')
+   }else{
+    # Explicit microbial tests avoid EMP's two-group routing/fallback when
+    # three or more reviewed groups require an omnibus Kruskal-Wallis test.
+    microbial<-.runall_microbial_diff(working,group_values)
+    result<-microbial$data
+    .save_diff_raw_cache(session_id,experiment,microbial$method,group,microbial$ref_group,microbial$test_group,result,comparison_mode=if(length(unique(group_values))==2L)'pairwise' else 'omnibus_kruskal')
+   }
+   .runall_table(as.data.frame(result),b,'differential_compact');raw<-load_diff_raw(session_id,experiment)
+   if(!is.null(raw$data)) .runall_table(raw$data,b,'differential_raw')
+   saveRDS(list(compact=result,raw=raw),file.path(b$tables,'differential_result.rds'));list(result=result,raw=raw)
+ })
+ need_diff<-function(){if(is.null(diff_result)).runall_skip('Differential analysis did not complete during this run; old cached results are not reused');if(is.null(diff_result$raw$data)||!nrow(diff_result$raw$data)).runall_skip('This differential method has no compatible feature/FC/P table');if(!any(is.finite(diff_result$raw$data$log2FoldChange))).runall_skip('Omnibus multi-group results have no single fold-change direction; no two-group volcano or DEG heatmap is inferred');diff_result$raw}
+ stage('volcano',function(){need_diff();p<-.make_volcano_plot(session_id,experiment,fc_cutoff=parameters$fc_cutoff %||% 1,p_cutoff=parameters$p_cutoff %||% .05,use_padj=parameters$use_padj %||% TRUE);.runall_plot(p,b,'volcano',8,7)})
+ stage('deg_heatmap',function(){raw<-need_diff();pv<-.viz_selected_p(raw$data,parameters$use_padj %||% TRUE);fc<-as.numeric(raw$data$log2FoldChange);ids<-raw$data$feature[is.finite(pv)&is.finite(fc)&pv<(parameters$p_cutoff %||% .05)&abs(fc)>=(parameters$fc_cutoff %||% 1)];ids<-intersect(ids,rownames(working));if(length(ids)<2L).runall_skip('Fewer than two features pass the selected FC/adjusted-P cutoffs; no raw-P fallback');.runall_heatmap(working[ids,,drop=FALSE],b,'deg_heatmap',50,'Differential-feature heatmap; row Z scores')})
+ if(is_rna){
+  stage('de_significance_scatter',function(){need_diff();if(!nzchar(Sys.getenv('EMP_FIGURE_METHODS_ROOT',''))).runall_skip('Live Figure Methods Lab is not configured');out<-emp_viz_method_library(list(method='de_scatter',session_id=session_id,experiment=experiment,omics=omics,p_cutoff=parameters$p_cutoff,fc_cutoff=parameters$fc_cutoff),owner);.runall_copy_method(out,b,'de_significance_scatter',session_id)},parameters$do_method_figures)
+  for(database in c('KEGG','GO_BP')){
+   stage_id<-if(database=='KEGG')'ora_kegg' else 'ora_go'
+   result<-stage(stage_id,local({db<-database;id<-stage_id;function(){raw<-need_diff();selected<-.enrich_select_degs(raw,parameters$fc_cutoff,parameters$p_cutoff,parameters$use_padj);if(!nrow(selected)).runall_skip('No DEGs meet the selected FC/adjusted-P thresholds; no raw-P fallback');.runall_annotation_ready(parameters$organism);out<-run_enrichment(session_id,experiment,database=db,organism=parameters$organism,fc_cutoff=parameters$fc_cutoff,p_cutoff=parameters$p_cutoff,use_padj=parameters$use_padj,top_n=50L);.runall_table(out$data,b,id);saveRDS(out,file.path(b$tables,paste0(id,'.rds')));out}}),parameters$do_enrichment)
+   stage(paste0(stage_id,'_plot'),local({value<-result;id<-stage_id;function(){if(is.null(value)).runall_skip('Enrichment analysis unavailable or disabled');if(!nrow(value$data)).runall_skip('No enriched terms were returned');d<-.enrich_viz_normalize(value$data);d<-head(d[order(d[['p.adjust']]),,drop=FALSE],20L);d$term<-factor(d$ID,levels=rev(d$ID));p<-ggplot2::ggplot(d,ggplot2::aes(gene_ratio,term,size=Count,color=-log10(pmax(p.adjust,1e-300))))+ggplot2::geom_point()+ggplot2::scale_size_area(max_size=10)+ggplot2::scale_color_gradient(low='#554A9A',high='#E52449')+ggplot2::scale_y_discrete(labels=stats::setNames(vapply(d$Description,function(x)paste(strwrap(x,40),collapse='\n'),character(1)),d$ID))+ggplot2::labs(title=paste(value$database,'enrichment'),x='Gene ratio',y=NULL,color='-log10 adjusted P',size='Gene count')+emp_pub_theme();.runall_plot(p,b,id,10,9)}}),parameters$do_enrichment)
+  }
+  gsea<-stage('gsea_analysis',function(){need_diff();.runall_annotation_ready(parameters$organism);out<-emp_run_gsea(session_id,experiment,database=parameters$gsea_database,organism=parameters$organism,seed=seed);d<-if(is.character(out$data))jsonlite::fromJSON(out$data) else out$data;.runall_table(d,b,'gsea_result');saveRDS(out,file.path(b$tables,'gsea_result.rds'));out},parameters$do_gsea,'Disabled by run parameters; full-rank GSEA can be slow and requires species annotation')
+  stage('gsea_curves',function(){if(is.null(gsea)).runall_skip('GSEA analysis did not complete during this run');saved<-emp_load_gsea(session_id,experiment);d<-as.data.frame(methods::slot(saved$object,'result'));if(!nrow(d)).runall_skip('No GSEA gene sets available');d<-d[order(d[['p.adjust']]),,drop=FALSE];for(id in head(as.character(d$ID),min(10L,as.integer(parameters$gsea_top_n)))){out<-enrich_viz_gsea(list(session_id=session_id,experiment=experiment,source_job='current_gsea',set_id=id),owner);.runall_copy_method(out,b,paste0('gsea_',make.names(id)),session_id)}},parameters$do_gsea)
+ }
+ if(is.function(on_progress))on_progress(97L,'Writing per-stage manifest and packaging verified outputs')
+ result<-.runall_finish(b,engine,session_id,experiment,started)
+ if(is.function(on_progress))on_progress(100L,paste('Completed bundle;',result$counts$error,'stage errors;',result$counts$skipped,'skipped'))
+ result
 }
 
-.save_xlsx_bundle <- function(x, bundle, name, sheet = "data") {
-  path <- file.path(bundle$tables, paste0(name, ".xlsx"))
-  tryCatch(save_df_xlsx(x, path, sheet = sheet),
-           error = function(e) {
-             message("[bundle] XLSX ", name, ": ", conditionMessage(e))
-             path <- sub("\\.xlsx$", ".csv", path)
-             utils::write.csv(if (is.data.frame(x)) x else as.data.frame(x), path, row.names = FALSE)
-             path
-           })
+.runall_microbial_diff <- function(relative,groups) {
+ if(any(!is.finite(relative))||anyNA(groups))stop('Microbial tests require complete finite data and groups')
+ levels<-unique(as.character(groups));if(length(levels)<2L)stop('At least two groups required')
+ method<-if(length(levels)==2L)'wilcox.test (relative abundance)' else 'kruskal.test (all reviewed groups; relative abundance)'
+ tests<-lapply(seq_len(nrow(relative)),function(i){
+  values<-relative[i,]
+  if(length(unique(values))==1L)return(c(stat=NA_real_,pvalue=NA_real_))
+  test<-if(length(levels)==2L)stats::wilcox.test(values[groups==levels[2]],values[groups==levels[1]],exact=FALSE) else stats::kruskal.test(values,as.factor(groups))
+  c(stat=as.numeric(test$statistic),pvalue=test$p.value)
+ })
+ stats<-do.call(rbind,tests)
+ fc<-if(length(levels)==2L)log2(rowMeans(relative[,groups==levels[2],drop=FALSE])/rowMeans(relative[,groups==levels[1],drop=FALSE])) else rep(NA_real_,nrow(relative))
+ d<-data.frame(feature=rownames(relative),symbol=rownames(relative),baseMean=rowMeans(relative),log2FoldChange=fc,stat=stats[,'stat'],pvalue=stats[,'pvalue'],padj=stats::p.adjust(stats[,'pvalue'],'BH'),test_status=ifelse(is.finite(stats[,'pvalue']),'tested','constant or undefined; not tested'),stringsAsFactors=FALSE)
+ list(data=d,method=method,ref_group=if(length(levels)==2L)levels[1] else NULL,test_group=if(length(levels)==2L)levels[2] else NULL)
 }
 
-# ------------------------------------------------------------------
-# RNAseq one-click pipeline
-# ------------------------------------------------------------------
-run_all_rnaseq <- function(session_id, experiment,
-                            group_var = "Group",
-                            ref_group = NULL, test_group = NULL,
-                            organism = "mmu",
-                            fc_cutoff = 1.0, p_cutoff = 0.05,
-                            use_padj = TRUE, min_row_sum = 0,
-                            do_enrichment = TRUE,
-                            on_progress = NULL) {
-  bump <- function(p, msg) {
-    if (!is.null(on_progress) && is.function(on_progress)) {
-      tryCatch(on_progress(p, msg), error = function(e) NULL)
-    }
-  }
-
-  bundle <- .bundle_init(session_id)
-  cat(sprintf("EasyMultiProfiler RNAseq one-click run\nExperiment: %s\nStarted:    %s\n\n",
-              experiment, format(Sys.time())),
-      file = bundle$log, append = FALSE)
-
-  total_steps <- if (isTRUE(do_enrichment)) 8L else 6L
-  step_no <- 0L
-  step_bump <- function(msg) {
-    step_no <<- step_no + 1L
-    bump(as.integer(5 + 90 * (step_no - 1) / total_steps), msg)
-  }
-
-  t_all <- Sys.time()
-
-  # 1. Summary + PCA
-  step_bump(sprintf("[1/%d] Summary & PCA", total_steps)); t0 <- Sys.time()
-  pca_res <- tryCatch(run_dimension(session_id, experiment, method = "PCA"),
-                       error = function(e) NULL)
-  if (is.data.frame(pca_res)) .save_xlsx_bundle(pca_res, bundle, "01_pca_scores", "PCA")
-  scatter <- tryCatch(.make_scatter_plot(session_id, experiment, group_var),
-                      error = function(e) NULL)
-  if (!is.null(scatter)) .save_ggplot_bundle(scatter, bundle, "01_pca_scatter", width = 8, height = 6)
-  .log_step(bundle, "PCA + scatter", as.numeric(Sys.time() - t_all, units = "secs"),
-            extra = if (is.null(scatter)) "no plot" else NULL)
-
-  # 2. Differential analysis (DESeq2)
-  step_bump(sprintf("[2/%d] Differential analysis (DESeq2)", total_steps)); t0 <- Sys.time()
-  diff_compact <- run_diff(session_id, experiment, method = "DESeq2",
-                            group_var = group_var,
-                            ref_group = ref_group, test_group = test_group,
-                            filter_low = TRUE, subset_two_groups = TRUE,
-                            cores = "auto")
-  .save_xlsx_bundle(as.data.frame(diff_compact), bundle,
-                     "02_deseq2_compact", "DESeq2_compact")
-  raw <- load_diff_raw(session_id, experiment)
-  raw_df <- if (!is.null(raw)) as.data.frame(raw$data) else data.frame()
-  .save_xlsx_bundle(raw_df, bundle, "02_deseq2_raw", "DESeq2_raw")
-  .log_step(bundle, "DESeq2 diff", as.numeric(Sys.time() - t0, units = "secs"),
-            extra = sprintf("n=%d", nrow(raw_df)))
-
-  # 3. Volcano
-  step_bump(sprintf("[3/%d] Volcano plot", total_steps)); t0 <- Sys.time()
-  volcano_p <- tryCatch(.make_volcano_plot(session_id, experiment,
-                                            fc_cutoff = fc_cutoff,
-                                            p_cutoff = p_cutoff,
-                                            use_padj = use_padj,
-                                            label_top = 20L),
-                        error = function(e) NULL)
-  if (!is.null(volcano_p)) {
-    .save_ggplot_bundle(volcano_p, bundle, "03_volcano", width = 8, height = 7)
-  }
-  .log_step(bundle, "Volcano", as.numeric(Sys.time() - t0, units = "secs"))
-
-  # 4. DEG heatmap (pheatmap style)
-  step_bump(sprintf("[4/%d] DEG heatmap", total_steps)); t0 <- Sys.time()
-  deg_info <- tryCatch(make_deg_heatmap(
-    session_id, experiment, group = group_var,
-    fc_cutoff = fc_cutoff, p_cutoff = p_cutoff,
-    use_padj = use_padj, min_row_sum = min_row_sum,
-    cluster_rows = TRUE, cluster_cols = TRUE, show_rownames = TRUE,
-    pdf_path = file.path(bundle$plots, "04_deg_heatmap.pdf")),
-    error = function(e) { message("DEG heatmap: ", conditionMessage(e)); NULL })
-  # Also write the PNG copy next to the PDF (best-effort)
-  if (!is.null(deg_info) && !is.na(deg_info$png)) {
-    png_path <- file.path(bundle$plots, "04_deg_heatmap.png")
-    tryCatch(writeBin(base64enc::base64decode(deg_info$png), png_path),
-             error = function(e) NULL)
-  }
-  sig <- raw_df
-  if (nrow(sig)) {
-    p_use_vec <- if (isTRUE(use_padj) && any(is.finite(sig$padj))) sig$padj else sig$pvalue
-    sig$direction <- ifelse(p_use_vec <= p_cutoff & sig$log2FoldChange >=  fc_cutoff, "Up",
-                     ifelse(p_use_vec <= p_cutoff & sig$log2FoldChange <= -fc_cutoff, "Down", "NS"))
-    sig <- sig[sig$direction != "NS", , drop = FALSE]
-    sig <- sig[order(-abs(sig$log2FoldChange)), , drop = FALSE]
-    .save_xlsx_bundle(sig, bundle, "04_deg_list", "DEGs")
-  }
-  .log_step(bundle, "DEG heatmap", as.numeric(Sys.time() - t0, units = "secs"),
-            extra = if (!is.null(deg_info)) sprintf("n_genes=%d", deg_info$n_genes) else "failed")
-
-  # 5. Top-variance heatmap
-  step_bump(sprintf("[5/%d] Top-variance heatmap", total_steps)); t0 <- Sys.time()
-  tv_p <- tryCatch(.make_heatmap_plot(session_id, experiment, group = group_var, top_n = 50),
-                    error = function(e) NULL)
-  if (!is.null(tv_p)) {
-    .save_ggplot_bundle(tv_p, bundle, "05_heatmap_topvar", width = 11, height = 8)
-  }
-  .log_step(bundle, "Top-var heatmap", as.numeric(Sys.time() - t0, units = "secs"))
-
-  # 6. Sample-level correlation heatmap (fast: only n_samples^2 cells)
-  step_bump(sprintf("[6/%d] Sample correlation", total_steps)); t0 <- Sys.time()
-  sample_cor_p <- tryCatch({
-    empt <- load_empt(session_id, experiment)
-    ad   <- SummarizedExperiment::assays(empt)[[1]]
-    if (ncol(ad) >= 2) {
-      # Sample-by-sample spearman correlation – O(n_samples^2) not O(n_features^2)
-      cor_mat <- suppressWarnings(stats::cor(log1p(as.matrix(ad)), method = "spearman",
-                                                use = "pairwise.complete.obs"))
-      if (all(is.finite(cor_mat))) {
-        .save_xlsx_bundle(as.data.frame(cor_mat), bundle,
-                           "06_sample_correlation", "Corr")
-        df <- as.data.frame(as.table(cor_mat))
-        names(df) <- c("Sample1", "Sample2", "rho")
-        df$Sample1 <- factor(df$Sample1, levels = rownames(cor_mat))
-        df$Sample2 <- factor(df$Sample2, levels = rev(colnames(cor_mat)))
-        ggplot2::ggplot(df, ggplot2::aes(x = Sample1, y = Sample2, fill = rho)) +
-          ggplot2::geom_tile() +
-          ggplot2::geom_text(ggplot2::aes(label = sprintf("%.2f", rho)),
-                              size = 3, color = "grey20") +
-          ggplot2::scale_fill_gradient2(name = "Spearman",
-                 low = "#2166ac", mid = "white", high = "#b2182b",
-                 midpoint = 0, limits = c(-1, 1)) +
-          ggplot2::labs(title = "Sample-level correlation", x = NULL, y = NULL) +
-          emp_pub_theme() +
-          ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
-                          panel.grid = ggplot2::element_blank())
-      }
-    }
-  }, error = function(e) NULL)
-  if (!is.null(sample_cor_p)) .save_ggplot_bundle(sample_cor_p, bundle,
-                                                     "06_sample_correlation",
-                                                     width = 7, height = 6)
-  .log_step(bundle, "Sample correlation", as.numeric(Sys.time() - t0, units = "secs"))
-
-  # 7-8. Enrichment (optional, slow)
-  if (isTRUE(do_enrichment)) {
-    step_bump(sprintf("[7/%d] KEGG enrichment (clusterProfiler)", total_steps))
-    t0 <- Sys.time()
-    kegg <- tryCatch(run_enrichment(session_id, experiment,
-                                     database = "KEGG", organism = organism,
-                                     fc_cutoff = fc_cutoff, p_cutoff = p_cutoff,
-                                     use_padj = use_padj, direction = "both",
-                                     top_n = 20L),
-                      error = function(e) list(data = data.frame(), plot = NA_character_,
-                                                 error = conditionMessage(e)))
-    if (is.data.frame(kegg$data) && nrow(kegg$data)) {
-      .save_xlsx_bundle(kegg$data, bundle, "07_enrichment_kegg", "KEGG")
-    }
-    if (!is.na(kegg$plot %||% NA)) {
-      png_path <- file.path(bundle$plots, "07_enrichment_kegg.png")
-      pdf_path <- file.path(bundle$plots, "07_enrichment_kegg.pdf")
-      try(writeBin(base64enc::base64decode(kegg$plot), png_path), silent = TRUE)
-      # Also re-run enrichplot::dotplot and save as PDF directly for high fidelity.
-      tryCatch({
-        if (requireNamespace("clusterProfiler", quietly = TRUE) &&
-            requireNamespace("enrichplot", quietly = TRUE)) {
-          # Re-run enrichment (cheap once cached) for direct PDF output.
-          # Use the already-mapped `data` frame as input to dotplot is not
-          # possible – but we can build a ggplot from kegg$data ourselves.
-          df <- kegg$data
-          df$Description <- factor(df$Description, levels = rev(df$Description))
-          gr <- vapply(strsplit(as.character(df$GeneRatio), "/"), function(x) {
-            as.numeric(x[1]) / as.numeric(x[2])
-          }, numeric(1))
-          df$GeneRatioNum <- gr
-          p <- ggplot2::ggplot(df,
-                  ggplot2::aes(x = GeneRatioNum, y = Description,
-                                size = Count, colour = p.adjust)) +
-            ggplot2::geom_point() +
-            ggplot2::scale_colour_gradient(low = "#b2182b", high = "#2166ac") +
-            ggplot2::labs(title = sprintf("KEGG enrichment (%s)", organism),
-                           x = "GeneRatio", y = NULL) +
-            emp_pub_theme(base_size = 11)
-          save_plot_pdf(p, pdf_path, width = 9, height = 7)
-        }
-      }, error = function(e) NULL)
-    }
-    .log_step(bundle, "KEGG enrichment", as.numeric(Sys.time() - t0, units = "secs"),
-              extra = if (!is.null(kegg$n_rows)) sprintf("n=%d", kegg$n_rows) else
-                       if (!is.null(kegg$error)) paste0("err: ", kegg$error) else "")
-
-    step_bump(sprintf("[8/%d] GO enrichment (clusterProfiler)", total_steps))
-    t0 <- Sys.time()
-    go <- tryCatch(run_enrichment(session_id, experiment,
-                                   database = "GO", organism = organism,
-                                   fc_cutoff = fc_cutoff, p_cutoff = p_cutoff,
-                                   use_padj = use_padj, direction = "both",
-                                   top_n = 20L),
-                    error = function(e) list(data = data.frame(), plot = NA_character_,
-                                               error = conditionMessage(e)))
-    if (is.data.frame(go$data) && nrow(go$data)) {
-      .save_xlsx_bundle(go$data, bundle, "08_enrichment_go", "GO_BP")
-    }
-    if (!is.na(go$plot %||% NA)) {
-      png_path <- file.path(bundle$plots, "08_enrichment_go.png")
-      try(writeBin(base64enc::base64decode(go$plot), png_path), silent = TRUE)
-    }
-    .log_step(bundle, "GO enrichment", as.numeric(Sys.time() - t0, units = "secs"),
-              extra = if (!is.null(go$n_rows)) sprintf("n=%d", go$n_rows) else
-                       if (!is.null(go$error)) paste0("err: ", go$error) else "")
-  }
-
-  bump(97L, "Packaging bundle")
-  zip_path <- file.path(.bundle_root(session_id), paste0(bundle$run_id, ".zip"))
-  tryCatch(zip_dir(bundle$base, zip_path),
-           error = function(e) message("[bundle] zip failed: ", conditionMessage(e)))
-
-  total_s <- as.numeric(Sys.time() - t_all, units = "secs")
-  cat(sprintf("\nTotal elapsed: %.1fs\nBundle: %s\n",
-              total_s, basename(zip_path)),
-      file = bundle$log, append = TRUE)
-
-  list(success    = TRUE,
-       session_id = session_id,
-       experiment = experiment,
-       run_id     = bundle$run_id,
-       bundle     = bundle$base,
-       zip_path   = zip_path,
-       zip_name   = basename(zip_path),
-       elapsed_s  = round(total_s, 1))
-}
-
-# ------------------------------------------------------------------
-# 16S one-click pipeline
-# ------------------------------------------------------------------
-run_all_m16s <- function(session_id, experiment,
-                          group_var = NULL, taxonomy_level = "Genus",
-                          alpha_index = "shannon",
-                          beta_method = "bray", ord_method = "PCoA",
-                          on_progress = NULL) {
-  bump <- function(p, msg) {
-    if (!is.null(on_progress) && is.function(on_progress)) {
-      tryCatch(on_progress(p, msg), error = function(e) NULL)
-    }
-  }
-  bundle <- .bundle_init(session_id)
-  cat(sprintf("EasyMultiProfiler 16S one-click run\nExperiment: %s\nStarted:    %s\n\n",
-              experiment, format(Sys.time())),
-      file = bundle$log, append = FALSE)
-
-  total_steps <- 6L; step_no <- 0L
-  step_bump <- function(msg) {
-    step_no <<- step_no + 1L
-    bump(as.integer(5 + 90 * (step_no - 1) / total_steps), msg)
-  }
-  t_all <- Sys.time()
-
-  # 1. Prepare taxonomy level
-  step_bump(sprintf("[1/%d] Prepare taxonomy (%s)", total_steps, taxonomy_level)); t0 <- Sys.time()
-  tryCatch(m16s_prepare_taxonomy_step(session_id, experiment,
-                                      collapse_level = taxonomy_level,
-                                      keep_top_n = 40L,
-                                      drop_unassigned = FALSE),
-           error = function(e) message("Prepare taxonomy: ", conditionMessage(e)))
-  .log_step(bundle, "Taxonomy prep", as.numeric(Sys.time() - t0, units = "secs"))
-
-  # 2. Alpha diversity — compute every supported index in one pass, then
-  #    emit one boxplot (PDF + PNG) per index.
-  step_bump(sprintf("[2/%d] Alpha diversity (all indices)", total_steps)); t0 <- Sys.time()
-  alpha <- tryCatch(run_alpha(session_id, experiment, method = alpha_index),
-                     error = function(e) NULL)
-  if (is.data.frame(alpha)) .save_xlsx_bundle(alpha, bundle, "02_alpha_indices", "Alpha")
-
-  alpha_pool <- c("shannon", "simpson", "invsimpson",
-                   "chao1",   "ace",     "observed", "pielou")
-  ## Discover which indices are actually present in the result to avoid
-  ## writing blank placeholders for unsupported metrics (EMP picks what
-  ## it can from the assay type).  EMP 1.x also ships a typo column
-  ## "observerd_index" which the pattern below forgives.
-  alpha_present <- character(0)
-  if (is.data.frame(alpha)) {
-    present_cols <- tolower(names(alpha))
-    present_cols <- sub("^observerd", "observed", present_cols)
-    alpha_present <- alpha_pool[
-      vapply(alpha_pool,
-              function(m) any(grepl(paste0("^", m), present_cols)),
-              logical(1))]
-  }
-  if (!length(alpha_present)) alpha_present <- alpha_index %||% "shannon"
-
-  # Make the configured `alpha_index` go first so the bundle order matches
-  # the user's primary selection in the UI.
-  if (alpha_index %in% alpha_present) {
-    alpha_present <- c(alpha_index,
-                        setdiff(alpha_present, alpha_index))
-  }
-
-  for (m in alpha_present) {
-    ap <- tryCatch(.make_alpha_plot(session_id, experiment,
-                                      group = group_var, metric = m),
-                   error = function(e) NULL)
-    if (!is.null(ap)) {
-      fname <- sprintf("02_alpha_%s_boxplot", tolower(m))
-      .save_ggplot_bundle(ap, bundle, fname, width = 7, height = 5)
-    }
-  }
-  .log_step(bundle, "Alpha", as.numeric(Sys.time() - t0, units = "secs"),
-             extra = sprintf("indices=%s", paste(alpha_present, collapse = ",")))
-
-  # 3. Beta / ordination — always run PCA, PCoA and NMDS so the user can
-  # compare layouts; the `ord_method` argument still determines which one
-  # stays cached on the EMPT for downstream use.
-  step_bump(sprintf("[3/%d] Beta diversity (PCA + PCoA + NMDS)",
-                    total_steps)); t0 <- Sys.time()
-
-  ord_methods <- c("PCoA", "PCA", "NMDS")
-  if (nzchar(ord_method %||% "") && ord_method %in% ord_methods) {
-    ord_methods <- c(ord_method, setdiff(ord_methods, ord_method))
-  }
-  beta_scores_all <- list()
-  for (m in ord_methods) {
-    # Run the EMP dimension analysis for PCA/PCoA (NMDS isn't part of EMP,
-    # we build it locally).  Skip errors so one bad method doesn't torpedo
-    # the whole bundle.
-    if (toupper(m) %in% c("PCA", "PCOA")) {
-      tryCatch(run_dimension(session_id, experiment, method = m),
-                error = function(e) message("[bundle] dim ", m, ": ",
-                                               conditionMessage(e)))
-    }
-    built <- tryCatch(.make_scatter_plot(session_id, experiment, group_var,
-                                          method = m, return_scores = TRUE),
-                       error = function(e) NULL)
-    if (!is.null(built) && !is.null(built$plot)) {
-      fname <- sprintf("03_beta_%s_scatter", tolower(m))
-      .save_ggplot_bundle(built$plot, bundle, fname, width = 8, height = 6)
-      if (is.data.frame(built$scores))
-        beta_scores_all[[m]] <- built$scores
-    }
-  }
-  if (length(beta_scores_all)) {
-    beta_all <- do.call(rbind, lapply(names(beta_scores_all), function(m) {
-      df <- beta_scores_all[[m]]
-      if (!nrow(df)) return(NULL)
-      df$method <- m; df
-    }))
-    if (!is.null(beta_all) && nrow(beta_all))
-      .save_xlsx_bundle(beta_all, bundle, "03_beta_coords", "Beta")
-  }
-  .log_step(bundle, "Beta", as.numeric(Sys.time() - t0, units = "secs"),
-             extra = sprintf("methods=%s", paste(ord_methods, collapse = ",")))
-
-  # 4. Top-taxa heatmap + barplot
-  step_bump(sprintf("[4/%d] Top taxa heatmap + barplot", total_steps)); t0 <- Sys.time()
-  heat_p <- tryCatch(.make_heatmap_plot(session_id, experiment, group = group_var, top_n = 40),
-                      error = function(e) NULL)
-  if (!is.null(heat_p)) .save_ggplot_bundle(heat_p, bundle, "04_top40_heatmap",
-                                             width = 11, height = 9)
-  bar_p  <- tryCatch(.make_barplot_plot(session_id, experiment, group = group_var, top_n = 15),
-                      error = function(e) NULL)
-  if (!is.null(bar_p))  .save_ggplot_bundle(bar_p, bundle, "04_top15_barplot",
-                                             width = 9, height = 6)
-  .log_step(bundle, "Heatmap + barplot", as.numeric(Sys.time() - t0, units = "secs"))
-
-  # 5. Differential taxa (wilcox)
-  if (!is.null(group_var) && nzchar(group_var)) {
-    step_bump(sprintf("[5/%d] Differential taxa (wilcox)", total_steps)); t0 <- Sys.time()
-    diff <- tryCatch(run_diff(session_id, experiment,
-                               method = "wilcox.test", group_var = group_var,
-                               filter_low = TRUE, subset_two_groups = FALSE,
-                               cores = "auto"),
-                      error = function(e) NULL)
-    if (is.data.frame(diff)) .save_xlsx_bundle(diff, bundle,
-                                                  "05_diff_taxa", "DiffTaxa")
-    .log_step(bundle, "Diff taxa", as.numeric(Sys.time() - t0, units = "secs"))
-  } else {
-    step_bump(sprintf("[5/%d] Differential taxa (skipped – no group)", total_steps))
-    .log_step(bundle, "Diff taxa", 0, status = "skip")
-  }
-
-  # 6. Sample metadata snapshot
-  step_bump(sprintf("[6/%d] Snapshot colData & feature labels", total_steps)); t0 <- Sys.time()
-  tryCatch({
-    empt <- load_empt(session_id, experiment)
-    cd   <- as.data.frame(SummarizedExperiment::colData(empt))
-    rd   <- tryCatch(as.data.frame(SummarizedExperiment::rowData(empt)),
-                     error = function(e) data.frame())
-    .save_xlsx_bundle(list(colData = cd, rowData = rd), bundle, "06_experiment_metadata")
-  }, error = function(e) NULL)
-  .log_step(bundle, "Metadata snapshot", as.numeric(Sys.time() - t0, units = "secs"))
-
-  bump(97L, "Packaging bundle")
-  zip_path <- file.path(.bundle_root(session_id), paste0(bundle$run_id, ".zip"))
-  tryCatch(zip_dir(bundle$base, zip_path),
-           error = function(e) message("[bundle] zip failed: ", conditionMessage(e)))
-
-  total_s <- as.numeric(Sys.time() - t_all, units = "secs")
-  cat(sprintf("\nTotal elapsed: %.1fs\nBundle: %s\n",
-              total_s, basename(zip_path)),
-      file = bundle$log, append = TRUE)
-
-  list(success    = TRUE,
-       session_id = session_id,
-       experiment = experiment,
-       run_id     = bundle$run_id,
-       bundle     = bundle$base,
-       zip_path   = zip_path,
-       zip_name   = basename(zip_path),
-       elapsed_s  = round(total_s, 1))
-}
-
-# ------------------------------------------------------------------
-# Thin ggplot builders that *return the plot object* (rather than base64).
-# These mirror the logic of make_scatter / make_heatmap / make_volcano /
-# make_barplot / make_boxplot in viz.R but skip the plot_to_base64 call,
-# so the bundle code can write PDF + PNG directly.
-# ------------------------------------------------------------------
-.with_plot_obj <- function(fn_body, ...) {
-  # fn_body is a function that returns either a ggplot or NULL.
-  tryCatch(fn_body(...), error = function(e) NULL)
-}
-
-## Ordination scatter for PCA / PCoA / NMDS (Bray-Curtis distance).
-##  - `method`: "PCA" (default, linear prcomp), "PCoA" (cmdscale on
-##              Bray-Curtis dissimilarity), "NMDS" (vegan::metaMDS on
-##              Bray-Curtis).
-##  - Returns a list(plot, scores_df, method, axis1_var, axis2_var)
-##    when `return_scores = TRUE`; otherwise a ggplot as before.
-##    The scores frame always has columns "sample", "Axis1", "Axis2",
-##    plus the grouping variable (if any).
-.make_scatter_plot <- function(session_id, experiment, group = NULL,
-                                method = "PCA", return_scores = FALSE) {
-  empt <- load_empt(session_id, experiment)
-  ad   <- SummarizedExperiment::assays(empt)[[1]]
-  cd   <- as.data.frame(SummarizedExperiment::colData(empt))
-  if (ncol(ad) < 2 || nrow(ad) < 2) return(NULL)
-  method <- toupper(as.character(method)[1])
-  if (!method %in% c("PCA", "PCOA", "NMDS")) method <- "PCA"
-  mat <- t(ad); mat[!is.finite(mat)] <- 0
-
-  axis_labels <- c("Axis1", "Axis2")
-  vexp <- NULL
-  scores_mat <- NULL
-
-  if (method == "PCA") {
-    pca <- stats::prcomp(mat, center = TRUE, scale. = FALSE)
-    vexp <- (pca$sdev^2) / sum(pca$sdev^2)
-    scores_mat <- pca$x[, 1:2, drop = FALSE]
-    axis_labels <- c(
-      sprintf("PC1 (%.1f%%)", 100 * vexp[1]),
-      sprintf("PC2 (%.1f%%)", 100 * vexp[2])
-    )
-  } else if (method == "PCOA") {
-    ## Bray-Curtis requires non-negative abundance; shift if needed.
-    mat_bc <- mat
-    if (any(mat_bc < 0, na.rm = TRUE)) mat_bc <- mat_bc - min(mat_bc, na.rm = TRUE)
-    d <- tryCatch(
-      if (requireNamespace("vegan", quietly = TRUE))
-        vegan::vegdist(mat_bc, method = "bray") else stats::dist(mat_bc),
-      error = function(e) stats::dist(mat_bc)
-    )
-    fit <- stats::cmdscale(d, k = 2, eig = TRUE)
-    pts <- fit$points
-    ev  <- fit$eig
-    ev[ev < 0] <- 0
-    vexp <- ev / sum(ev)
-    scores_mat <- pts
-    colnames(scores_mat) <- c("PCo1", "PCo2")
-    axis_labels <- c(
-      sprintf("PCo1 (%.1f%%)", 100 * vexp[1]),
-      sprintf("PCo2 (%.1f%%)", 100 * vexp[2])
-    )
-  } else { # NMDS
-    if (!requireNamespace("vegan", quietly = TRUE)) {
-      stop("NMDS requires the 'vegan' package to be installed.")
-    }
-    mat_bc <- mat
-    if (any(mat_bc < 0, na.rm = TRUE)) mat_bc <- mat_bc - min(mat_bc, na.rm = TRUE)
-    nmds <- tryCatch(
-      suppressWarnings(vegan::metaMDS(mat_bc, distance = "bray", k = 2,
-                                        trace = 0, autotransform = TRUE)),
-      error = function(e) NULL
-    )
-    if (is.null(nmds) || is.null(nmds$points)) return(NULL)
-    scores_mat <- nmds$points
-    colnames(scores_mat) <- c("NMDS1", "NMDS2")
-    axis_labels <- c(
-      sprintf("NMDS1  (stress = %.3f)", nmds$stress),
-      "NMDS2"
-    )
-  }
-
-  scores <- as.data.frame(scores_mat)
-  names(scores) <- c("PC1", "PC2")
-  scores$sample <- rownames(scores)
-  pick <- if (!is.null(group) && nzchar(group) && group %in% names(cd))
-            list(name = group, values = cd[match(scores$sample, rownames(cd)), group]) else
-            .viz_pick_group(empt, NULL)
-  if (!is.null(pick)) {
-    scores$group <- .viz_group_levels(pick$values); grp_name <- pick$name
-  } else {
-    scores$group <- factor("All"); grp_name <- "Group"
-  }
-  ell <- emp_conf_ellipse(scores$PC1, scores$PC2, scores$group)
-  title_by_method <- switch(method,
-                             PCA  = "PCA",
-                             PCOA = "PCoA (Bray-Curtis)",
-                             NMDS = "NMDS (Bray-Curtis)")
-  p <- ggplot2::ggplot(scores, ggplot2::aes(x = PC1, y = PC2,
-                                              color = group, fill = group)) +
-    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "grey80", linewidth = 0.3) +
-    ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = "grey80", linewidth = 0.3)
-  if (!is.null(ell) && nrow(ell) > 0) {
-    p <- p + ggplot2::geom_polygon(data = ell,
-              ggplot2::aes(x = x, y = y, fill = group, group = group),
-              alpha = 0.12, inherit.aes = FALSE, color = NA)
-  }
-  p <- emp_add_ordination_double_points(p) +
-    emp_scale_color_pub(name = grp_name, n_hint = length(levels(scores$group))) +
-    emp_scale_fill_pub(name = grp_name, n_hint = length(levels(scores$group))) +
-    ggplot2::labs(title = title_by_method,
-                   x = axis_labels[1], y = axis_labels[2]) +
-    emp_pub_theme()
-  if (isTRUE(return_scores)) {
-    scores_out <- data.frame(
-      sample = scores$sample,
-      Axis1  = scores$PC1,
-      Axis2  = scores$PC2,
-      group  = as.character(scores$group),
-      method = method,
-      stringsAsFactors = FALSE
-    )
-    return(list(plot = p, scores = scores_out, method = method,
-                 axis_labels = axis_labels))
-  }
-  p
-}
-
-.make_volcano_plot <- function(session_id, experiment,
-                                fc_cutoff = 1.0, p_cutoff = 0.05,
-                                use_padj = TRUE, label_top = 15L) {
-  # Reuse the viz.R implementation for its raw-table loading and smart
-  # fallback; it returns a base64 PNG *after* building the ggplot.  For the
-  # bundle we want the ggplot object instead – simplest path is to re-run
-  # the builder below (copy of the business logic from viz.R without the
-  # trailing plot_to_base64 call).
-  empt <- load_empt(session_id, experiment)
-  raw  <- load_diff_raw(session_id, experiment)
-  if (is.null(raw) || is.null(raw$data) || !nrow(raw$data)) return(NULL)
-  df <- as.data.frame(raw$data, stringsAsFactors = FALSE)
-  padj_vec <- suppressWarnings(as.numeric(df$padj))
-  pval_vec <- suppressWarnings(as.numeric(df$pvalue))
-  fallback_msg <- NULL
-  if (isTRUE(use_padj) && any(is.finite(padj_vec))) {
-    if (sum(is.finite(padj_vec) & padj_vec <= p_cutoff, na.rm = TRUE) == 0 &&
-        any(is.finite(pval_vec))) {
-      use_padj <- FALSE
-      fallback_msg <- "No features pass padj cutoff; using raw p-value instead"
-    }
-  }
-  df$p_plot <- if (isTRUE(use_padj) && any(is.finite(padj_vec))) padj_vec else pval_vec
-  df$fc <- suppressWarnings(as.numeric(df$log2FoldChange))
-  fin <- is.finite(df$fc)
-  if (any(fin) && any(!fin)) {
-    cap <- max(abs(df$fc[fin]), na.rm = TRUE)
-    df$fc[!fin & df$fc > 0] <-  cap; df$fc[!fin & df$fc < 0] <- -cap
-  }
-  df <- df[is.finite(df$fc) & is.finite(df$p_plot), , drop = FALSE]
-  if (!nrow(df)) return(NULL)
-  fc_q <- as.numeric(stats::quantile(abs(df$fc), probs = 0.99, na.rm = TRUE))
-  if (is.finite(fc_q) && fc_q > 0) {
-    fc_clip <- max(fc_q, fc_cutoff * 2, 2)
-    df$fc <- pmax(pmin(df$fc, fc_clip), -fc_clip)
-  }
-  df$neg_log10p <- -log10(pmax(df$p_plot, 1e-300))
-  df$change <- ifelse(df$p_plot <= p_cutoff & df$fc >=  fc_cutoff, "Up",
-               ifelse(df$p_plot <= p_cutoff & df$fc <= -fc_cutoff, "Down", "NS"))
-  df$change <- factor(df$change, levels = c("Down", "NS", "Up"))
-  df$label  <- if (!is.null(df$symbol)) df$symbol else df$feature
-  cnt <- table(df$change)
-  n_up <- as.integer(cnt["Up"] %||% 0); n_dn <- as.integer(cnt["Down"] %||% 0)
-  n_ns <- as.integer(cnt["NS"] %||% 0)
-  pal <- c("Down" = "#3182bd", "NS" = "#bdbdbd", "Up" = "#E64B35")
-  p_label <- if (isTRUE(use_padj)) expression(-log[10]~italic("padj")) else
-               expression(-log[10]~italic("p-value"))
-  sub <- paste0("|log2FC| >= ", fc_cutoff, ", ",
-                if (isTRUE(use_padj)) "padj" else "p", " <= ", p_cutoff)
-  if (!is.null(fallback_msg)) sub <- paste0(sub, "  (", fallback_msg, ")")
-  p <- ggplot2::ggplot(df, ggplot2::aes(x = fc, y = neg_log10p, color = change)) +
-    ggplot2::geom_point(alpha = 0.8, size = 1.75, na.rm = TRUE) +
-    ggplot2::scale_color_manual(name = "Regulation", values = pal,
-          labels = c("Down" = paste0("Down (n=", n_dn, ")"),
-                      "NS"   = paste0("NS (n=",   n_ns, ")"),
-                      "Up"   = paste0("Up (n=",   n_up, ")"))) +
-    ggplot2::geom_vline(xintercept = c(-fc_cutoff, fc_cutoff),
-                         linetype = "dashed", color = "grey40", linewidth = 0.4) +
-    ggplot2::geom_hline(yintercept = -log10(p_cutoff),
-                         linetype = "dashed", color = "grey40", linewidth = 0.4) +
-    ggplot2::labs(title = "Volcano plot", subtitle = sub,
-                   x = expression(log[2]~"Fold Change"), y = p_label) +
-    emp_pub_theme()
-  if (requireNamespace("ggrepel", quietly = TRUE)) {
-    sig <- df[df$change != "NS", , drop = FALSE]
-    if (nrow(sig)) {
-      # Combined rank of |log2FC| + -log10(p) → strongest signals first.
-      r_fc <- rank(-abs(sig$fc), ties.method = "min")
-      r_p  <- rank(-sig$neg_log10p, ties.method = "min")
-      sig$label_score <- r_fc + r_p
-      sig <- sig[order(sig$label_score), , drop = FALSE]
-      per_side <- max(1L, as.integer(label_top) %/% 2L)
-      top_up   <- sig[sig$change == "Up",   , drop = FALSE]
-      top_down <- sig[sig$change == "Down", , drop = FALSE]
-      top_up   <- top_up[  seq_len(min(per_side, nrow(top_up))),   , drop = FALSE]
-      top_down <- top_down[seq_len(min(per_side, nrow(top_down))), , drop = FALSE]
-      top <- rbind(top_up, top_down)
-      if (nrow(top)) {
-        p <- p + ggrepel::geom_text_repel(data = top,
-                ggplot2::aes(label = label, color = change),
-                size = 3.2, fontface = "bold",
-                max.overlaps = 60, box.padding = 0.45, point.padding = 0.3,
-                segment.color = "grey50", segment.size = 0.3, min.segment.length = 0,
-                show.legend = FALSE) +
-             ggplot2::geom_point(data = top,
-                ggplot2::aes(x = fc, y = neg_log10p, color = change),
-                size = 2.6, shape = 21, fill = NA, stroke = 0.9, show.legend = FALSE)
-      }
-    }
-  }
-  p
-}
-
-.make_heatmap_plot <- function(session_id, experiment, group = NULL, top_n = 50L) {
-  empt <- load_empt(session_id, experiment)
-  ad   <- SummarizedExperiment::assays(empt)[[1]]
-  cd   <- as.data.frame(SummarizedExperiment::colData(empt))
-  if (nrow(ad) == 0 || ncol(ad) == 0) return(NULL)
-  top_n <- max(5L, as.integer(top_n))
-  topf  <- order(apply(ad, 1, var, na.rm = TRUE), decreasing = TRUE)[seq_len(min(top_n, nrow(ad)))]
-  ad_s  <- ad[topf, , drop = FALSE]
-  ad_z  <- t(scale(t(ad_s))); ad_z[!is.finite(ad_z)] <- 0
-  pick <- if (!is.null(group) && nzchar(group) && group %in% names(cd))
-            list(name = group, values = cd[[group]]) else .viz_pick_group(empt, NULL)
-  grp  <- if (!is.null(pick))
-            .viz_group_levels(pick$values[match(colnames(ad_z), rownames(cd))]) else
-            factor(rep("All", ncol(ad_z)))
-  rownames(ad_z) <- make.unique(.viz_feature_labels(empt, rownames(ad_z)))
-  df <- as.data.frame(as.table(ad_z))
-  names(df) <- c("Feature", "Sample", "Z")
-  df$Sample  <- factor(df$Sample,  levels = colnames(ad_z))
-  df$Feature <- factor(df$Feature, levels = rev(rownames(ad_z)))
-  zlim <- max(abs(stats::quantile(df$Z, probs = c(0.02, 0.98), na.rm = TRUE)))
-  if (!is.finite(zlim) || zlim == 0) zlim <- max(abs(df$Z), na.rm = TRUE) + 1e-6
-  ggplot2::ggplot(df, ggplot2::aes(x = Sample, y = Feature, fill = Z)) +
-    ggplot2::geom_tile() +
-    ggplot2::scale_fill_gradient2(name = "Z-score",
-            low = "#2166ac", mid = "white", high = "#b2182b",
-            midpoint = 0, limits = c(-zlim, zlim), oob = scales::squish) +
-    ggplot2::labs(x = NULL, y = NULL,
-            title = paste0("Top ", nrow(ad_z), " variable features (z-scored)")) +
-    emp_pub_theme(base_size = 11) +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, size = 8),
-      axis.text.y = if (nrow(ad_z) <= 60) ggplot2::element_text(size = 7) else ggplot2::element_blank(),
-      panel.grid  = ggplot2::element_blank()
-    )
-}
-
-## Alpha-diversity boxplot for a *specific* metric.
-##  - `metric`:   column of the EMP_alpha_analysis result to plot.  When NULL
-##                (or not found) we fall back to the first available alpha
-##                column, which matches the old single-index behaviour.
-##  - Returns `NULL` if the experiment has no alpha result or the requested
-##    metric column is missing.  Callers can tryCatch/NULL-check safely.
-.make_alpha_plot <- function(session_id, experiment, group = NULL, metric = NULL) {
-  empt <- load_empt(session_id, experiment)
-  cd <- as.data.frame(SummarizedExperiment::colData(empt))
-  res <- tryCatch(EasyMultiProfiler::EMP_result(empt, info = "EMP_alpha_analysis"),
-                   error = function(e) NULL)
-  df <- as.data.frame(res, stringsAsFactors = FALSE)
-  if (!nrow(df)) return(NULL)
-
-  ## EMP v1.x emits column names like `shannon`, `simpson`, `invsimpson`,
-  ## `chao1`, `ACE`, `observerd_index` (sic), `pielou`.  Match them all with
-  ## a tolerant case-insensitive prefix search including the typo variant.
-  alpha_cols <- grep("^(shannon|simpson|invsimpson|chao|ace|observ|pielou)",
-                      names(df), ignore.case = TRUE, value = TRUE)
-  if (!length(alpha_cols)) return(NULL)
-
-  ## Helper: normalise a metric label so both inputs and column names can
-  ## be compared regardless of case or the "observerd" typo.
-  .norm <- function(x) {
-    x <- tolower(as.character(x))
-    sub("^observerd", "observed", x)
-  }
-  ycol <- NULL
-  if (!is.null(metric) && nzchar(metric)) {
-    mkey <- .norm(metric)
-    ckeys <- .norm(alpha_cols)
-    hit <- which(ckeys == mkey)
-    if (!length(hit)) hit <- grep(paste0("^", mkey), ckeys)
-    if (length(hit)) ycol <- alpha_cols[hit[1]]
-  }
-  if (is.null(ycol)) ycol <- alpha_cols[1]
-
-  id_col <- names(df)[1]
-  grp_vec <- if (!is.null(group) && nzchar(group) && group %in% names(cd))
-               cd[match(df[[id_col]], rownames(cd)), group] else
-               .viz_pick_group(empt, NULL)$values
-  if (is.null(grp_vec)) grp_vec <- rep("All", nrow(df))
-  df$Group <- .viz_group_levels(grp_vec)
-  df[[ycol]] <- suppressWarnings(as.numeric(df[[ycol]]))
-  p <- ggplot2::ggplot(df, ggplot2::aes(x = Group, y = .data[[ycol]],
-                                          fill = Group, color = Group)) +
-    ggplot2::geom_boxplot(alpha = 0.7, outlier.shape = NA, width = 0.55) +
-    ggplot2::geom_jitter(width = 0.15, size = 2.2, shape = 21, stroke = 0.3,
-                          color = "grey25", na.rm = TRUE) +
-    emp_scale_fill_pub(name = "Group", n_hint = length(levels(df$Group))) +
-    emp_scale_color_pub(name = "Group", n_hint = length(levels(df$Group))) +
-    ggplot2::labs(title = sprintf("Alpha diversity (%s)", ycol),
-                   x = NULL, y = ycol) +
-    emp_pub_theme()
-  p
-}
-
-.make_barplot_plot <- function(session_id, experiment, group = NULL, top_n = 15L) {
-  empt <- load_empt(session_id, experiment)
-  ad <- SummarizedExperiment::assays(empt)[[1]]
-  if (nrow(ad) == 0 || ncol(ad) == 0) return(NULL)
-  top_n <- max(3L, as.integer(top_n))
-  ranks <- order(rowMeans(ad, na.rm = TRUE), decreasing = TRUE)
-  topf  <- ranks[seq_len(min(top_n, length(ranks)))]
-  mat <- ad[topf, , drop = FALSE]
-  labs <- make.unique(.viz_feature_labels(empt, rownames(mat)))
-  rownames(mat) <- labs
-  long <- as.data.frame(as.table(mat))
-  names(long) <- c("Feature", "Sample", "Abundance")
-  long$Feature <- factor(long$Feature, levels = rev(labs))
-  pal <- emp_pub_palette(length(labs))
-  p <- ggplot2::ggplot(long, ggplot2::aes(x = Sample, y = Abundance, fill = Feature)) +
-    ggplot2::geom_bar(stat = "identity", position = "fill", width = 0.9) +
-    ggplot2::scale_fill_manual(values = pal) +
-    ggplot2::labs(title = sprintf("Top %d features (relative abundance)", length(labs)),
-                   x = NULL, y = "Relative abundance") +
-    emp_pub_theme(base_size = 11) +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, size = 8),
-      legend.text = ggplot2::element_text(size = 7),
-      legend.key.size = grid::unit(10, "pt")
-    )
-  p
+.runall_annotation_ready <- function(organism) {
+ if(!requireNamespace('clusterProfiler',quietly=TRUE)).runall_skip('clusterProfiler is unavailable; no analysis dependency was installed automatically')
+ pkg<-.enrich_orgdb(normalize_species(organism))
+ if(is.na(pkg)||!requireNamespace(pkg,quietly=TRUE)).runall_skip(paste('Species annotation package unavailable:',pkg))
 }

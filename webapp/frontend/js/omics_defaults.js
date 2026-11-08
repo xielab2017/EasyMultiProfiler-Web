@@ -1,12 +1,13 @@
 /**
  * Recommended filter / normalize / analysis defaults per omics pipeline.
  */
-import { t } from "./locale.js?v=i18n-zh-default-v1";
+import { t } from "./locale.js?v=nav-language-20261108";
 
 export function omicsLabel(key) {
   const map = {
     microbiome_16s: "omics.label.m16s",
     transcriptomics: "omics.label.transcriptomics",
+    proteomics: "omics.proteomics",
     metagenomics: "omics.label.metagenomics",
     metabolomics: "omics.label.metabolomics",
     chipseq: "omics.label.chipseq",
@@ -19,6 +20,8 @@ export function omicsLabel(key) {
 
 /** @type {Record<string, Record<string, string>>} */
 export const OMICS_RECOMMENDED = {
+  // Protein abundance scales require an explicit reviewed analysis choice.
+  proteomics: {},
   microbiome_16s: {
     "filter-min-prevalence": "0.1",
     "filter-min-detect-rate": "0.05",

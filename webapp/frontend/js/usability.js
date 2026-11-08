@@ -8,7 +8,7 @@
  *   ?               — toggle the shortcuts help overlay (outside inputs).
  *   Esc             — close the overlay.
  */
-import { t } from "./locale.js?v=i18n-zh-default-v1";
+import { t } from "./locale.js?v=nav-language-20261108";
 
 let _overlay = null;
 

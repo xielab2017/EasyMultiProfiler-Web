@@ -31,7 +31,7 @@ class Store:
     def get(self,k):return self.items[k]
 class MatrixAPI(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();root=Path(self.tmp.name)
+        self.tmp=tempfile.TemporaryDirectory();root=Path(self.tmp.name).resolve()
         class Handler(BaseHTTPRequestHandler):
             def valid_origin(self):return self.headers.get('Host')==f'127.0.0.1:{self.server.server_port}'
             def reply(self,status,value):

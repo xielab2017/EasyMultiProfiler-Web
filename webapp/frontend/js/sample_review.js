@@ -1,5 +1,5 @@
-import {annotationFields,annotationRows,comparisonPairs,paperSummary} from './study_model.mjs';
-import {getLocale} from './locale.js?v=i18n-zh-default-v1';
+import {annotationFields,annotationRows,comparisonPairs,paperSummary,suggestGrouping} from './study_model.mjs';
+import {getLocale} from './locale.js?v=nav-language-20261108';
 const TEXT={
  title:['文章证据与样本分组','Paper evidence and sample grouping'],noPaper:['可关联 PDF / 论文证据；本地上传也可填写人工分组并记录来源。','Attach PDF/paper evidence, or enter manual groups with documented provenance for a local upload.'],
  field:['选择 GEO 原始特征字段作为分组候选','Choose an original GEO characteristic as candidate groups'],manual:['人工填写（不自动猜测）','Manual entry (no inferred assignments)'],apply:['按此字段填写候选分组','Fill candidate groups from this field'],
@@ -37,14 +37,14 @@ export function mountSampleReview(root,{getSamples,onGroups,onChange}){
  function design(){const tests=mode.value==='one_to_many'?[...selectedTargets]:[document.getElementById('wb-test').value.trim()];const pairs=comparisonPairs(samples(),mode.value,reference(),tests);return{test:pairs[0].test,reference:pairs[0].reference,contrasts:pairs,independent_samples:document.getElementById('wb-independent').checked};}
  function updatePreview(){try{preview.textContent=tr('preview')+'\n'+design().contrasts.map((pair,index)=>`${index+1}. ${pair.test} / ${pair.reference}`).join('\n');}catch{preview.textContent=tr('pending');}}
  function render(){heading.textContent=tr('title');note.textContent=tr('note');fieldText.textContent=tr('field');apply.textContent=tr('apply');checkedText.textContent=tr('verified');modeText.textContent=tr('mode');fit.textContent=tr('fit');for(const option of mode.children)option.textContent=tr(option.value);
-  const previous=field.value;field.replaceChildren();const manual=make('option',tr('manual'));manual.value='';field.append(manual);for(const item of annotationFields(context?.annotations?.records||[])){const option=make('option',`${item.name} (${item.samples}; ${item.values.length})`);option.value=item.name;field.append(option);}field.value=previous;apply.disabled=!field.value;renderPaper();update();
+  const previous=field.value;field.replaceChildren();const manual=make('option',tr('manual'));manual.value='';field.append(manual);for(const item of annotationFields(context?.annotations?.records||[])){const option=make('option',`${item.name} (${item.samples}; ${item.values.length})`);option.value=item.name;field.append(option);}const suggestion=suggestGrouping(samples().map(r=>r.id),context?.annotations||{});if(suggestion?.keys.length>1){const option=make('option',suggestion.keys.join(' + ')+'（精确元数据候选）');option.value=suggestion.field;field.append(option);}field.value=previous;apply.disabled=!field.value;renderPaper();update();
  }
  field.onchange=()=>{checked.checked=false;apply.disabled=!field.value;onChange();};
  apply.onclick=()=>{checked.checked=false;const rows=annotationRows(samples().map(row=>row.id),context?.annotations||{},field.value);onGroups(rows);onChange();update();};
  checked.onchange=onChange;mode.onchange=()=>{onChange();update();};
  for(const id of ['wb-reference','wb-test'])document.getElementById(id).addEventListener('input',()=>{onChange();update();});
  window.addEventListener('emp:locale-change',render);render();
- return{update,design,invalidate(){checked.checked=false;update();},setContext(value){context=value;checked.checked=false;field.value='';render();},get context(){return context;},
+ return{update,design,autoFill(){const suggestion=suggestGrouping(samples().map(r=>r.id),context?.annotations||{});if(!suggestion)return null;if(![...field.options].some(o=>o.value===suggestion.field)){const option=make('option',suggestion.keys.join(' + ')+'（精确元数据候选）');option.value=suggestion.field;field.append(option);}field.value=suggestion.field;apply.disabled=false;onGroups(suggestion.rows);checked.checked=false;onChange();update();return suggestion;},invalidate(){checked.checked=false;update();},setContext(value){context=value;checked.checked=false;field.value='';render();},get context(){return context;},
   rows(ids){return annotationRows(ids,context?.annotations||{},field.value);},
   mapSample(id,gsm){
    const record=context?.annotations?.records.find(row=>row.accession===gsm);if(gsm&&!record)throw Error('Unknown GSM');

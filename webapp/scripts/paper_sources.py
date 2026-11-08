@@ -59,6 +59,11 @@ def _extract_pages(pages, source, warnings=None):
     warnings = list(warnings or [])
     remaining = MAX_TEXT_CHARS
     truncated = False
+    # A literal project URL in the same bounded paper can disambiguate PDF
+    # citation digits glued onto an accession. Never guess by truncation alone.
+    bounded_text = '\n'.join(str(page or '') for page in pages[:MAX_PAGES])[:MAX_TEXT_CHARS]
+    canonical_pride = set(re.findall(r'(?:identifiers[.]org/pride[.]project:|ebi[.]ac[.]uk/pride/archive/projects/)(PXD[0-9]{6})(?![0-9])', bounded_text, re.I))
+    canonical_pride = {value.upper() for value in canonical_pride}
     for page_number, raw in enumerate(pages, 1):
         if page_number > MAX_PAGES or remaining <= 0:
             truncated = True
@@ -69,11 +74,19 @@ def _extract_pages(pages, source, warnings=None):
         remaining -= len(text)
         for match in ACCESSION_RE.finditer(text):
             key = match.group().upper()
+            original = key
+            if key.startswith('PXD') and len(key)>9 and key[:9] in canonical_pride:
+                key = key[:9]
+                note = f'PDF accession {original} normalized to {key} using the literal PRIDE project URL in this paper; trailing citation digits were excluded.'
+                if note not in warnings: warnings.append(note)
             if key not in accessions:
                 if len(accessions) >= MAX_CANDIDATES:
                     truncated = True
                     continue
                 accessions[key] = _candidate(key)
+            if key != original:
+                accessions[key].setdefault('original_mentions', [])
+                if original not in accessions[key]['original_mentions']: accessions[key]['original_mentions'].append(original)
             if page_number not in accessions[key]['pages']:
                 accessions[key]['pages'].append(page_number)
         for match in DOI_RE.finditer(text):
@@ -120,7 +133,7 @@ def _paper_evidence(pages):
     return sorted(evidence, key=lambda row: (row['kind'] != 'data_availability', row['page']))[:24]
 
 
-def _parse_pdf_local(data):
+def _parse_pdf_local(data, chat_text=False):
     try:
         from pypdf import PdfReader
     except ImportError as exc:
@@ -147,6 +160,9 @@ def _parse_pdf_local(data):
                      paper_title_candidate=title, first_page_preview=(pages[0][:1600] if pages else ''),
                      evidence=_paper_evidence(pages), grouping_inferred=False)
         found['primary_doi_candidates'] = [row for row in found['dois'] if 1 in row['pages']][:5]
+        if chat_text:
+            excerpt='\n\n'.join('[Page '+str(i+1)+']\n'+text for i,text in enumerate(pages))
+            found.update(chat_text=excerpt[:24000], text_truncated=len(excerpt)>24000 or len(pages)<count)
         return found
     except PaperSourceError:
         raise
@@ -154,7 +170,7 @@ def _parse_pdf_local(data):
         raise PaperSourceError('Could not read this PDF. It may be malformed, unsupported, or exceed parsing limits.') from exc
 
 
-def extract_pdf(data, filename='paper.pdf'):
+def extract_pdf(data, filename='paper.pdf', *, chat_text=False):
     """Parse bounded PDF bytes in a worker; Unix CPU, Linux AS limit.
 
     Filename is informational only and is never used as a path or shell input.
@@ -165,7 +181,7 @@ def extract_pdf(data, filename='paper.pdf'):
     if not data.startswith(b'%PDF-'):
         raise PaperSourceError('The uploaded file does not have a PDF header.')
     try:
-        result = subprocess.run([sys.executable, __file__, '--pdf-worker'], input=data,
+        result = subprocess.run([sys.executable, __file__, '--chat-pdf-worker' if chat_text else '--pdf-worker'], input=data,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=PDF_TIMEOUT_SECONDS, check=False)
         if result.returncode != 0:
             raise PaperSourceError('PDF parsing failed or exceeded local resource limits.')
@@ -374,12 +390,12 @@ def _set_worker_limits():
         resource.setrlimit(kind, (bound, bound))
 
 
-if __name__ == '__main__' and sys.argv[1:] == ['--pdf-worker']:
+if __name__ == '__main__' and sys.argv[1:] in (['--pdf-worker'], ['--chat-pdf-worker']):
     try:
         _set_worker_limits()
         body = sys.stdin.buffer.read(MAX_PDF_BYTES + 1)
         if len(body) > MAX_PDF_BYTES:
             raise PaperSourceError('PDF exceeds the size limit.')
-        print(json.dumps(_parse_pdf_local(body)))
+        print(json.dumps(_parse_pdf_local(body, chat_text=sys.argv[1]=='--chat-pdf-worker')))
     except Exception as exc:
         print(json.dumps({'error': str(exc) if isinstance(exc, PaperSourceError) else 'PDF parsing failed.'}))

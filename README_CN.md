@@ -3,17 +3,26 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v9.2.0
+# EasyMultiProfiler Web · v9.3.0
 
-**开发版源码 · 内部版本 9.2.0** — 在 V7 一键安装与多组学分析能力之上，包含 **课程按周作业 + 学号登录 + GitHub 仓库同步**，以及 ChIP / 多组学联合等 V9 能力。
+**开发版源码 · 内部版本 9.3.0** — 集成公开矩阵发现与下载、论文和 PDF 证据、AI Agent 对话、可选 Plan、分析工作台、后台任务、结果快照与组学可视化。
 
-![](https://img.shields.io/badge/version-9.2.0-1f6feb)
+![](https://img.shields.io/badge/version-9.3.0-1f6feb)
 ![](https://img.shields.io/badge/branch-main-0e8a16)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
 > **分支**：[`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)
-> **版本**：`9.1.3`
+> **版本**：`9.3.0`
+
+## v9.3.0
+
+详见 [v9.3.0 更新说明](docs/RELEASE_NOTES_v9.3.0.md)。本次发布为 main 分支源码；页面、欢迎信息、指南、启动器和打包版本统一从 DESCRIPTION 同步。此前版本的安装包示例保留作历史参考，本次未发布新的二进制安装包。
+
+- AI 对话支持跨页面上下文、图片/PDF 附件、可选计划和后台任务协作；按模型能力设置并保存思考深度。
+- 完善 GEO/PRIDE 处理矩阵下载、论文证据和样本匹配；组别、配对和原始计数依据需要明确核对。
+- 接入分析快照、GO/KEGG 与 GSEA 出图、组学专用图型和 PCA 椭圆；结果保留来源、参数及任务记录。
+- 顶部与左侧共用导航、顺序与可见范围；统一 11 种界面语言、工作台表单及导出卡片样式。
 
 ## v9.1.3 — 教学视频入口与真实失败提示
 

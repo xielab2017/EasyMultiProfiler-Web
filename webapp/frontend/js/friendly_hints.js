@@ -17,7 +17,7 @@
  * Everything is defensive: if the DOM or localStorage is unavailable the
  * module quietly does nothing.
  */
-import { t } from "./locale.js?v=i18n-zh-default-v1";
+import { t } from "./locale.js?v=nav-language-20261108";
 
 const HINT_KEYS = {
   "qc-after-import": "hint.qc",

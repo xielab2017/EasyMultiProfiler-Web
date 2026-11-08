@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EasyMultiProfiler Web V9.2.0</title>
-    <link rel="stylesheet" href="css/style.css?v=i18n-zh-default-v1">
+  <title>EasyMultiProfiler Web v9.3.0</title>
+    <link rel="stylesheet" href="css/style.css?v=nav-language-20261108">
     <link rel="stylesheet" href="css/code_lab.css?v=2026-07-16-multi-demo-v2">
     <link rel="stylesheet" href="css/teaching.css?v=2026-07-22-gh-week-first">
     <link rel="stylesheet" href="css/workbench.css?v=1">
@@ -75,6 +75,7 @@
     <select id="omics-pipeline">
       <option value="all">All (show every tab)</option>
       <option value="transcriptomics">Transcriptomics (RNAseq)</option>
+      <option value="proteomics" data-i18n="omics.proteomics">Proteomics</option>
       <option value="chipseq">ChIP-seq</option>
       <option value="microbiome_16s">Microbiome 16S</option>
       <option value="metagenomics">Metagenomics</option>
@@ -111,22 +112,16 @@
   <div class="font-scale-switch" id="font-scale-switch">
     <label class="locale-switch-label" data-i18n="fontScale.label">字号</label>
     <div class="font-scale-controls">
-      <button type="button" class="font-scale-btn" id="btn-font-smaller" aria-label="Smaller text">A−</button>
+      <button type="button" class="font-scale-btn" id="btn-font-smaller" aria-label="Smaller text" data-i18n-aria="fontScale.smaller">A−</button>
       <span id="font-scale-value" class="font-scale-value" aria-live="polite">100%</span>
-      <button type="button" class="font-scale-btn" id="btn-font-larger" aria-label="Larger text">A+</button>
+      <button type="button" class="font-scale-btn" id="btn-font-larger" aria-label="Larger text" data-i18n-aria="fontScale.larger">A+</button>
       <button type="button" class="font-scale-btn font-scale-reset" id="btn-font-reset" aria-label="Reset text size" title="Reset">↺</button>
     </div>
   </div>
 
   <ul class="nav-list">
-    <li class="nav-item" data-page="guide" title="User Guide · 使用指南">
+    <li class="nav-item active" data-page="guide" title="User Guide · 使用指南">
       <i data-lucide="book-open"></i><span data-i18n="nav.guide">指南</span>
-    </li>
-    <li class="nav-item active" data-page="course" title="Course · 课程">
-      <i data-lucide="graduation-cap"></i><span data-i18n="nav.course">课程</span>
-    </li>
-    <li class="nav-item" data-page="prompts" title="AI Prompts">
-      <i data-lucide="sparkles"></i><span data-i18n="nav.prompts">AI 提示</span>
     </li>
     <li class="nav-item" data-page="matrix" title="矩阵下载 · Matrix download" data-feature-title="矩阵下载 · Matrix download"><i data-lucide="download"></i><span data-i18n="nav.matrix">矩阵下载</span></li>
     <li class="nav-item" data-page="integration"><i data-lucide="layers"></i><span data-i18n="nav.integration">多研究整合</span></li>
@@ -178,9 +173,8 @@
       <div id="perf-last" class="perf-last">—</div>
     </div>
     <div id="locale-note" class="locale-note">
-      <span class="version-badge">v9.2.0</span>
+      <span class="version-badge">v9.3.0</span>
       <button type="button" class="btn-link" id="btn-help-guide" data-i18n="footer.guide">安装与使用指南</button>
-      · <button type="button" class="btn-link" id="btn-help-course" data-i18n="footer.course">Course 入门</button>
       · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/main/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
     </div>
   </div>
@@ -208,20 +202,7 @@
         <div id="loading-spinner" class="spinner hidden"></div>
       </div>
     </div>
-    <nav id="workflow-stepper" class="workflow-stepper" aria-label="Analysis workflow">
-      <span class="wf-step" data-wf="guide" data-i18n="wf.guide" data-i18n-title="nav.guide">Guide</span>
-      <span class="wf-step" data-wf="course" data-i18n="wf.course" data-i18n-title="nav.course">Course</span>
-      <span class="wf-step" data-wf="prompts" data-i18n="wf.prompts" data-i18n-title="nav.prompts">AI</span>
-      <span class="wf-step" data-wf="import" data-i18n="wf.import" data-i18n-title="nav.data">Data</span>
-      <span class="wf-step" data-wf="summary" data-i18n="wf.summary" data-i18n-title="nav.summary">Summary</span>
-      <span class="wf-step" data-wf="inspector" data-i18n="wf.inspector" data-i18n-title="nav.inspector">Inspect</span>
-      <span class="wf-step" data-wf="preparation" data-i18n="wf.preparation" data-i18n-title="nav.prepare">Prep</span>
-      <span class="wf-step" data-wf="analysis" data-i18n="wf.analysis" data-i18n-title="nav.analyze">Analyze</span>
-      <span class="wf-step" data-wf="clinical" data-i18n="wf.clinical" data-i18n-title="nav.clinical">Clinical</span>
-      <span class="wf-step" data-wf="runall" data-i18n="wf.runall" data-i18n-title="nav.runall">Run</span>
-      <span class="wf-step" data-wf="visualization" data-i18n="wf.visualization" data-i18n-title="nav.visualize">Visualize</span>
-      <span class="wf-step" data-wf="export" data-i18n="wf.export" data-i18n-title="nav.export">Export</span>
-    </nav>
+    <nav id="workflow-stepper" class="workflow-stepper" aria-label="页面导航"></nav>
   </header>
 
   <!-- R 执行输出：Code Lab 展开时显示在当前页面下方（中间栏） -->
@@ -337,11 +318,11 @@
   </section>
 
   <!-- ── PAGE: IMPORT ─────────────────────────────────── -->
-  <section id="page-course" class="page active">
-    <div class="card"><h2><span data-feature-text="v9.2.0 · 新功能在这里 / New features">v9.2.0 · 新功能在这里 / New features</span></h2><p><span data-feature-text="完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。">完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。</span></p><button type="button" data-open-matrix><span data-feature-text="在主页面下载矩阵 / Matrix download">在主页面下载矩阵 / Matrix download</span></button> · <a href="metadata_entry.html"><span data-feature-text="启动说明 / Startup help">启动说明 / Startup help</span></a></div>
+  <section id="page-course" class="page" hidden data-retired-page>
+    <div class="card"><h2><span data-feature-text="v9.3.0 · 新功能在这里 / New features">v9.3.0 · 新功能在这里 / New features</span></h2><p><span data-feature-text="完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。">完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。</span></p><button type="button" data-open-matrix><span data-feature-text="在主页面下载矩阵 / Matrix download">在主页面下载矩阵 / Matrix download</span></button> · <a href="metadata_entry.html"><span data-feature-text="启动说明 / Startup help">启动说明 / Startup help</span></a></div>
     <div class="card guide-course-banner">
       <p class="hint" style="margin:0">
-        <strong>v9.2.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
+        <strong>v9.3.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
         （Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」
       </p>
     </div>
@@ -359,7 +340,7 @@
     <div id="teaching-panel-critique" class="teaching-panel hidden"></div>
   </section>
 
-  <section id="page-prompts" class="page">
+  <section id="page-prompts" class="page" hidden data-retired-page>
     <div class="card">
       <h2>LLM Prompt 规范模板库</h2>
       <p class="hint">复制到 ChatGPT / 校园 LLM，或一键填入 Code Lab「优化要求」。每类模板附常见错误与审查要点。</p>
@@ -367,21 +348,20 @@
     <div id="teaching-prompt-root"></div>
   </section>
 
-  <!-- ── PAGE: USER GUIDE (v9.2.0) ─────────────────────── -->
-  <section id="page-guide" class="page">
+  <!-- ── PAGE: USER GUIDE (v9.3.0) ─────────────────────── -->
+  <section id="page-guide" class="page active">
     <div id="guide-root"></div>
   </section>
 
   <section id="page-import" class="page">
     <div class="card welcome-card" id="welcome-card">
-      <h2>👋 欢迎使用 EasyMultiProfiler v9.2.0</h2>
+      <h2>👋 欢迎使用 EasyMultiProfiler v9.3.0</h2>
       <p class="hint">
         <strong>还没安装？</strong> 左侧点 <strong>Guide</strong> 查看 Mac / Windows 分平台安装步骤（两条路径不同，请勿混用）。
         <strong>已装好？</strong> 从 <strong>Course</strong> 学，或下方一键加载 16S / RNA-seq / Clinical 示例数据。
       </p>
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btn-welcome-guide">打开安装指南</button>
-        <button type="button" class="btn btn-outline" id="btn-welcome-course">从 Course 开始</button>
         <button type="button" class="btn btn-outline" id="btn-welcome-dismiss">我知道了</button>
       </div>
     </div>
@@ -1111,17 +1091,17 @@
       <button class="tab active" data-tab="ana-alpha"
               data-omics="microbiome_16s metagenomics">Alpha Diversity</button>
       <button class="tab" data-tab="ana-diff"
-              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Differential</button>
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics proteomics">Differential</button>
       <button class="tab" data-tab="ana-dim"
-              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Dimension</button>
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics proteomics">Dimension</button>
       <button class="tab" data-tab="ana-cor"
-              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Correlation</button>
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics proteomics">Correlation</button>
       <button class="tab" data-tab="ana-cluster"
-              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Cluster</button>
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics proteomics">Cluster</button>
       <button class="tab" data-tab="ana-marker"
-              data-omics="transcriptomics microbiome_16s metagenomics">Marker</button>
+              data-omics="transcriptomics microbiome_16s metagenomics proteomics">Marker</button>
       <button class="tab" data-tab="ana-enrich"
-              data-omics="transcriptomics metagenomics metabolomics">Enrichment</button>
+              data-omics="transcriptomics metagenomics metabolomics proteomics">Enrichment</button>
       <button class="tab" data-tab="ana-network"
               data-omics="microbiome_16s metagenomics metabolomics">Network</button>
       <button class="tab" data-tab="ana-tx"
@@ -1133,7 +1113,7 @@
       <button class="tab" data-tab="ana-chipseq"
               data-omics="chipseq">ChIP-seq</button>
       <button class="tab" data-tab="ana-cross"
-              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Cross-Omics</button>
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics proteomics">Cross-Omics</button>
     </div>
 
     <!-- Alpha Diversity -->
@@ -2773,17 +2753,18 @@
         </div>
       </div>
     </div>
+    <div class="card" id="viz-method-directory" style="margin-bottom:10px"><h3 id="viz-method-directory-title">适用图型</h3><p id="viz-method-library-status" class="hint" role="status">正在检查方法库 / Checking method library…</p><div id="viz-method-directory-links" class="btn-row" style="flex-wrap:wrap"></div></div>
     <div class="tab-bar">
       <button class="tab active" data-tab="viz-barplot"
               data-omics="microbiome_16s metagenomics metabolomics">Barplot</button>
       <button class="tab" data-tab="viz-boxplot"
-              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Boxplot</button>
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics proteomics">Boxplot</button>
       <button class="tab" data-tab="viz-heatmap"
-              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Heatmap</button>
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics proteomics">Heatmap</button>
       <button class="tab" data-tab="viz-volcano"
-              data-omics="transcriptomics metagenomics metabolomics">Volcano</button>
+              data-omics="transcriptomics metagenomics metabolomics proteomics">Volcano</button>
       <button class="tab" data-tab="viz-scatter"
-              data-omics="transcriptomics microbiome_16s metagenomics metabolomics">Scatter/PCA</button>
+              data-omics="transcriptomics microbiome_16s metagenomics metabolomics proteomics">Scatter/PCA</button>
       <button class="tab" data-tab="viz-structure"
               data-omics="microbiome_16s metagenomics">Structure</button>
       <button class="tab" data-tab="viz-alpha"
@@ -2796,9 +2777,18 @@
               data-omics="microbiome_16s">16S Network</button>
       <button class="tab" data-tab="viz-mgx"
               data-omics="metagenomics">MGX Functional</button>
+      <button class="tab" data-tab="viz-ternary" data-omics="microbiome_16s metagenomics">三元组成图</button>
+      <button class="tab" data-tab="viz-de-significance" data-omics="transcriptomics proteomics metabolomics">差异显著性图</button>
+      <button class="tab" data-tab="viz-enrichment-dotplot" data-omics="transcriptomics proteomics metagenomics">富集气泡图</button>
+      <button class="tab" data-tab="viz-gsea" data-omics="transcriptomics proteomics metagenomics">GSEA 曲线</button>
     </div>
     <div class="card" style="margin-top:10px">
       <div class="form-grid">
+        <div class="form-group">
+          <label for="viz-figure-method">绘图样式 / Figure style</label>
+          <select id="viz-figure-method"><option value="original">原有 R 样式 / Original</option><option value="self_built">自建方法 / Self-built methods</option></select>
+          <small class="hint">自建样式用于 ggplot 图：实时读取方法库的字体、刻度、留白和图例规则。热图保留原 R 渲染；统计结果不因样式改变。</small>
+        </div>
         <div class="form-group">
           <label>Color panel (all plots)</label>
           <select id="viz-color-panel">
@@ -2856,6 +2846,54 @@
       </div>
     </div>
 
+    <div id="viz-enrichment-dotplot" class="tab-panel card hidden">
+      <h3>富集气泡图 / Enrichment dotplot</h3>
+      <p class="hint">读取当前会话 GO / KEGG 富集结果；使用真实 GeneRatio、Count 和校正 P 值。只绘图，不重新进行富集检验。</p>
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1"><label for="enrich-viz-source">分析结果来源 / Analysis source</label><select id="enrich-viz-source"></select></div>
+        <div class="form-group"><label for="enrich-viz-top-n">条目数量 / Top N</label><input id="enrich-viz-top-n" type="number" value="20" min="1" max="100"></div>
+        <div class="form-group"><label for="enrich-viz-sort">排序 / Sort</label><select id="enrich-viz-sort"><option value="p.adjust">校正 P 值 / Adjusted P</option><option value="GeneRatio">GeneRatio</option><option value="Count">Count</option></select></div>
+        <div class="form-group"><label for="enrich-viz-cutoff">校正 P 上限 / Adjusted P cutoff</label><input id="enrich-viz-cutoff" type="number" value="0.05" min="0" max="1" step="0.01"></div>
+      </div>
+      <details><summary>选择指定条目（可选） / Select terms (optional)</summary><label for="enrich-viz-terms">不选择时按 Top N；可多选通路 / Leave empty for Top N</label><select id="enrich-viz-terms" multiple size="6" style="width:100%"></select></details>
+      <details><summary>详细绘图参数 / Plot parameters</summary><div class="form-grid" style="margin-top:12px">
+        <div class="form-group"><label for="enrich-viz-width">宽 / Width (in)</label><input id="enrich-viz-width" type="number" value="10" min="3" max="24" step="0.5"></div>
+        <div class="form-group"><label for="enrich-viz-height">高 / Height (in)</label><input id="enrich-viz-height" type="number" value="8" min="3" max="24" step="0.5"></div>
+        <div class="form-group"><label for="enrich-viz-font">基础字号 / Font (pt)</label><input id="enrich-viz-font" type="number" value="12" min="6" max="30"></div>
+        <div class="form-group"><label for="enrich-viz-wrap">条目名称换行 / Label wrap</label><input id="enrich-viz-wrap" type="number" value="45" min="10" max="120"></div>
+        <div class="form-group"><label for="enrich-viz-size">最大气泡 / Max point size</label><input id="enrich-viz-size" type="number" value="8" min="1" max="20" step="0.5"></div>
+        <div class="form-group"><label for="enrich-viz-low">低 P 颜色 / Low P color</label><input id="enrich-viz-low" type="color" value="#C9283E"></div>
+        <div class="form-group"><label for="enrich-viz-high">高 P 颜色 / High P color</label><input id="enrich-viz-high" type="color" value="#3B6FB6"></div>
+        <div class="form-group"><label for="enrich-viz-title">标题 / Title</label><input id="enrich-viz-title" value=""></div>
+        <div class="form-group" style="grid-column:1/-1"><label for="enrich-viz-highlight">高亮条目（ID 或名称，逗号/换行分隔） / Highlight terms</label><textarea id="enrich-viz-highlight" rows="2"></textarea></div>
+      </div></details>
+      <div class="btn-row" style="margin-top:12px"><button type="button" id="enrich-viz-refresh" class="btn btn-outline">刷新分析来源 / Refresh sources</button><button type="button" id="enrich-viz-generate" class="btn btn-primary">生成气泡图 / Generate</button></div>
+      <p id="enrich-viz-status" class="hint" role="status"></p><div id="enrich-viz-output" class="plot-area hidden"></div>
+    </div>
+    <div id="viz-gsea" class="tab-panel card hidden">
+      <h3>GSEA running enrichment score</h3>
+      <p class="hint">优先选择已完成的 GSEA 分析及通路，读取真实 ES、NES 和 FDR。普通 GO / KEGG 过度富集表不能还原 ES 曲线；也可输入完整排名表绘制描述性曲线，此时不计算置换 P 值或 NES。</p>
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1"><label for="gsea-viz-source">分析来源记录 / Source provenance</label><select id="gsea-viz-source"></select></div>
+        <div class="form-group" style="grid-column:1/-1"><label for="gsea-viz-pathway">GSEA 通路 / Pathway</label><select id="gsea-viz-pathway"><option value="">选择已完成 GSEA 的通路 / Select a completed GSEA pathway</option></select></div>
+        <div class="form-group" style="grid-column:1/-1"><button type="button" id="gsea-viz-analysis" class="btn btn-outline">前往 GSEA 分析 / Run GSEA analysis</button></div>
+        <div class="form-group" style="grid-column:1/-1"><label for="gsea-viz-file">上传完整排名 CSV / TSV (gene_id, metric, in_set)</label><input id="gsea-viz-file" type="file" accept=".csv,.tsv,.txt"><small class="hint">gene_id 唯一；metric 为排名统计量；in_set 为 TRUE/FALSE 或 1/0。排名不应只包含差异基因。</small></div>
+        <div class="form-group" style="grid-column:1/-1"><label for="gsea-viz-ranked">或粘贴完整排名表 / Paste ranked table</label><textarea id="gsea-viz-ranked" rows="4" placeholder="gene_id,metric,in_set"></textarea></div>
+        <div class="form-group"><label for="gsea-viz-set">基因集名称 / Gene set</label><input id="gsea-viz-set" placeholder="自动读取所选通路名称；手动排名时可填写"></div>
+        <div class="form-group"><label for="gsea-viz-weight">权重指数 / Weight</label><input id="gsea-viz-weight" type="number" value="1" min="0" max="3" step="0.25"></div>
+      </div>
+      <details><summary>详细绘图参数 / Plot parameters</summary><div class="form-grid" style="margin-top:12px">
+        <div class="form-group"><label for="gsea-viz-width">宽 / Width (in)</label><input id="gsea-viz-width" type="number" value="9" min="3" max="24" step="0.5"></div>
+        <div class="form-group"><label for="gsea-viz-height">高 / Height (in)</label><input id="gsea-viz-height" type="number" value="6" min="3" max="24" step="0.5"></div>
+        <div class="form-group"><label for="gsea-viz-font">基础字号 / Font (pt)</label><input id="gsea-viz-font" type="number" value="12" min="6" max="30"></div>
+        <div class="form-group"><label for="gsea-viz-line">曲线颜色 / Line color</label><input id="gsea-viz-line" type="color" value="#2C8C52"></div>
+        <div class="form-group"><label for="gsea-viz-title">标题 / Title</label><input id="gsea-viz-title" value=""></div>
+      </div></details>
+      <div class="btn-row" style="margin-top:12px"><button type="button" id="gsea-viz-refresh" class="btn btn-outline">刷新分析来源 / Refresh sources</button><button type="button" id="gsea-viz-generate" class="btn btn-primary">生成 GSEA 曲线 / Generate</button></div>
+      <p id="gsea-viz-status" class="hint" role="status"></p><div id="gsea-viz-output" class="plot-area hidden"></div>
+    </div>
+<div id="viz-ternary" class="tab-panel card hidden"><h3>三元组成图 / Ternary composition</h3><p class="hint">来源：当前实验的非负丰度矩阵和样本分组。每个样本先归一化为相对丰度，再按组三组均值求组成；仅作描述，不检验三组差异。CLR / rCLR 变换值不适用，不自动转回原始丰度。气泡面积表示平均相对丰度。</p><div class="form-grid"><div class="form-group"><label for="ternary-viz-group">分组列 / Group variable</label><select id="ternary-viz-group"></select></div><div class="form-group"><label for="ternary-viz-a">顶点 A / Top</label><select id="ternary-viz-a"></select></div><div class="form-group"><label for="ternary-viz-b">顶点 B / Left</label><select id="ternary-viz-b"></select></div><div class="form-group"><label for="ternary-viz-c">顶点 C / Right</label><select id="ternary-viz-c"></select></div><div class="form-group"><label for="ternary-viz-top">Top N 特征 / Features</label><input id="ternary-viz-top" type="number" value="50" min="1" max="100"></div></div><details><summary>详细绘图参数 / Plot parameters</summary><div class="form-grid"><div class="form-group"><label for="ternary-viz-width">宽 / Width (in)</label><input id="ternary-viz-width" type="number" value="9" min="3" max="24" step="0.5"></div><div class="form-group"><label for="ternary-viz-height">高 / Height (in)</label><input id="ternary-viz-height" type="number" value="7" min="3" max="24" step="0.5"></div><div class="form-group"><label for="ternary-viz-font">基础字号 / Font (pt)</label><input id="ternary-viz-font" type="number" value="12" min="6" max="30"></div><div class="form-group"><label for="ternary-viz-title">标题 / Title</label><input id="ternary-viz-title" type="text" value="" ></div><div class="form-group"><label for="ternary-viz-size">最大点大小 / Max point size</label><input id="ternary-viz-size" type="number" value="10" min="1" max="30"></div><div class="form-group"><label for="ternary-viz-alpha">点透明度 / Point alpha</label><input id="ternary-viz-alpha" type="number" value=".75" min="0.05" max="1" step="0.05"></div><div class="form-group"><label for="ternary-viz-labels">标注特征（逗号/换行分隔） / Feature labels</label><input id="ternary-viz-labels" type="text" value="" ></div><div class="form-group"><label for="ternary-viz-color-a">组 A 颜色 / Group color</label><input id="ternary-viz-color-a" type="color" value="#D85B44" ></div><div class="form-group"><label for="ternary-viz-color-b">组 B 颜色 / Group color</label><input id="ternary-viz-color-b" type="color" value="#438AC4" ></div><div class="form-group"><label for="ternary-viz-color-c">组 C 颜色 / Group color</label><input id="ternary-viz-color-c" type="color" value="#39A276" ></div></div></details><div class="btn-row" style="margin-top:12px"><button class="btn btn-outline" id="ternary-viz-refresh" type="button">刷新分组 / Refresh groups</button><button class="btn btn-primary" id="ternary-viz-generate" type="button">生成三元图 / Generate</button></div><p class="hint" id="ternary-viz-status" role="status"></p><div id="ternary-viz-output" class="plot-area hidden"></div></div>
+<div id="viz-de-significance" class="tab-panel card hidden"><h3>差异显著性图 / DE significance scatter</h3><p class="hint">来源：当前实验已保存的差异分析结果。横轴为 −log10(校正 P)，纵轴为 log2FC；此图与标准火山图的轴向不同，不重新拟合 DESeq2/edgeR/limma。要求校正 P 在 (0,1]；可显式排除不可用校正 P 并保留清单，不填补缺失或 0。</p><div class="form-grid"><div class="form-group"><label for="de-significance-transform">横轴间距 / X spacing</label><select id="de-significance-transform"><option value="linear">线性 / Linear</option><option value="sqrt">平方根间距 / Sqrt spacing</option></select></div><div class="form-group"><label for="de-significance-p">校正 P 阈值 / Adjusted P</label><input id="de-significance-p" type="number" value=".05" min="0.000001" max="0.99999" step="0.01"></div><div class="form-group"><label for="de-significance-fc">|log2FC| 阈值 / Threshold</label><input id="de-significance-fc" type="number" value="1" min="0.01" step="0.25"></div></div><details><summary>详细绘图参数 / Plot parameters</summary><div class="form-grid"><div class="form-group"><label for="de-significance-width">宽 / Width (in)</label><input id="de-significance-width" type="number" value="9" min="3" max="24" step="0.5"></div><div class="form-group"><label for="de-significance-height">高 / Height (in)</label><input id="de-significance-height" type="number" value="7" min="3" max="24" step="0.5"></div><div class="form-group"><label for="de-significance-font">基础字号 / Font (pt)</label><input id="de-significance-font" type="number" value="12" min="6" max="30"></div><div class="form-group"><label for="de-significance-title">标题 / Title</label><input id="de-significance-title" type="text" value="" ></div><div class="form-group"><label for="de-significance-labels">指定标注基因 / Gene labels</label><input id="de-significance-labels" type="text" value="" ></div><div class="form-group"><label for="de-significance-nlabels">自动标注数量 / Auto labels</label><input id="de-significance-nlabels" type="number" value="8" min="0" max="50"></div><div class="form-group"><label for="de-significance-size">点大小 / Point size</label><input id="de-significance-size" type="number" value="1.5" min="0.1" max="8" step="0.25"></div><div class="form-group"><label for="de-significance-color-up">正效应 / Positive</label><input id="de-significance-color-up" type="color" value="#C96144" ></div><div class="form-group"><label for="de-significance-color-down">负效应 / Negative</label><input id="de-significance-color-down" type="color" value="#5185C0" ></div><div class="form-group"><label for="de-significance-color-ns">阈值内 / Below thresholds</label><input id="de-significance-color-ns" type="color" value="#B2BAC2" ></div></div></details><p><label><input id="de-significance-exclude-na" type="checkbox" checked> 仅绘制校正 P 有效的条目；排除 NA 并保存数量及清单，保留原始统计结果。</label></p><div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" id="de-significance-generate" type="button">读取差异结果并绘图 / Generate from saved DE</button><button class="btn btn-outline" id="de-significance-recheck" type="button">重新检查连接</button></div><p class="hint" id="de-significance-status" role="status"></p><div id="de-significance-output" class="plot-area hidden"></div></div>
     <!-- Barplot -->
     <div id="viz-barplot" class="tab-panel active card">
       <h3>Barplot</h3>
@@ -3328,11 +3366,11 @@
   <section id="page-runall" class="page">
     <div class="card">
       <h2>One-click analysis &amp; bundled download</h2>
-      <p class="hint">
+      <p class="runall-plan-hint" style="color:var(--text-muted);font-size:13px">
         Select a workflow, set the core parameters and click <strong>Run all</strong>.
-        Every analysis below is executed end-to-end on the backend. Figures are saved as
-        PDF, tables as Excel (.xlsx), and the whole run is packaged as a single zip
-        you can download when done.
+        Core analyses and selected optional modules run on the backend. Missing prerequisites,
+        failed modules and user-disabled stages are recorded separately; completion does not imply
+        every module succeeded. The bundle includes figures, tables and a per-stage manifest.
       </p>
 
       <div class="form-grid" style="max-width:760px">
@@ -3422,6 +3460,23 @@
         </div>
       </div>
 
+      <details id="ra-coverage-options" style="margin:12px 0"><summary>高级模块与出图选项 / Optional analyses and figures</summary>
+        <p class="hint">RNA 基线包含 PCA、差异分析、热图、火山图/MA 与样本相关。16S 基线包含分类层级、alpha/beta、多样性排序、组成与差异。新增相关/聚类和方法库图可选；GSEA 等慢模块需相应物种映射和依赖。缺少输入会记录跳过原因，不以模拟结果补齐。</p>
+        <div class="form-grid" style="margin-top:10px">
+          <div class="form-group"><label><input id="ra-do-correlation" type="checkbox" checked> 特征相关与网络 / Feature correlation and network</label><small class="hint">按 top N 特征计算，网络连接是关联，不代表因果。</small></div>
+          <div class="form-group"><label><input id="ra-do-cluster" type="checkbox" checked> 聚类与结果图 / Clustering and plots</label></div>
+          <div class="form-group"><label><input id="ra-do-method-figures" type="checkbox" checked> 自建方法补充图 / Method-library figures</label><small class="hint">需要可用方法库；16S 三元图仅恰好三组或明确指定三组时绘制。</small></div>
+          <div class="form-group ra-coverage-rna"><label><input id="ra-do-gsea" type="checkbox" checked> GSEA 分析及 ES 曲线（较慢） / GSEA + ES curves</label><small class="hint">使用完整排名，不使用已筛选 DEG 列表替代；NES/FDR 来自实际检验。可取消此项缩短运行时间。</small></div>
+          <div class="form-group ra-coverage-rna"><label for="ra-gsea-database">GSEA 基因集 / Gene sets</label><select id="ra-gsea-database"><option value="GO_BP">GO biological process</option><option value="KEGG">KEGG</option></select></div>
+          <div class="form-group ra-coverage-rna"><label for="ra-gsea-top-n">GSEA 出图通路数 / Curves</label><input id="ra-gsea-top-n" type="number" value="3" min="1" max="10"></div>
+          <div class="form-group"><label for="ra-feature-top-n">相关/网络最大特征数 / Feature cap</label><input id="ra-feature-top-n" type="number" value="100" min="10" max="500"></div>
+          <div class="form-group"><label for="ra-network-cutoff">网络 |r| 阈值 / Network cutoff</label><input id="ra-network-cutoff" type="number" value="0.6" min="0.1" max="1" step="0.05"></div>
+          <div class="form-group"><label for="ra-seed">随机种子 / Seed</label><input id="ra-seed" type="number" value="1" min="0" max="2147483647"></div>
+          <div class="form-group ra-coverage-m16s"><label for="ra-ternary-groups">三元图三组（逗号分隔；空白仅恰好三组自动） / Ternary groups</label><input id="ra-ternary-groups" placeholder="control,treatedA,treatedB"><small class="hint">四组以上不自动任取前三组；需要明确选择。CLR/rCLR 不能作为非负组成输入。</small></div>
+        </div>
+      </details>
+      <div id="ra-coverage-preflight" class="hint" role="status"></div>
+      <div id="ra-coverage-preview" style="margin:12px 0"></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
         <button class="btn btn-primary" id="btn-run-all">
           <i data-lucide="zap"></i> Run all
@@ -3450,6 +3505,7 @@
 
       <pre id="ra-log" class="hint" style="margin-top:12px;max-height:320px;overflow:auto;background:#0b1020;color:#e5e7eb;padding:12px;border-radius:6px;font-size:12px;line-height:1.5;display:none"></pre>
 
+      <div id="ra-stage-results" class="hidden" style="margin-top:16px"><h3>逐阶段结果 / Stage outcomes</h3><p id="ra-stage-summary" role="status"></p><button id="ra-stage-download" class="btn btn-outline" type="button">下载阶段记录 JSON / Download stage record</button><div id="ra-stage-table" style="overflow:auto;margin-top:10px"></div></div>
       <!-- Existing bundles for this session -->
       <h3 style="margin-top:22px">Previous bundles</h3>
       <div id="ra-bundles" class="hint">—</div>
@@ -3605,17 +3661,8 @@
 <!-- TOAST NOTIFICATIONS -->
 <div id="toast-container"></div>
 
-<script>
-  // Optional dev pairing only. Must match js/api.js resolveApiBase(); do NOT set
-  // a wrong default for unknown ports (that would override api.js and break the UI).
-  if (!window.API_BASE) {
-    const host = window.location.hostname || "127.0.0.1";
-    const webPort = window.location.port || "";
-    if (webPort === "8080") window.API_BASE = `http://${host}:8000/api`;
-    else if (webPort === "18080") window.API_BASE = `http://${host}:18000/api`;
-  }
-</script>
-<script type="module" src="js/app.js?v=i18n-zh-default-v1"></script>
+<!-- API base is resolved by api.js from runtime_ports.local.js; do not override it here. -->
+<script type="module" src="js/app.js?v=nav-language-20261108"></script>
 <script type="module" src="js/research_project.js?v=1"></script>
 <script type="module" src="js/matrix_panel.js?v=matrix-local-v1"></script>
 <script type="module" src="js/dataset_discovery.js?v=1"></script>

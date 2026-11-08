@@ -20,6 +20,7 @@ import paper_sources
 import pdf_limits
 import workflow_plans
 import agent_adapter
+import agent_progress
 import repository_files
 import agent_context
 import tutorial_assets
@@ -139,6 +140,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Disposition', f'attachment; filename="{name}"')
             self.send_header('Content-Length', str(len(body))); self.send_header('X-Content-Type-Options', 'nosniff'); self.end_headers(); self.wfile.write(body); return
         if path == PREFIX + 'agent/status': return self.reply(200, agent_adapter.status())
+        if path.startswith(PREFIX + 'agent/progress/'):
+            progress = agent_progress.get(path.removeprefix(PREFIX + 'agent/progress/'))
+            return self.reply(200 if progress else 404, progress or {'error': 'Agent run unavailable'})
         if path == PREFIX + 'papers/capabilities': return self.reply(200, pdf_limits.capabilities())
         if path == PREFIX + 'workflows/templates': return self.reply(200, workflow_plans.templates())
         if path == PREFIX + 'health':
@@ -172,7 +176,7 @@ class Handler(BaseHTTPRequestHandler):
                 if set(request) - {'context_ids'}: raise metadata.MetadataError('Only context IDs are accepted')
                 return self.reply(200, agent_context.prepare(selected_context(self.server, request.get('context_ids'))))
             if path == PREFIX + 'agent/respond':
-                if set(request) - {'question', 'consent', 'expected_provider', 'expected_config_revision', 'context_ids', 'context_consent', 'context_sha256'}:
+                if set(request) - {'question', 'consent', 'expected_provider', 'expected_config_revision', 'context_ids', 'context_consent', 'context_sha256', 'run_id', 'attachment_ids', 'reasoning_effort'}:
                     raise metadata.MetadataError('Unsupported agent request fields')
                 if request.get('consent') is True and request.get('expected_provider') != agent_adapter.status()['provider']:
                     return self.reply(409, {'error': 'Provider changed or not confirmed; reload status and consent again'})
@@ -182,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
                     if request.get('context_sha256') != preview['snapshot_sha256']:
                         return self.reply(409, {'error': 'Selected context changed; preview and consent again'})
                 return self.reply(200, agent_adapter.respond(request.get('question', ''), request.get('consent', False),
-                    context=context, context_consent=request.get('context_consent', False),expected_config_revision=request.get('expected_config_revision')))
+                    context=context, context_consent=request.get('context_consent', False),expected_config_revision=request.get('expected_config_revision'),run_id=request.get('run_id'),attachment_ids=request.get('attachment_ids',[]),reasoning_effort=request.get('reasoning_effort','auto')))
             if path == PREFIX + 'workflows/validate':
                 result = workflow_plans.validate_plan(request.get('plan'))
                 if result.get('record'):
@@ -234,6 +238,8 @@ import workbench_api
 workbench_api.install(Handler, ROOT)
 import model_settings_api
 model_settings_api.install(Handler)
+import agent_attachments
+agent_attachments.install(Handler)
 
 def make_server(port=8081):
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)

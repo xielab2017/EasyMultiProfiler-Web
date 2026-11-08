@@ -38,7 +38,7 @@ emp_pub_theme <- function(base_size = 12) {
   ttl_x <- .axis_sz("axis_title_x", bs)
   ttl_y <- .axis_sz("axis_title_y", bs)
 
-  ggplot2::theme_bw(base_size = bs, base_family = "") +
+  theme <- ggplot2::theme_bw(base_size = bs, base_family = "") +
     ggplot2::theme(
       plot.title       = ggplot2::element_text(size = bs + 2, face = "bold", hjust = 0.5,
                                                 margin = ggplot2::margin(b = 6)),
@@ -62,6 +62,16 @@ emp_pub_theme <- function(base_size = 12) {
       plot.background  = ggplot2::element_rect(fill = "white", colour = NA),
       panel.background = ggplot2::element_rect(fill = "white", colour = NA)
     )
+  if (identical(st$figure_method, "self_built")) {
+    method_theme <- emp_figure_methods_theme(base_size = bs)
+    if (is.null(method_theme)) stop("Self-built figure methods unavailable; configure EMP_FIGURE_METHODS_ROOT or select the original style.")
+    theme <- method_theme + ggplot2::theme(
+      axis.text.x = ggplot2::element_text(size = txt_x),
+      axis.text.y = ggplot2::element_text(size = txt_y),
+      axis.title.x = ggplot2::element_text(size = ttl_x),
+      axis.title.y = ggplot2::element_text(size = ttl_y))
+  }
+  theme
 }
 
 # Global figure typography / proportional scale (set per visualize API request).
@@ -74,6 +84,7 @@ emp_viz_style_begin <- function(b) {
     if (length(v) && is.finite(v[1]) && v[1] > 0) v[1] else NA_real_
   }
   options(emp.viz_style = list(
+    figure_method = if (identical(b$figure_method, "self_built")) "self_built" else "original",
     figure_scale = sc,
     axis_text_x = .num_or_na(b$axis_text_x),
     axis_text_y = .num_or_na(b$axis_text_y),
@@ -241,7 +252,7 @@ emp_diverging_colors <- function(n = 11, panel = NULL) {
   grDevices::colorRampPalette(c("#2166ac", "#67a9cf", "white", "#ef8a62", "#b2182b"))(256)
 }
 
-# Confidence-ellipse computation (95%) per group, returns df: x, y, group.
+# Normal covariance dispersion ellipse; not a confidence interval for a group mean.
 emp_conf_ellipse <- function(x, y, group, level = 0.95, n_segments = 60) {
   groups <- as.character(group)
   out <- list()
@@ -253,7 +264,7 @@ emp_conf_ellipse <- function(x, y, group, level = 0.95, n_segments = 60) {
     Sg <- stats::cov(mat, use = "pairwise.complete.obs")
     if (any(!is.finite(Sg))) next
     eg <- tryCatch(eigen(Sg), error = function(e) NULL)
-    if (is.null(eg)) next
+    if (is.null(eg) || any(eg$values <= 0)) next
     rad <- sqrt(stats::qchisq(level, df = 2))
     theta <- seq(0, 2 * pi, length.out = n_segments)
     circle <- cbind(cos(theta), sin(theta))

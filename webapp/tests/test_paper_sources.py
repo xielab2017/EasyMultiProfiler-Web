@@ -48,6 +48,14 @@ class PaperSourcesTests(unittest.TestCase):
         self.assertEqual([row['kind'] for row in result['accessions']],['PRIDE','MetaboLights','GSA-Human','GSA','BioProject-CNCB','BioStudies','EGA'])
         self.assertTrue(all(row['verified'] is False for row in result['accessions']))
 
+    def test_pdf_citation_suffix_uses_same_paper_url_evidence(self):
+        data=paper._extract_pages(['identifier PXD06797315', 'https://identifiers.org/pride.project:PXD067973'], 'pdf')
+        self.assertEqual([x['accession'] for x in data['accessions']], ['PXD067973'])
+        self.assertEqual(data['accessions'][0]['original_mentions'], ['PXD06797315'])
+        self.assertEqual(data['accessions'][0]['pages'], [1,2])
+        self.assertTrue(any('citation digits' in x for x in data['warnings']))
+        self.assertEqual(paper.extract_text('PXD06797315')['accessions'][0]['accession'], 'PXD06797315')
+
     def test_invalid_pdf(self):
         for data in (b'', b'<html>not pdf', b'x' * (paper.MAX_PDF_BYTES + 1), b'%PDF-1.7\nmalformed'):
             with self.subTest(data=data[:20]), self.assertRaises(paper.PaperSourceError):

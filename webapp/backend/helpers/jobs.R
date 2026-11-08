@@ -47,6 +47,32 @@ validate_job_id <- function(id) {
            error = function(e) NULL)
 }
 
+.job_pid_alive <- function(pid) {
+  isTRUE(tryCatch(ps::ps_is_running(ps::ps_handle(as.integer(pid))), error = function(e) FALSE))
+}
+
+# Atomic directory lock serializes session writes across worker processes.
+# A killed worker's lock is reclaimed only after its recorded PID is gone.
+.job_session_lock <- function(session_id, on_wait = function() NULL) {
+  lock <- file.path(session_path(session_id), ".analysis-lock")
+  repeat {
+    if (isTRUE(dir.create(lock, showWarnings = FALSE))) {
+      writeLines(as.character(Sys.getpid()), file.path(lock, "pid"))
+      return(lock)
+    }
+    pid_file <- file.path(lock, "pid")
+    pid <- suppressWarnings(tryCatch(as.integer(readLines(pid_file, n = 1, warn = FALSE)), error = function(e) NA_integer_))
+    old <- as.numeric(difftime(Sys.time(), file.info(lock)$mtime, units = "secs")) > 30
+    dead <- length(pid) == 1L && !is.na(pid) && !.job_pid_alive(pid)
+    if (isTRUE(dead) || (isTRUE(old) && (length(pid) != 1L || is.na(pid)))) {
+      unlink(lock, recursive = TRUE)
+      next
+    }
+    on_wait()
+    Sys.sleep(1)
+  }
+}
+
 # Publicly exposed helper – workers call this from inside the child R session
 # via a closure produced by `.make_progress_callback()` to publish progress
 # updates to the shared JSON state file.
@@ -60,8 +86,7 @@ validate_job_id <- function(id) {
     st$progress <- max(1L, min(99L, as.integer(pct)))
     if (!is.null(msg)) st$message <- as.character(msg)
     st$updated  <- as.integer(Sys.time())
-    writeLines(jsonlite::toJSON(st, auto_unbox = TRUE, null = "null",
-                                 na = "null", pretty = FALSE), state_path)
+    .write_state(id, st)
     invisible(NULL)
   }
 }
@@ -81,9 +106,22 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
   if (emp_auth_required() && (is.null(owner_id) || !nzchar(owner_id))) {
     stop("Job owner is required for an authenticated deployment.")
   }
+  experiment_name <- args$payload$experiment %||% args$experiment %||% NULL
+  # Persist the registered experiment type rather than a client hint or name.
+  experiment_omics <- "unknown"
+  if (!is.null(session_id) && length(experiment_name) == 1L &&
+      exists("read_experiment_registry", mode = "function")) {
+    registry <- tryCatch(read_experiment_registry(session_id), error = function(e) list())
+    metadata <- registry[[experiment_name]]
+    value <- metadata$omics %||% switch(metadata$data_type %||% "", tax="microbiome_16s", chipseq="chipseq", "unknown")
+    if (is.character(value) && length(value) == 1L && !is.na(value) && nzchar(value)) experiment_omics <- value
+  }
   .write_state(id, list(
     id         = id,
     kind       = kind,
+    experiment = experiment_name,
+    omics = experiment_omics,
+    parameters = (args$payload %||% args)[intersect(names(args$payload %||% args), c('method','use','k','group_var','ref_group','test_group','comparison_mode','filter_low'))],
     session_id = session_id,
     endpoint_id = emp_endpoint_id(),
     owner_id = owner_id,
@@ -107,11 +145,28 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
     on.exit({ sink(type = "message"); sink(); try(close(log_con), silent = TRUE) },
             add = TRUE)
 
+    # Waiting workers acquire the session lock before loading large R packages.
+    for (name in c("utils.R", "storage.R", "session.R", "jobs.R")) {
+      source(file.path(backend_dir, "helpers", name), local = FALSE)
+    }
+      initial <- .read_state(id)
+      if (!is.null(initial$session_id)) {
+        lock <- .job_session_lock(initial$session_id, function() {
+          st <- .read_state(id)
+          st$status <- "queued"
+          st$message <- "Waiting for another task in this session"
+          st$updated <- as.integer(Sys.time())
+          .write_state(id, st)
+        })
+        on.exit(unlink(lock, recursive = TRUE), add = TRUE)
+      }
     suppressPackageStartupMessages({
       library(EasyMultiProfiler)
       library(SummarizedExperiment)
       library(MultiAssayExperiment)
       library(jsonlite)
+      library(ggplot2)
+      library(base64enc)
     })
     helper_files <- list.files(file.path(backend_dir, "helpers"), pattern = "\\.R$", full.names = TRUE)
     storage_file <- helper_files[basename(helper_files) == "storage.R"]
@@ -121,8 +176,10 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
     }
 
     write_state <- function(s) {
+      tmp <- tempfile(tmpdir = dirname(state_path))
       writeLines(toJSON(s, auto_unbox = TRUE, null = "null", na = "null",
-                        pretty = FALSE), state_path)
+                        pretty = FALSE), tmp)
+      file.rename(tmp, state_path)
     }
     bump <- function(pct, msg = NULL) {
       st <- tryCatch(fromJSON(readLines(state_path, warn = FALSE),
@@ -135,8 +192,8 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
       write_state(st)
     }
 
-    bump(1, "Starting")
     result <- tryCatch({
+      bump(1, "Starting")
       args$on_progress <- bump
       do.call(fn, args)
     }, error = function(e) {
@@ -144,6 +201,7 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
                                simplifyVector = TRUE),
                      error = function(e) list())
       st$status  <- "error"
+      st$finished <- as.integer(Sys.time())
       st$error   <- conditionMessage(e)
       st$updated <- as.integer(Sys.time())
       write_state(st)
@@ -156,6 +214,7 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
     if (st$status %in% c("cancel_requested", "cancelled")) return(invisible(NULL))
     saveRDS(result, result_path)
     st$status   <- "done"
+    st$finished <- as.integer(Sys.time())
     st$progress <- 100L
     st$message  <- "Done"
     st$updated  <- as.integer(Sys.time())
@@ -193,12 +252,19 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
   list(
     id       = st$id %||% NULL,
     kind     = st$kind %||% NULL,
+    experiment = st$experiment %||% NULL,
+    omics = st$omics %||% "unknown",
+    parameters = st$parameters %||% list(),
     status   = st$status %||% "unknown",
     progress = suppressWarnings(as.integer(st$progress %||% 0L)),
     message  = st$message %||% st$error %||% NULL,
     created  = st$created %||% st$started %||% NULL,
     started  = st$started %||% NULL,
-    finished = st$finished %||% NULL
+    finished = st$finished %||% NULL,
+    pid = st$pid %||% NULL,
+    cancellable = isTRUE(st$cancellable) && exists(st$id, envir = .JOB_PROCESSES, inherits = FALSE),
+    session_id = st$session_id %||% NULL,
+    elapsed_seconds = max(0L, (st$finished %||% (if (st$status %in% c("done", "error", "cancelled")) st$updated else as.integer(Sys.time()))) - (st$started %||% as.integer(Sys.time())))
   )
 }
 
@@ -222,6 +288,7 @@ list_jobs <- function(limit = 20, owner_id = NULL, project_id = NULL) {
     if (is.null(st) || is.null(st$id)) next
     if (!is.null(owner_id) && !identical(st$owner_id %||% NULL, owner_id)) next
     if (!is.null(project_id) && !identical(st$project_id %||% NULL, project_id)) next
+    st <- get_job_status(st$id)
     summary <- .job_summary(st)
     if (!is.null(summary)) out[[length(out) + 1]] <- summary
   }
@@ -231,6 +298,13 @@ list_jobs <- function(limit = 20, owner_id = NULL, project_id = NULL) {
 get_job_status <- function(id) {
   st <- .read_state(id)
   if (is.null(st)) return(list(error = paste0("Job not found: ", id)))
+  if (st$status %in% c("queued", "running") && !is.null(st$pid) && !.job_pid_alive(st$pid)) {
+    st$status <- "error"
+    st$error <- "Worker exited before producing a result; inspect the job log."
+    st$message <- st$error
+    st$finished <- as.integer(Sys.time())
+    .write_state(id, st)
+  }
   if (st$status %in% c("done", "error", "cancelled") && exists(id, envir = .JOB_PROCESSES, inherits = FALSE)) {
     rm(list = id, envir = .JOB_PROCESSES)
   }
@@ -301,6 +375,7 @@ cancel_job <- function(id) {
     return(list(status = "cancel_requested", job_id = id))
   }
   st$status <- "cancelled"
+  st$finished <- as.integer(Sys.time())
   st$message <- "Cancelled"
   st$progress <- as.integer(st$progress %||% 0L)
   st$updated <- as.integer(Sys.time())

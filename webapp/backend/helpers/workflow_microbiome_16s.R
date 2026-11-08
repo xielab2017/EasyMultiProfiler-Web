@@ -65,6 +65,12 @@ m16s_prepare_taxonomy <- function(empt, tax_sep = ";", collapse_level = "Genus",
   level_idx <- m16s_tax_index(collapse_level)
   taxa_parts <- m16s_taxonomy_parts(empt, tax_sep = tax_sep)
   if (!length(taxa_parts)) stop("No feature/taxonomy names found in assay rows.")
+  if (!any(vapply(taxa_parts, function(parts) sum(!is.na(parts) & nzchar(parts)) >= 2L, logical(1)))) {
+    stop("16S taxonomy requires at least two taxonomy levels. Check the selected experiment and taxonomy separator.")
+  }
+  if (anyNA(ad) || any(!is.finite(ad)) || any(ad < 0) || any(ad != floor(ad))) {
+    stop("16S taxonomy preparation requires finite non-negative integer counts. Select an appropriate raw count experiment.")
+  }
 
   taxa_label <- vapply(taxa_parts, function(parts) {
     val <- if (length(parts) >= level_idx) parts[level_idx] else NA_character_

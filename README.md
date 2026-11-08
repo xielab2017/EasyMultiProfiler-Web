@@ -3,20 +3,26 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v9.2.0
+# EasyMultiProfiler Web · v9.3.0
 
-![](https://img.shields.io/badge/version-9.2.0-1f6feb)
+![](https://img.shields.io/badge/version-9.3.0-1f6feb)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0e8a16)
 ![](https://img.shields.io/badge/UI%20languages-11-orange)
 ![](https://img.shields.io/badge/license-Artistic--2.0-blue)
 
-> **Version:** `9.2.0` · **Branch:** [`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)
+> **Version:** `9.3.0` · **Branch:** [`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)
 > This is the complete, standalone English documentation for EasyMultiProfiler Web. The Chinese documentation is in [README_CN.md](README_CN.md).
 
-## v9.2.0
+## v9.3.0
 
-See [release notes](docs/RELEASE_NOTES_v9.2.0.md) for the current workflow and data-source scope.
+See [release notes](docs/RELEASE_NOTES_v9.3.0.md) for changes, validation and limits. This release publishes the current source on main; older installer-package examples below remain historical references. No new binary installers are published with this source update.
+
+- Page-aware Agent chat with image/PDF attachments, optional plans, background task continuation and per-model thinking depth.
+- Public matrix discovery/download, paper evidence and explicit sample/design review.
+- Saved analysis sources, GO/KEGG and GSEA plots, omics-specific visualizations and PCA dispersion ellipses.
+- Shared top/sidebar navigation, synchronized 11-language UI, consistent workbench controls and aligned export cards.
+- DESCRIPTION is the release-version source; synchronize generated labels with `python3 webapp/scripts/sync_app_version.py`.
 
 ## Integrated count-analysis workbench (local development)
 
@@ -198,7 +204,7 @@ Interactive help is also available in the web UI under **Guide** and **Course**.
 
 ```text
 EasyMultiProfiler-Web/
-├── DESCRIPTION                 # R package metadata (version 9.1.2)
+├── DESCRIPTION                 # R package metadata (version 9.3.0)
 ├── R/                          # EasyMultiProfiler R package
 ├── Install-EMP-Web-Windows.bat # one-click installers (per OS)
 ├── Install-EMP-Web-Mac.command

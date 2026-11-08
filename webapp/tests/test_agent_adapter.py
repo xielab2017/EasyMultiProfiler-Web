@@ -15,7 +15,69 @@ def call(name='validate_plan', args=None, ident='call_1'):
          'arguments': json.dumps({'plan': {}} if args is None else args)}}]}
 
 
+class UIFieldTests(unittest.TestCase):
+    def test_interpretation_cannot_advertise_execution_tools(self):
+        self.assertEqual(agent.page_tools([{'role':'user','content':'UI scope: interpretation; registered step: result-interpretation.\nQuestion: Interpret the image'}]), [])
+    def test_visualization_only_advertises_plot_page_actions_and_does_not_mutate_global_catalog(self):
+        selected=agent.page_tools([{'role':'user','content':'UI scope: visualization; registered step: viz-volcano.\nQuestion: Plot saved DE'}])
+        names={t['function']['name'] for t in selected}
+        self.assertNotIn('get_selected_context',names)
+        self.assertNotIn('discover_processed',names)
+        actions=next(t for t in selected if t['function']['name']=='request_page_action')['function']['parameters']['properties']['action']['enum']
+        self.assertNotIn('inspect_integration',actions)
+        self.assertIn('submit_current',actions)
+        self.assertIn('inspect_integration',next(t for t in agent.TOOLS if t['function']['name']=='request_page_action')['function']['parameters']['properties']['action']['enum'])
+    @patch.object(agent,'_request')
+    def test_ui_handoff_returns_before_requesting_a_model_again(self,request):
+        request.return_value=call('request_page_action',{'action':'download_matrix','target':'GSE305056'})
+        with patch.object(agent,'_settings',return_value=('fixture-key','fixture-model',True,'openai')):
+            result=agent.respond('Download the public matrix',True,_runtime_override={})
+        self.assertEqual(result['status'],'ok');self.assertEqual(request.call_count,1)
+        self.assertEqual(result['tool_results'][0]['result']['target'],'GSE305056')
+
+    def test_optional_plan_and_choice_cards_are_typed_and_do_not_execute(self):
+        for name,args in [('propose_agent_plan',{'steps':['查找公开矩阵','导入并核对设计']}),('ask_user_choice',{'question':'样本是否配对？','options':['独立样本','同一受试者配对']})]:
+            _,values=agent._arguments(call(name,args)['tool_calls'][0]);self.assertFalse(agent._run(name,values)['execution_performed'])
+    def test_typed_ui_tools_are_declarative_and_do_not_execute(self):
+        n,a=agent._arguments(call('fill_page_fields',{'fields':{'matrix-accession':'GSE60450'}})['tool_calls'][0])
+        self.assertFalse(agent._run(n,a)['execution_performed'])
+        n,a=agent._arguments(call('request_page_action',{'action':'select_matrix_file','target':'file1'})['tool_calls'][0])
+        self.assertEqual(agent._run(n,a)['target'],'file1')
+        with self.assertRaises(agent.AdapterError):agent._arguments(call('request_page_action',{'action':'execute_code'})['tool_calls'][0])
+
 class AgentTests(unittest.TestCase):
+    @patch.object(agent, '_run', return_value={'status':'draft'})
+    @patch.object(agent, '_request')
+    def test_known_tool_schema_error_can_be_corrected_without_aborting_chat(self, req, run):
+        req.side_effect = [call('validate_plan',{'plan':'wrong type'},'bad'),
+                           call('propose_count_workflow',{'question':'PCA'},'corrected'),
+                           {'role':'assistant','content':'Draft prepared.'}]
+        result=agent.respond('Prepare a plan',True)
+        self.assertEqual(result['status'],'ok')
+        self.assertIn('error',result['tool_results'][0]['result'])
+        run.assert_called_once_with('propose_count_workflow',{'question':'PCA'})
+
+    @patch.object(agent, '_request')
+    def test_multiple_tool_calls_are_validated_and_answered_in_order(self, req):
+        batch = call('get_selected_context', {}, 'first')
+        batch['tool_calls'] += call('request_page_action', {'action':'refresh_tasks'}, 'second')['tool_calls']
+        req.side_effect = [batch, {'role':'assistant','content':'Context and action inspected.'}]
+        result = agent.respond('Inspect current context and tasks', True)
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual([row['tool'] for row in result['tool_results']], ['get_selected_context','request_page_action'])
+        messages = req.call_args.args[0]
+        self.assertEqual([row['tool_call_id'] for row in messages if row['role']=='tool'], ['first','second'])
+
+    @patch.object(agent, '_request')
+    def test_page_action_is_typed_declaration_and_never_server_execution(self, req):
+        req.side_effect = [call('request_page_action', {'action': 'submit_current'}),
+                           {'role':'assistant','content':'The local page must confirm submission.'}]
+        result = agent.respond('Run the reviewed current task', True)
+        self.assertEqual(result['status'], 'ok')
+        action = result['tool_results'][0]['result']
+        self.assertFalse(action['execution_performed'])
+        self.assertTrue(action['requires_local_review'])
+
     def setUp(self):
         self.env = patch.dict(os.environ, {'OPENAI_API_KEY': 'test-secret-only',
             'EMP_AGENT_ALLOW_MODEL_REQUEST': '1', 'EMP_AGENT_MODEL': 'gpt-4.1-mini'}, clear=True)
@@ -66,11 +128,11 @@ class AgentTests(unittest.TestCase):
     @patch.object(agent, '_run', return_value={'metadata': 'ok'})
     @patch.object(agent, '_request')
     def test_round_bound(self, req, run):
-        req.side_effect = [call(ident='call_' + str(i)) for i in range(4)]
-        self.assertEqual(agent.respond('hello', True)['status'], 'round_limit')
-        self.assertEqual(run.call_count, 3)
-        self.assertEqual(req.call_count, 4)
-        self.assertTrue(req.call_args.kwargs['final_only'])
+        req.side_effect = [call(ident='call_' + str(i)) for i in range(agent.MAX_ROUNDS + 1)]
+        self.assertEqual(agent.respond('hello', True)['status'], 'ok')
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(req.call_count, 2)
+        self.assertFalse(req.call_args.kwargs['final_only'])
 
     @patch.object(agent, '_request', side_effect=RuntimeError('test-secret-only provider body'))
     def test_error_redacted(self, req):
@@ -153,7 +215,7 @@ class AgentTests(unittest.TestCase):
         discover.assert_called_once_with('GSE123')
         pdf.assert_not_called()
         download.assert_not_called()
-        self.assertTrue(req.call_args.kwargs['final_only'])
+        self.assertFalse(req.call_args.kwargs['final_only'])
 
     @patch.object(agent.repository_files, 'pride_files', return_value={'files': [{'name': 'table.csv'}], 'downloaded': False, 'matrix_verified': False})
     @patch.object(agent, '_request')
