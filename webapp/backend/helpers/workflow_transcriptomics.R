@@ -169,12 +169,22 @@ tx_run_gsea <- function(session_id, experiment, database = "KEGG", organism = "h
   utils::head(df, 200)
 }
 
+# The legacy transcriptomics endpoint exposes a feature correlation screen.
 tx_run_wgcna <- function(session_id, experiment, method = "spearman", cutoff = 0.7) {
   tx_stop_if_missing(session_id, experiment)
-  method_use <- if (is.null(method) || !nzchar(method)) "spearman" else method
-  cutoff_use <- suppressWarnings(as.numeric(cutoff))
-  if (is.na(cutoff_use) || cutoff_use <= 0 || cutoff_use > 1) cutoff_use <- 0.7
-  run_correlation(session_id, experiment, use = method_use)
+  if (!is.character(method) || length(method) != 1L || !method %in% c("spearman", "pearson")) {
+    stop("Invalid feature correlation method.")
+  }
+  if (!is.numeric(cutoff) || length(cutoff) != 1L || !is.finite(cutoff) || cutoff < 0 || cutoff > 1) {
+    stop("Invalid correlation cutoff: choose a number between 0 and 1.")
+  }
+  assay <- SummarizedExperiment::assays(get_empt(session_id, experiment))[[1L]]
+  if (nrow(assay) < 2L || ncol(assay) < 3L) stop("Feature correlation requires at least two features and three samples.")
+  if (nrow(assay) > 3000L) stop("Filter to 3000 features or fewer before computing all feature pairs.")
+  correlations <- suppressWarnings(stats::cor(t(as.matrix(assay)), method = method, use = "pairwise.complete.obs"))
+  keep <- which(upper.tri(correlations) & is.finite(correlations) & abs(correlations) >= cutoff, arr.ind = TRUE)
+  data.frame(var1 = rownames(assay)[keep[, 1L]], var2 = rownames(assay)[keep[, 2L]],
+             coefficient = correlations[keep], stringsAsFactors = FALSE)
 }
 
 tx_make_heatmap <- function(session_id, experiment, group = NULL, top_n = 50L,

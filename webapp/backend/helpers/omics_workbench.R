@@ -2,12 +2,13 @@
 EMP_WB_CONTRACT <- "emp-count-workbench-v1"
 
 emp_wb_capabilities <- function() {
-  packages <- c("DESeq2", "callr", "digest", "jsonlite", "edgeR")
+  packages <- c("DESeq2", "callr", "digest", "jsonlite", "edgeR", "EasyMultiProfiler")
   versions <- vapply(packages, function(p) {
     if (requireNamespace(p, quietly = TRUE)) as.character(utils::packageVersion(p)) else "missing"
   }, character(1))
   list(success = TRUE, contract = EMP_WB_CONTRACT, ready = all(versions[c("DESeq2", "callr", "digest", "jsonlite")] != "missing"),
        packages = as.list(versions), r_version = as.character(getRversion()),
+       web_version = if (exists("emp_web_version", mode = "function")) tryCatch(emp_web_version(), error = function(e) NULL) else NULL,
        operations = c("qc", "normalize", "pca", "deseq2", "heatmap", "edger"),
        multiple_contrasts = TRUE, methods_ready = list(DESeq2 = versions[["DESeq2"]] != "missing", edgeR = versions[["edgeR"]] != "missing"),
        supported_omics = "bulk_rnaseq", max_cells = 1000000L)
@@ -233,13 +234,21 @@ emp_wb_submit <- function(payload, owner_id) {
   # A process-local reservation serializes duplicate submissions.
   if (!exists(".EMP_WB_SUBMISSIONS", inherits = TRUE)) stop("Workbench submission registry unavailable")
   key <- paste0(owner_id, ":", payload$plan_sha256)
-  if (exists(key, envir = .EMP_WB_SUBMISSIONS, inherits = FALSE)) return(get(key, envir = .EMP_WB_SUBMISSIONS))
+  if (exists(key, envir = .EMP_WB_SUBMISSIONS, inherits = FALSE)) {
+    receipt <- get(key, envir = .EMP_WB_SUBMISSIONS, inherits = FALSE)
+    status <- get_job_status(receipt$job_id)$status
+    if (!is.null(status) && !status %in% c("cancelled", "error")) return(receipt)
+    rm(list = key, envir = .EMP_WB_SUBMISSIONS)
+  }
   previous <- as.list(.EMP_WB_SUBMISSIONS)
   active <- sum(vapply(previous, function(item) {
     st <- get_job_status(item$job_id)
     identical(st$owner_id, owner_id) && st$status %in% c("queued", "running", "cancel_requested")
   }, logical(1)))
-  if (active >= 2L) stop("Two count workflows are already active; wait or cancel before submitting another")
+  if (active >= 2L) {
+    stop(errorCondition("Two count workflows are already active; wait or cancel before submitting another",
+                        class = "emp_capacity_error"))
+  }
   id <- submit_job("count_workbench", emp_wb_compute, list(payload = payload), owner_id = owner_id)
   result <- list(success = TRUE, job_id = id, plan_sha256 = payload$plan_sha256, contract = EMP_WB_CONTRACT)
   assign(key, result, envir = .EMP_WB_SUBMISSIONS)

@@ -870,13 +870,7 @@ github_status <- function(identity) {
 }
 
 .github_emp_version <- function() {
-  Sys.getenv(
-    "EMP_WEB_VERSION",
-    unset = tryCatch(
-      as.character(utils::packageVersion("EasyMultiProfiler")),
-      error = function(e) "9.1.0"
-    )
-  )
+  emp_web_version()
 }
 
 .github_week_dir <- function(assignment) {

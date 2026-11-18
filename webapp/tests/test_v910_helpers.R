@@ -14,6 +14,8 @@ backend_dir <- local({
   file.path(getwd(), "webapp", "backend")
 })
 
+Sys.setenv(BACKEND_DIR = backend_dir)
+source(file.path(backend_dir, "helpers", "utils.R"))
 source(file.path(backend_dir, "helpers", "i18n_locale.R"))
 source(file.path(backend_dir, "helpers", "platform_info.R"))
 source(file.path(backend_dir, "helpers", "qc_rigor.R"))
@@ -131,7 +133,7 @@ stopifnot(identical(emp_resume_plan(character(0), list()), character(0)))
 
 ## 7. Reproducibility manifest -------------------------------------------
 manifest <- emp_repro_manifest(list(run_id = "test"), locale = "ja")
-stopifnot(identical(manifest$emp_version, "9.1.0"))
+stopifnot(identical(manifest$emp_version, emp_web_version()))
 stopifnot(identical(manifest$run_id, "test"))
 stopifnot(identical(manifest$locale, "ja"))
 out_dir <- tempfile("emp_repro_test_")
@@ -139,7 +141,7 @@ paths <- emp_write_repro_report(out_dir, manifest, locale = "ja")
 stopifnot(file.exists(paths$report))
 if (!is.null(paths$json)) stopifnot(file.exists(paths$json))
 report_txt <- paste(readLines(paths$report, warn = FALSE), collapse = "\n")
-stopifnot(grepl("9.1.0", report_txt, fixed = TRUE))
+stopifnot(grepl(emp_web_version(), report_txt, fixed = TRUE))
 unlink(out_dir, recursive = TRUE)
 
 cat("test_v910_helpers.R: all checks passed\n")

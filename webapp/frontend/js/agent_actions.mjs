@@ -15,7 +15,7 @@ export function currentAgentAction(context={}) {
  return ACTIONS[context.workflow]?.[context.tab] || null;
 }
 export function resolveAgentNavigation(target) {
- const pages=['guide','models','import','summary','inspector','chipseq','chipseq_downstream','export','matrix','integration','workbench','preparation','analysis','visualization','runall','clinical'];
+ const pages=['guide','models','plugins','import','summary','inspector','chipseq','chipseq_downstream','export','matrix','integration','workbench','preparation','analysis','visualization','runall','clinical'];
  const tabs={analysis:['ana-alpha','ana-diff','ana-dim','ana-cor','ana-cluster','ana-marker','ana-enrich','ana-gsea'],preparation:['prep-filter','prep-normalize','prep-impute','prep-rarefy','prep-collapse'],visualization:['viz-barplot','viz-boxplot','viz-heatmap','viz-scatter','viz-volcano','viz-enrichment-dotplot','viz-gsea','viz-ternary','viz-de-significance']};
  let [page,tab,...extra]=String(target||'').replace(/^(analysis|preparation|visualization)\//,'$1:').split(':');
  if(!tab){const owner=Object.keys(tabs).find(key=>tabs[key].includes(page));if(owner){tab=page;page=owner;}}

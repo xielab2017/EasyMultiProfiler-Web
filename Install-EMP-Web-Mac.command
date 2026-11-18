@@ -36,18 +36,9 @@ _on_exit() {
     echo "  常见原因: 网络受限 / R 下载失败 / 缺少 Xcode 命令行工具"
     echo "  (可先运行: xcode-select --install)。"
     echo "============================================================"
-  else
-    echo ""
-    echo "============================================================"
-    echo "  Installation finished. The web server runs in the background."
-    echo "  安装完成，网页服务已在后台运行。"
-    echo "  Open: http://127.0.0.1:8080"
-    echo "  Stop: double-click Stop-EMP-Web-Mac.command"
-    echo "  停止: 双击 Stop-EMP-Web-Mac.command"
-    echo "============================================================"
   fi
   echo ""
-  read -r -p "Press Enter to close this window... / 按回车键关闭此窗口... " _ || sleep 8
+  if [[ -t 0 ]]; then read -r -p "Press Enter to close this window... / 按回车键关闭此窗口... " _ || true; fi
   exit "${ec}"
 }
 trap _on_exit EXIT
@@ -56,10 +47,16 @@ if [[ -f "${ROOT_DIR}/webapp/scripts/bootstrap_and_start.sh" ]]; then
   echo "[install] Local project copy found - running the local installer."
   echo "[安装] 检测到本地项目副本 - 运行本地安装流程 (bash install.sh)。"
   echo ""
-  bash "${ROOT_DIR}/install.sh"
+  bash "${ROOT_DIR}/install.sh" "$@"
 else
+  if [[ "${EMP_DRY_RUN:-0}" == "1" || " $* " == *" --dry-run "* ]]; then
+    echo "Dry run requires a local project copy." >&2
+    exit 1
+  fi
   echo "[install] No local project copy - downloading the installer from GitHub."
   echo "[安装] 未检测到本地项目副本 - 从 GitHub 下载安装脚本。"
   echo ""
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.sh)"
+  installer="$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.sh)" || exit $?
+  [[ -n "$installer" ]] || { echo "Downloaded installer is empty." >&2; exit 1; }
+  bash -c "$installer"
 fi

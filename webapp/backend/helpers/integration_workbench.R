@@ -1,62 +1,70 @@
 # Reviewed, matched-subject exploration. No inferred pairing or missing-value imputation.
 .iw_omics <- c("transcriptomics", "proteomics", "metabolomics", "microbiome", "epigenomics", "clinical")
 .iw_label <- function(x) is.character(x) && length(x) == 1L && !is.na(x) && nzchar(trimws(x)) && nchar(x) <= 256L && !grepl("[[:cntrl:]]", x)
-.iw_fields <- function(x, allowed) {
-  if (!is.list(x) || is.null(names(x)) || anyDuplicated(names(x)) || any(!names(x) %in% allowed)) stop("Unsupported integration fields")
+.iw_invalid <- function(message) {
+  stop(errorCondition(message, class = "emp_validation_error"))
+}
+.iw_fields <- function(x, allowed, required = allowed) {
+  if (!is.list(x) || is.null(names(x)) || anyDuplicated(names(x)) || any(!names(x) %in% allowed)) .iw_invalid("Unsupported integration fields")
+  missing <- setdiff(required, names(x))
+  if (length(missing)) .iw_invalid(paste("Required integration fields:", paste(missing, collapse = ", ")))
 }
 
 emp_iw_validate <- function(payload, require_mapping = TRUE) {
-  .iw_fields(payload, c("version", "blocks", "mapping", "missing_policy", "allow_unmatched", "preprocessing_reviewed", "design_reviewed", "confirmed"))
-  if (!identical(payload$version, 1L) || !is.list(payload$blocks) || length(payload$blocks) < 2L || length(payload$blocks) > 8L) stop("Select 2-8 omics matrices")
+  fields <- c("version", "blocks", "mapping", "missing_policy", "allow_unmatched", "preprocessing_reviewed", "design_reviewed", "confirmed")
+  required <- if (require_mapping) setdiff(fields, "confirmed") else c("version", "blocks")
+  .iw_fields(payload, fields, required)
+  if (!identical(payload$version, 1L) || !is.list(payload$blocks) || length(payload$blocks) < 2L || length(payload$blocks) > 8L) .iw_invalid("Select 2-8 omics matrices")
   mats <- list(); info <- list(); cells <- 0L
   for (b in payload$blocks) {
     .iw_fields(b, c("id", "study_id", "omics", "scale", "data_csv", "source_sha256"))
-    if (!all(vapply(b[c("id", "study_id")], .iw_label, logical(1))) || !b$omics %in% .iw_omics || !b$scale %in% c("unknown", "raw_counts", "processed")) stop("Declare study, modality and data scale for every matrix")
-    if (b$id %in% names(mats)) stop("Duplicate matrix ID")
-    if (!is.character(b$data_csv) || length(b$data_csv) != 1L || nchar(b$data_csv, type = "bytes") > 12 * 1024^2 || !grepl("^[a-f0-9]{64}$", b$source_sha256)) stop("Bounded matrix and source checksum required")
-    tab <- utils::read.table(text = b$data_csv, header = TRUE, sep = if (grepl("\t", strsplit(b$data_csv, "\n", fixed = TRUE)[[1]][1], fixed = TRUE)) "\t" else ",", check.names = FALSE, colClasses = "character", na.strings = NULL, comment.char = "", quote = "\"", fill = FALSE)
-    if (nrow(tab) < 2L || nrow(tab) > 50000L || ncol(tab) < 4L || ncol(tab) > 257L) stop("Each feature-by-sample matrix needs 2-50000 features and 3-256 samples")
+    if (!all(vapply(b[c("id", "study_id", "omics", "scale")], .iw_label, logical(1))) || !b$omics %in% .iw_omics || !b$scale %in% c("unknown", "raw_counts", "processed")) .iw_invalid("Declare study, modality and data scale for every matrix")
+    if (b$id %in% names(mats)) .iw_invalid("Duplicate matrix ID")
+    if (!is.character(b$data_csv) || length(b$data_csv) != 1L || nchar(b$data_csv, type = "bytes") > 12 * 1024^2 || !.iw_label(b$source_sha256) || !grepl("^[a-f0-9]{64}$", b$source_sha256)) .iw_invalid("Bounded matrix and source checksum required")
+    tab <- tryCatch(utils::read.table(text = b$data_csv, header = TRUE, sep = if (grepl("\t", strsplit(b$data_csv, "\n", fixed = TRUE)[[1]][1], fixed = TRUE)) "\t" else ",", check.names = FALSE, colClasses = "character", na.strings = NULL, comment.char = "", quote = "\"", fill = FALSE),
+      error = function(e) .iw_invalid("Invalid feature-by-sample table; check delimiters, header and field counts"))
+    if (nrow(tab) < 2L || nrow(tab) > 50000L || ncol(tab) < 4L || ncol(tab) > 257L) .iw_invalid("Each feature-by-sample matrix needs 2-50000 features and 3-256 samples")
     ids <- tab[[1]]; samples <- names(tab)[-1]
-    if (anyNA(ids) || any(!nzchar(trimws(ids))) || anyDuplicated(ids) || anyDuplicated(samples) || !all(vapply(samples, .iw_label, logical(1)))) stop("Unique, nonempty feature IDs and sample columns required")
+    if (anyNA(ids) || any(!nzchar(trimws(ids))) || anyDuplicated(ids) || anyDuplicated(samples) || !all(vapply(samples, .iw_label, logical(1)))) .iw_invalid("Unique, nonempty feature IDs and sample columns required")
     raw <- as.matrix(tab[-1]); missing <- is.na(raw) | trimws(raw) %in% c("", "NA", "NaN")
     numeric <- suppressWarnings(matrix(as.numeric(raw), nrow = nrow(raw), dimnames = list(ids, samples)))
-    if (any(!missing & !is.finite(numeric))) stop("Nonnumeric or infinite values found; exclude annotation columns before upload")
+    if (any(!missing & !is.finite(numeric))) .iw_invalid("Nonnumeric or infinite values found; exclude annotation columns before upload")
     numeric[missing] <- NA_real_; mats[[b$id]] <- numeric
-    cells <- cells + length(numeric); if (cells > 1000000L) stop("Integration input exceeds 1000000 cells")
+    cells <- cells + length(numeric); if (cells > 1000000L) .iw_invalid("Integration input exceeds 1000000 cells")
     info[[b$id]] <- list(id = b$id, study_id = b$study_id, omics = b$omics, scale = b$scale, declared_source_sha256 = b$source_sha256, input_sha256 = digest::digest(enc2utf8(b$data_csv), algo = "sha256", serialize = FALSE), features = nrow(numeric), samples = as.list(samples), missing_values = sum(missing))
   }
   if (!require_mapping) return(list(matrices = mats, info = info))
-  if (!isTRUE(payload$preprocessing_reviewed) || any(vapply(info, function(b) b$scale != "processed", logical(1)))) stop("Review modality-specific preprocessing and declare processed matrices; raw counts/unknown scales cannot enter joint exploration")
-  if (!isTRUE(payload$design_reviewed)) stop("Review that mappings identify the same independent biological units, with no unmodelled batch or repeated-measure design")
+  if (!isTRUE(payload$preprocessing_reviewed) || any(vapply(info, function(b) b$scale != "processed", logical(1)))) .iw_invalid("Review modality-specific preprocessing and declare processed matrices; raw counts/unknown scales cannot enter joint exploration")
+  if (!isTRUE(payload$design_reviewed)) .iw_invalid("Review that mappings identify the same independent biological units, with no unmodelled batch or repeated-measure design")
   mapping <- payload$mapping
-  if (!is.list(mapping) || length(mapping) > 2048L) stop("Explicit sample mapping required")
+  if (!is.list(mapping) || length(mapping) > 2048L) .iw_invalid("Explicit sample mapping required")
   for (row in mapping) {
     .iw_fields(row, c("block", "column", "subject", "group"))
-    if (!all(vapply(row, .iw_label, logical(1))) || !row$block %in% names(mats) || !row$column %in% colnames(mats[[row$block]])) stop("Every mapping row needs a valid matrix, column, subject and group")
+    if (!all(vapply(row, .iw_label, logical(1))) || !row$block %in% names(mats) || !row$column %in% colnames(mats[[row$block]])) .iw_invalid("Every mapping row needs a valid matrix, column, subject and group")
   }
   key <- vapply(mapping, function(x) paste(match(x$block, names(mats)), x$column, sep = "\r"), character(1))
-  if (anyDuplicated(key) || length(key) != sum(vapply(mats, ncol, integer(1)))) stop("Map every sample column exactly once")
+  if (anyDuplicated(key) || length(key) != sum(vapply(mats, ncol, integer(1)))) .iw_invalid("Map every sample column exactly once")
   subject_sets <- list(); groups <- list()
   for (id in names(mats)) {
     rows <- Filter(function(row) identical(row$block, id), mapping)
     columns <- vapply(rows, `[[`, character(1), "column"); subjects <- vapply(rows, `[[`, character(1), "subject")
-    if (!setequal(columns, colnames(mats[[id]])) || anyDuplicated(subjects)) stop("Repeated subjects within one matrix require a specialist model")
-    for (row in rows) {if (!is.null(groups[[row$subject]]) && groups[[row$subject]] != row$group) stop("Conflicting group labels for the same biological unit"); groups[[row$subject]] <- row$group}
+    if (!setequal(columns, colnames(mats[[id]])) || anyDuplicated(subjects)) .iw_invalid("Repeated subjects within one matrix require a specialist model")
+    for (row in rows) {if (!is.null(groups[[row$subject]]) && groups[[row$subject]] != row$group) .iw_invalid("Conflicting group labels for the same biological unit"); groups[[row$subject]] <- row$group}
     colnames(mats[[id]]) <- subjects[match(colnames(mats[[id]]), columns)];subject_sets[[id]] <- subjects
   }
   common <- Reduce(intersect, subject_sets)
-  if (length(common) < 4L) stop("Fewer than four explicitly matched biological units; independent cohorts cannot be paired for sample-level integration")
+  if (length(common) < 4L) .iw_invalid("Fewer than four explicitly matched biological units; independent cohorts cannot be paired for sample-level integration")
   unmatched <- lapply(subject_sets, setdiff, y = common)
-  if (any(lengths(unmatched) > 0L) && !isTRUE(payload$allow_unmatched)) stop("Unmatched subjects found. Review the exclusions and explicitly allow their exclusion")
-  if (!payload$missing_policy %in% c("reject", "exclude_features")) stop("Select an explicit missing-value policy")
+  if (any(lengths(unmatched) > 0L) && !isTRUE(payload$allow_unmatched)) .iw_invalid("Unmatched subjects found. Review the exclusions and explicitly allow their exclusion")
+  if (!.iw_label(payload$missing_policy) || !payload$missing_policy %in% c("reject", "exclude_features")) .iw_invalid("Select an explicit missing-value policy")
   exclusions <- list()
   for (id in names(mats)) {
     m <- mats[[id]][, common, drop = FALSE]; bad <- rowSums(is.na(m)) > 0L
-    if (any(bad) && payload$missing_policy == "reject") stop("Missing measurements remain; choose an explicit exclusion policy or preprocess separately")
+    if (any(bad) && payload$missing_policy == "reject") .iw_invalid("Missing measurements remain; choose an explicit exclusion policy or preprocess separately")
     incomplete <- rownames(m)[bad];m <- m[!bad, , drop = FALSE]
     constant <- if (nrow(m)) apply(m, 1L, stats::sd) == 0 else logical()
     exclusions[[id]] <- list(unmatched_subjects = as.list(unmatched[[id]]), incomplete_features = as.list(incomplete), constant_features = as.list(rownames(m)[constant]))
-    m <- m[!constant, , drop = FALSE];if (nrow(m) < 2L) stop("Fewer than two complete variable features in a block")
+    m <- m[!constant, , drop = FALSE];if (nrow(m) < 2L) .iw_invalid("Fewer than two complete variable features in a block")
     mats[[id]] <- m
   }
   list(matrices = mats, info = info, subjects = common, groups = groups, exclusions = exclusions)
@@ -94,7 +102,7 @@ emp_iw_compute <- function(payload, progress = function(...) NULL) {
 }
 
 emp_iw_submit <- function(payload, owner_id) {
-  if (!isTRUE(payload$confirmed)) stop("Review and confirm this integration analysis")
+  if (!isTRUE(payload$confirmed)) .iw_invalid("Review and confirm this integration analysis")
   emp_iw_validate(payload)
   id <- submit_job("integration_exploration", function(payload, on_progress) emp_iw_compute(payload, on_progress), args = list(payload = payload), owner_id = owner_id)
   list(success = TRUE, job_id = id, kind = "integration_exploration")

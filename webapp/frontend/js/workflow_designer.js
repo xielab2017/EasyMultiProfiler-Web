@@ -39,7 +39,7 @@ export function mountWorkflowDesigner({onChange,onNavigate}){
     }
     libraryArea.append(cards);steps.replaceChildren();
     composer.steps.forEach((node,i)=>{
-      const def=composer.library.steps[node.operation];const consumers=composer.requiredBy(node.operation);const li=make('li');li.draggable=!def.terminal;li.dataset.operation=node.operation;
+      const def=composer.library.steps[node.operation];const consumers=composer.requiredBy(node.operation);const li=make('li');li.draggable=!def.terminal;li.dataset.operation=node.operation;li.id='wb-step-parameters-'+node.operation;
       li.append(make('strong',name(node.operation)),make('span',tr(def.required?'required':consumers.length?'conditional':'optional'),'wb-step-badge '+(def.required?'is-required':consumers.length?'is-conditional':'is-optional')),make('small',tr(def.mode),'wb-capability'));
       const deps=dependencies(composer.scope,node.operation,composer.inputType);if(deps.length)li.append(make('p',tr('deps')+': '+deps.map(name).join(' → '),'hint'));
       if(def.note)li.append(make('p',textPair(def.note,getLocale()),'hint'));

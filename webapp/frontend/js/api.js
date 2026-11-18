@@ -290,6 +290,7 @@ function requestMultipartWithProgress(path, formData, opts = {}) {
 }
 
 let backgroundRoutes = null;
+let backgroundApiBase = null;
 async function request(method, path, body = null, multipart = false, optsExtra = {}) {
   if (method === 'POST' && !multipart && body?.session_id &&
       /^\/(analyze|prepare|clinical|workflows)\//.test(path) && !path.endsWith('/async')) {
@@ -336,14 +337,20 @@ async function request(method, path, body = null, multipart = false, optsExtra =
     }
   }
 
-  const bases = resolveApiCandidates();
+  const candidates = resolveApiCandidates();
+  const submittingTask = method === "POST" && path === "/tasks/submit";
+  const bases = submittingTask
+    ? [candidates.includes(backgroundApiBase) ? backgroundApiBase : candidates[0]]
+    : candidates;
   const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
   let res = null;
+  let responseBase = null;
   let lastErr = null;
   try {
     for (const base of bases) {
       try {
         res = await fetch(`${base}${path}`, opts);
+        responseBase = base;
         break;
       } catch (e) {
         lastErr = e;
@@ -362,6 +369,7 @@ async function request(method, path, body = null, multipart = false, optsExtra =
     if (abortTimer) clearTimeout(abortTimer);
   }
   if (!res) {
+    if (submittingTask) throw new Error("Job submission status is unknown. Check Background Tasks before retrying.");
     const tried = bases.join(", ");
     throw new Error(
       `Cannot reach EMP API (${tried}). Start the backend with: bash webapp/scripts/start_local.sh`
@@ -389,6 +397,7 @@ async function request(method, path, body = null, multipart = false, optsExtra =
       err.backend_ms = data.backend_ms;
       throw err;
     }
+    if (method === "GET" && path === "/tasks/capabilities") backgroundApiBase = responseBase;
     data._total_ms = Math.round(totalMs);
     if (method === 'POST' && data.job_id) {
       window.dispatchEvent(new CustomEvent('emp:job-submitted', {detail:{job_id:data.job_id, route:path,task_route:body?.route||path,experiment:body?.experiment||body?.payload?.experiment}}));
@@ -1110,7 +1119,11 @@ export async function txAnalyzeGsea(experiment, params = {}) {
 
 export async function txAnalyzeWgcna(experiment, params = {}) {
   const sid = sessionId();
-  return request("POST", "/workflows/transcriptomics/analyze/wgcna", { session_id: sid, experiment, ...params });
+  const result = await request("POST", "/workflows/transcriptomics/analyze/wgcna", { session_id: sid, experiment, ...params });
+  if (result.mode === "correlation_fallback") {
+    throw new Error("The feature correlation cutoff requires the updated EMP R service.");
+  }
+  return result;
 }
 
 export async function txVizHeatmap(experiment, params = {}) {

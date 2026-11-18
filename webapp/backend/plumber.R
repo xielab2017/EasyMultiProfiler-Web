@@ -43,6 +43,7 @@ source(file.path(.BACKEND_DIR, "helpers/repro_report.R"))
 source(file.path(.BACKEND_DIR, "helpers/memory_utils.R"))
 source(file.path(.BACKEND_DIR, "helpers/viz_qc.R"))
 source(file.path(.BACKEND_DIR, "helpers/agent_api.R"))
+source(file.path(.BACKEND_DIR, "helpers/platform_extensions.R"))
 source(file.path(.BACKEND_DIR, "helpers/omics_workbench.R"))
 source(file.path(.BACKEND_DIR, "helpers/integration_workbench.R"))
 source(file.path(.BACKEND_DIR, "helpers/user_exec.R"))
@@ -128,6 +129,55 @@ function(req, res) {
 function(res) {
   safe_api({ emp_agent_capabilities() }, res)
 }
+
+#* Installed analysis and result-view plugins available to this principal
+#* @get /api/extensions
+#* @serializer unboxedJSON list(digits=NA)
+function(req,res) safe_api({emp_ext_catalog(emp_request_principal(req))},res)
+
+#* Install a declarative v1 manifest or bundled example for this principal
+#* @post /api/extensions/install
+#* @serializer unboxedJSON
+function(req,res) safe_api({
+  emp_ext_install(emp_request_principal(req),emp_ext_parse_body(req$postBody))
+},res)
+
+#* Uninstall one plugin for this principal
+#* @post /api/extensions/uninstall
+#* @serializer unboxedJSON
+function(req,res) safe_api({emp_ext_uninstall(emp_request_principal(req),emp_ext_parse_body(req$postBody))},res)
+
+#* Enable or disable an exact installed plugin
+#* @post /api/extensions/enable
+#* @serializer unboxedJSON
+function(req,res) safe_api({emp_ext_toggle(emp_request_principal(req),emp_ext_parse_body(req$postBody))},res)
+
+#* Save personal settings for an installed plugin
+#* @post /api/extensions/settings
+#* @serializer unboxedJSON
+function(req,res) safe_api({emp_ext_save_settings(emp_request_principal(req),emp_ext_parse_body(req$postBody))},res)
+
+#* Submit a registered analysis against the selected session assay
+#* @post /api/extensions/run
+#* @serializer unboxedJSON
+function(req,res) safe_api({emp_ext_run(emp_request_principal(req),emp_ext_parse_body(req$postBody))},res)
+
+#* Recent plugin jobs for the selected session
+#* @get /api/extensions/jobs/<session_id>
+#* @serializer unboxedJSON
+function(req,res,session_id) safe_api({
+  actor <- emp_request_principal(req)
+  emp_assert_session_owner(session_id,actor)
+  jobs <- Filter(function(j) identical(j$kind,"analysis:plugin"),list_jobs_for_session(session_id,actor))
+  jobs <- rev(jobs)[seq_len(min(length(jobs),30L))]
+  list(success=TRUE,jobs=unname(lapply(jobs,function(j) j[c("id","status","started")])))
+},res)
+
+#* Render a completed scientific result through a registered display definition
+#* @post /api/extensions/display
+#* @serializer unboxedJSON list(digits=NA, na="null", null="null")
+function(req,res) safe_api({emp_ext_present(emp_request_principal(req),emp_ext_parse_body(req$postBody))},res)
+
 
 #* List all supported omics workflows
 #* @get /api/workbench/capabilities
@@ -1222,7 +1272,7 @@ function(req, res) {
   }, res)
 }
 
-#* Transcriptomics WGCNA analysis
+#* Transcriptomics feature correlation screen (legacy URL)
 #* @post /api/workflows/transcriptomics/analyze/wgcna
 #* @serializer unboxedJSON
 function(req, res) {
@@ -1243,7 +1293,9 @@ function(req, res) {
 
     list(
       success = TRUE,
-      mode = "correlation_fallback",
+      mode = "feature_correlation",
+      method = method,
+      absolute_cutoff = cutoff,
       n_rows = nrow(result_df),
       columns = names(result_df),
       data = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA)
@@ -2190,7 +2242,8 @@ function(req, res) {
 #* @get /api/tasks/capabilities
 #* @serializer unboxedJSON
 function(req, res) {
-  list(success = TRUE, routes = as.list(names(emp_background_handlers())))
+  list(success = TRUE, routes = as.list(names(emp_background_handlers())),
+       worker_limit = .job_worker_limit(), queue_limit = .JOB_BACKLOG_LIMIT)
 }
 
 #* Submit a registered analysis without blocking the API
@@ -2234,7 +2287,7 @@ function(job_id, res) {
       res$status <- 404
       return(list(success = FALSE, error = st$error))
     }
-    st$pid <- NULL
+    st[c("pid", "dispatcher_pid")] <- NULL
     list(success = TRUE, job = st)
   }, res)
 }
@@ -2243,12 +2296,30 @@ function(job_id, res) {
 #* @get /api/jobs/<job_id>/result
 #* @serializer unboxedJSON list(digits=NA, na="null", null="null")
 function(job_id, res) {
+  started <- Sys.time()
   safe_api({
     st <- get_job_status(job_id)
     if (is.null(st$status) || !identical(st$status, "done")) {
       res$status <- 409
       return(list(success = FALSE, error = "Job not finished",
                   status = st$status %||% "unknown"))
+    }
+    if ((st$kind %||% "") %in% c("count_workbench", "integration_exploration")) {
+      cache <- .job_json_path(job_id)
+      bytes <- file.size(cache)
+      if (!is.null(st$response_bytes) && is.finite(bytes) && bytes == st$response_bytes && bytes > 2) {
+        payload <- readBin(cache, "raw", n = bytes)
+        if (length(payload) == bytes && identical(payload[1L], charToRaw("{")) &&
+            identical(payload[bytes], charToRaw("}"))) {
+          now <- Sys.time()
+          timing <- jsonlite::toJSON(list(
+            backend_ms = round(as.numeric(difftime(now, started, units = "secs")) * 1000, 1),
+            server_ts = format(now, "%Y-%m-%dT%H:%M:%OS3%z")
+          ), auto_unbox = TRUE)
+          res$serializer <- plumber::serializer_content_type("application/json; charset=utf-8")
+          return(c(charToRaw(substr(timing, 1L, nchar(timing) - 1L)), charToRaw(","), payload[-1L]))
+        }
+      }
     }
     result_obj <- get_job_result(job_id)
     if (is.null(result_obj)) {
@@ -3948,7 +4019,7 @@ function(req, res) {
 #* @get /api/health
 #* @serializer unboxedJSON
 function() {
-  list(status = "ok", version = emp_web_version(), web_version = emp_web_version(), emp_package_version = as.character(packageVersion("EasyMultiProfiler")))
+  list(status = "ok", version = emp_web_version(), web_version = emp_web_version(), emp_package_version = as.character(getNamespaceVersion("EasyMultiProfiler")))
 }
 
 #* System / platform info (v9.1.0: Windows / macOS / Linux auto-detection)
@@ -3956,7 +4027,7 @@ function() {
 #* @serializer unboxedJSON
 function() {
   info <- emp_platform_info()
-  info$emp_version <- as.character(packageVersion("EasyMultiProfiler"))
+  info$emp_version <- as.character(getNamespaceVersion("EasyMultiProfiler"))
   info$web_version <- emp_web_version()
   info
 }

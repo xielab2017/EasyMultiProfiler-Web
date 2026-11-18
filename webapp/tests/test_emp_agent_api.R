@@ -24,6 +24,7 @@ outside_file <- file.path(outside, "outside.csv")
 writeLines(c("feature,S1", "x,1"), outside_file)
 
 Sys.setenv(
+  BACKEND_DIR = backend,
   EMP_SESSION_DIR = sessions,
   EMP_JOB_DIR = jobs,
   EMP_PROJECT_DIR = projects,
@@ -59,7 +60,7 @@ stopifnot(identical(emp_storage_dir("jobs"), normalizePath(jobs, winslash = "/")
 caps <- emp_agent_capabilities()
 stopifnot(
   identical(caps$api_version, "1.0"),
-  identical(caps$emp_version, "7.0.0"),
+  identical(caps$emp_version, read.dcf(file.path(root, "DESCRIPTION"), fields = "Version")[[1]]),
   isTRUE(caps$features$path_import),
   isTRUE(caps$features$persistent_sessions),
   isTRUE(caps$features$arbitrary_r),

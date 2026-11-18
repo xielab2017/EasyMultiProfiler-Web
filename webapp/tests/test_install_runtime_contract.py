@@ -9,7 +9,7 @@ class RuntimeContractTests(unittest.TestCase):
         cls.source=(Path(__file__).parents[1]/'scripts/install_runtime.R').read_text()
     def test_web_dependencies_explicit(self):
         block=re.search(r'cran_always <- c\(([^\n]+)\)',self.source).group(1)
-        for package in ['plumber','jsonlite','base64enc']:
+        for package in ['plumber','jsonlite','base64enc','callr','digest','ps']:
             self.assertIn('"'+package+'"',block)
     def test_one_project_library_setup(self):
         self.assertEqual(self.source.count('.libPaths(c('),1)

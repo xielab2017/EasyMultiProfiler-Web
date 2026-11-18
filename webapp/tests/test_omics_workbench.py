@@ -65,6 +65,19 @@ class WorkbenchTests(unittest.TestCase):
         self.assertNotEqual(self.service.payload(prepared['prepared_id'])['matrix_csv'], 'changed')
         self.assertFalse(prepared['execution_performed'])
 
+    def test_reopen_prepared_plan_after_restart(self):
+        key = self.service.prepare(self.plan)['prepared_id']
+        fresh = wb.Workbench(self.temp.name)
+        expected = self.service.payload(key)
+        self.assertEqual(fresh.payload(key), expected)
+        path = Path(self.temp.name) / (key + '.plan.json')
+        for field in ('matrix_csv', 'plan_sha256', 'plan_json'):
+            path.write_text(json.dumps({**expected, field: 'invalid'}))
+            with self.assertRaises(ValueError):
+                fresh.payload(key)
+        with self.assertRaises(ValueError):
+            fresh.payload('../' + key)
+
     def test_scientific_and_operation_boundaries(self):
         changes = [lambda p: p.update(data_type='tpm'),
                    lambda p: p['samples'][0].update(id='missing'),
@@ -100,6 +113,23 @@ class WorkbenchTests(unittest.TestCase):
         self.assertFalse(draft['execution_performed'])
         for question in ['TPM 做差异', '配对 RNA-seq', '单细胞', '包含批次', '代谢组分析']:
             self.assertEqual(wb.propose(question)['status'], 'needs_specialist_workflow')
+
+    def test_reviewable_language_plan(self):
+        draft = wb.propose('RNA-seq 做差异分析 FDR 1%，并绘制前 20 个基因的热图')
+        steps = {s['operation']: s['parameters'] for s in draft['steps']}
+        self.assertEqual(steps['deseq2']['alpha'], .01)
+        self.assertEqual(steps['heatmap']['top_n'], 20)
+        self.assertNotIn('pca', steps)
+        exact = wb.propose('比较处理组和对照组，看看哪些基因上调')
+        self.assertEqual([step['operation'] for step in exact['steps']], ['qc','deseq2'])
+        self.assertIn('contrast', exact['review_fields'])
+        self.assertNotIn('design', exact)
+        self.assertIn('contrast', draft['review_fields'])
+        for text in ('分析一下数据', '不要做差异分析', 'PCA and GSEA', 'DESeq2 FDR 1.7'):
+            proposal = wb.propose(text)
+            self.assertEqual(proposal['status'], 'needs_clarification')
+            self.assertFalse(proposal['steps'])
+            self.assertFalse(proposal['execution_performed'])
 
     def test_agent_tool_cannot_execute_and_context_excludes_sensitive_labels(self):
         call = {'id': 'tool1', 'type': 'function', 'function': {'name': 'propose_count_workflow', 'arguments': json.dumps({'question': 'PCA'})}}

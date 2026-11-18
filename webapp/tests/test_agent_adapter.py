@@ -164,6 +164,70 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(request.get_method(), 'POST')
         self.assertEqual(json.loads(request.data)['max_tokens'], 1200)
 
+    @patch.object(agent, 'build_opener')
+    def test_chat_outputs_reach_both_transports_without_tools(self, opener):
+        reply = opener.return_value.open.return_value.__enter__.return_value
+        for protocol in ('openai', 'anthropic'):
+            if protocol == 'anthropic':
+                wire = {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': 'ok'}]}
+            else:
+                wire = {'choices': [{'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': 'ok'}}]}
+            reply.read.return_value = json.dumps(wire).encode()
+            runtime = {'endpoint': 'https://example.test', 'model': 'MiniMax-M3.1-Flash',
+                       'provider': 'minimax', 'protocol': protocol, 'key': 'fixture-secret',
+                       'enabled': True, 'revision': 5, 'max_tokens_output': 3000}
+            for output in ('answer', 'summary', 'note', 'comparison'):
+                with self.subTest(protocol=protocol, output=output):
+                    result = agent.respond('Discuss this evidence.', True, chat_mode='chat', output_type=output,
+                                           _runtime_override=runtime, expected_config_revision=5)
+                    self.assertEqual(result['status'], 'ok')
+                    payload = json.loads(opener.return_value.open.call_args.args[0].data)
+                    self.assertNotIn('tools', payload)
+                    self.assertNotIn('tool_choice', payload)
+                    self.assertNotIn('temperature', payload)
+                    limits = [payload[k] for k in ('max_tokens', 'max_completion_tokens') if k in payload]
+                    self.assertEqual(limits, [3000])
+                    system = payload['system'] if protocol == 'anthropic' else payload['messages'][0]['content']
+                    self.assertIn(agent.OUTPUT_TYPES[output], system)
+
+    @patch.object(agent, 'build_opener')
+    def test_custom_profile_sampling_reaches_model(self, opener):
+        reply = opener.return_value.open.return_value.__enter__.return_value
+        reply.read.return_value = b'{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}]}'
+        runtime = {'endpoint': 'https://example.test', 'model': 'fixture', 'provider': 'custom',
+                   'key': '', 'enabled': True, 'revision': 1, 'temperature': 0, 'max_tokens_output': 200}
+        result = agent.respond('Discuss.', True, _runtime_override=runtime, expected_config_revision=1)
+        self.assertEqual(result['status'], 'ok')
+        payload = json.loads(opener.return_value.open.call_args.args[0].data)
+        self.assertEqual((payload['temperature'], payload['max_tokens']), (0, 200))
+        self.assertNotIn('max_completion_tokens', payload)
+
+    @patch.object(agent, '_run')
+    @patch.object(agent, '_request')
+    def test_chat_and_page_boundaries_reject_unadvertised_provider_calls(self, request, run):
+        request.return_value = call('request_page_action', {'action': 'inspect_integration'})
+        for mode, question in [('chat', 'Please run this'), ('agent', 'UI scope: analysis; review results')]:
+            self.assertEqual(agent.respond(question, True, chat_mode=mode)['status'], 'error')
+        run.assert_not_called()
+
+    @patch.object(agent, '_request')
+    def test_chat_context_projection_needs_consent(self, request):
+        context = {'plan': {'version': 1, 'private_notes': 'private-example'}}
+        opts = dict(chat_mode='chat', context=context)
+        self.assertEqual(agent.respond('Summarize.', True, **opts)['status'], 'context_consent_required')
+        request.assert_not_called()
+        request.return_value = {'role': 'assistant', 'content': 'ok'}
+        self.assertEqual(agent.respond('Summarize.', True, context_consent=True, **opts)['status'], 'ok')
+        content = json.dumps(request.call_args.args[0])
+        self.assertNotIn('private-example', content)
+        self.assertIn('declared_workflow', content)
+
+    @patch.object(agent, '_request')
+    def test_invalid_output_or_mode_never_calls_provider(self, request):
+        for field, value in [('chat_mode', 'automatic'), ('output_type', {}), ('output_type', 'raw_code')]:
+            self.assertEqual(agent.respond('Hello', True, **{field: value})['status'], 'invalid_request')
+        request.assert_not_called()
+
     @patch.object(agent.paper_sources, 'search_pubmed', return_value={'articles': []})
     @patch.object(agent.paper_sources, 'fetch_pubmed_abstract', return_value={'accessions': []})
     @patch.object(agent.processed_data, 'discover', return_value={'files': []})

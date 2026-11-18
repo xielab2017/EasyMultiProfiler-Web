@@ -30,7 +30,7 @@ emp_repro_manifest <- function(extra = list(), locale = "en") {
     list()
   }
   manifest <- list(
-    emp_version = "9.1.0",
+    emp_version = emp_web_version(),
     created = format(Sys.time(), tz = "UTC", format = "%Y-%m-%dT%H:%M:%SZ"),
     platform = platform,
     r_version = as.character(getRversion()),

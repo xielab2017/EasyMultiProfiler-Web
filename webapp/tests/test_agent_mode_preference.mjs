@@ -1,3 +1,4 @@
+import {createChatHistory,conversationMarkdown,downloadMarkdown} from '../frontend/js/chat_history.mjs';
 import {UI_LOCALES_FULL} from '../frontend/js/ui_locales_full.mjs';
 import {resolveAgentAction,assertAgentSubmission} from '../frontend/js/agent_actions.mjs';
 import {agentMemory} from '../frontend/js/agent_memory.mjs';
@@ -6,25 +7,26 @@ import {mountChatComposer} from '../frontend/js/chat_composer.mjs';
 import {appendChatMessage,createActivity,appendWorkflowCard,appendTaskReceipt} from '../frontend/js/chat_presentation.mjs';
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';
 const code=fs.readFileSync(new URL('../frontend/js/analysis_guide.js',import.meta.url),'utf8').replace(/^import .*;$/mg,'').replace('export function mountAnalysisGuide','function mountAnalysisGuide');
-function fixture(store={}){
+function fixture(store={},contract=2){
  const nodes=new Map(),events={},sent=[],applied=[];let reply={status:'ok',answer:'fixture'};let context={workflow:'analysis',tab:'ana-diff',hasExperiment:true};
  class El{constructor(){this.children=[];this.handlers={};this.value='';this.checked=false;}set id(v){this._id=v;nodes.set(v,this);}get id(){return this._id;}append(...x){this.children.push(...x);}replaceChildren(...x){this.children=x;}setAttribute(){}addEventListener(k,f){this.handlers[k]=f;}}
- const sandbox=vm.createContext({UI_LOCALES_FULL,document:{createElement:()=>new El(),getElementById:id=>nodes.get(id)||null,querySelector:()=>null},window:{addEventListener:(k,f)=>{events[k]=f;},dispatchEvent(){}},localStorage:{getItem:k=>store[k],setItem:(k,v)=>{store[k]=v;}},getLocale:()=> 'zh',guideFor:()=>({title:'test',requirements:[],checks:[],steps:[]}),modelQuestion:(x,c)=>x+'\nScope: '+c.workflow,currentAgentAction:()=>({}),resolveAgentAction,assertAgentSubmission,resolveHeatmapSize(){},rRequest:async()=>({success:true,features:{}}),fetch:async(path,options)=>{if(options?.body)sent.push(JSON.parse(options.body));return {ok:true,json:async()=>options?.body?reply:{status:'ready',provider:'fixture',config_revision:1}};},Blob,URL,setTimeout});
- Object.assign(sandbox,{agentMemory,bindChatFollow,mountChatComposer:(_,options)=>mountChatComposer(_,{...options,doc:sandbox.document}),appendTaskReceipt:(root,id,options)=>appendTaskReceipt(root,id,{...options,doc:sandbox.document}),appendChatMessage:(root,role,text,options)=>appendChatMessage(root,role,text,{...options,doc:sandbox.document}),createActivity:(root,options)=>createActivity(root,{...options,doc:sandbox.document}),appendWorkflowCard:(root,proposal,apply,options)=>appendWorkflowCard(root,proposal,apply,{...options,doc:sandbox.document})});
+ const sandbox=vm.createContext({UI_LOCALES_FULL,document:{createElement:()=>new El(),getElementById:id=>nodes.get(id)||null,querySelector:()=>null},window:{addEventListener:(k,f)=>{events[k]=f;},dispatchEvent(){}},localStorage:{getItem:k=>store[k],setItem:(k,v)=>{store[k]=v;}},getLocale:()=> 'zh',guideFor:()=>({title:'test',requirements:[],checks:[],steps:[]}),modelQuestion:(x,c)=>x+'\nScope: '+c.workflow,currentAgentAction:()=>({}),resolveAgentAction,assertAgentSubmission,resolveHeatmapSize(){},rRequest:async()=>({success:true,features:{}}),fetch:async(path,options)=>{if(options?.body)sent.push(JSON.parse(options.body));return {ok:true,json:async()=>options?.body?reply:{status:'ready',provider:'fixture',config_revision:1,chat_contract_version:contract}};},Blob,URL,setTimeout});
+ Object.assign(sandbox,{createChatHistory,conversationMarkdown,downloadMarkdown,agentMemory,bindChatFollow,mountChatComposer:(_,options)=>mountChatComposer(_,{...options,doc:sandbox.document}),appendTaskReceipt:(root,id,options)=>appendTaskReceipt(root,id,{...options,doc:sandbox.document}),appendChatMessage:(root,role,text,options)=>appendChatMessage(root,role,text,{...options,doc:sandbox.document}),createActivity:(root,options)=>createActivity(root,{...options,doc:sandbox.document}),appendWorkflowCard:(root,proposal,apply,options)=>appendWorkflowCard(root,proposal,apply,{...options,doc:sandbox.document})});
  vm.runInContext(code+';globalThis.mount=mountAnalysisGuide',sandbox);const controller=sandbox.mount(new El(),{snapshot:()=>context,focusSettings(){},openWorkbench(value){applied.push(value);}});
  return {nodes,events,sent,applied,setReply:x=>{reply=x;},controller,setContext:x=>{context=x;},store};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 test('agent mode persists across replies, context changes, and remounts',async()=>{
- const f=fixture();await tick();const mode=f.nodes.get('analysis-agent-mode');mode.checked=true;mode.handlers.change();
- f.setContext({workflow:'analysis',tab:'ana-cor',hasExperiment:true});f.controller.refresh();assert.equal(mode.checked,true);
- f.nodes.get('analysis-guide-question').value='fixture question';await f.nodes.get('analysis-guide-ask').onclick();assert.equal(mode.checked,true);
- const again=fixture(f.store);assert.equal(again.nodes.get('analysis-agent-mode').checked,true);
- mode.checked=false;mode.handlers.change();assert.equal(fixture(f.store).nodes.get('analysis-agent-mode').checked,false);
+ const f=fixture();await tick();const mode=f.nodes.get('analysis-agent-mode');mode.value='agent';mode.handlers.change();
+ f.setContext({workflow:'analysis',tab:'ana-cor',hasExperiment:true});f.controller.refresh();assert.equal(mode.value,'agent');
+ f.nodes.get('analysis-guide-question').value='fixture question';await f.nodes.get('analysis-guide-ask').onclick();assert.equal(mode.value,'agent');
+ assert.equal(f.sent[0].chat_mode,'agent');
+ const again=fixture(f.store);assert.equal(again.nodes.get('analysis-agent-mode').value,'agent');
+ mode.value='chat';mode.handlers.change();assert.equal(fixture(f.store).nodes.get('analysis-agent-mode').value,'chat');
 });
 test('result interpretation remains read-only without turning persistent agent mode off',async()=>{
  const f=fixture({'emp_agent_mode_enabled_v1':'true'});await tick();f.events['emp:interpret-result']({detail:{question:'Interpret only',analysis_type:'differential'}});await tick();
- assert.equal(f.nodes.get('analysis-agent-mode').checked,true);assert.match(f.sent[0].question,/Local task submission is not granted/);
+ assert.equal(f.nodes.get('analysis-agent-mode').value,'agent');assert.match(f.sent[0].question,/Local task submission is not granted/);assert.equal(f.sent[0].chat_mode,'chat');
 });
 
 test('uploaded matrix triggers LLM guidance and count-compatible draft can populate steps without running',async()=>{
@@ -62,4 +64,29 @@ test('an agent-submitted background job resumes the original request once after 
  f.setReply({status:'ok',answer:'Plot ready'});f.events['emp:jobs-updated']({detail:{jobs:[{id:'fixture-pca',status:'done',progress:100}]}});await new Promise(r=>setTimeout(r,10));
  assert.equal(f.sent.length,2);assert.match(f.sent[1].question,/fixture-pca/);assert.match(f.sent[1].question,/不要重复提交/);
  f.events['emp:jobs-updated']({detail:{jobs:[{id:'fixture-pca',status:'done',progress:100}]}});await tick();assert.equal(f.sent.length,2);
+});
+
+test('output type persists and travels with each request independently of mode',async()=>{
+ const old=Object.getOwnPropertyDescriptor(globalThis,'localStorage'),values=new Map();
+ Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value)}});
+ try{
+  const first=fixture();await tick();
+  const select=first.nodes.get('analysis-output-type');assert.equal(select.value,'answer');
+  select.value='comparison';select.onchange();
+  const second=fixture();await tick();assert.equal(second.nodes.get('analysis-output-type').value,'comparison');
+  second.nodes.get('analysis-guide-question').value='Compare these two supplied summaries';
+  await second.nodes.get('analysis-guide-ask').onclick();
+  assert.equal(second.sent[0].output_type,'comparison');assert.equal(second.sent[0].chat_mode,'chat');
+ }finally{if(old)Object.defineProperty(globalThis,'localStorage',old);else delete globalThis.localStorage;}
+});
+
+test('legacy services keep working with their original request fields',async()=>{
+ const older=fixture({},1);await tick();
+ assert.equal(older.nodes.get('analysis-output-type').disabled,true);
+ older.nodes.get('analysis-agent-mode').value='chat';
+ older.nodes.get('analysis-guide-question').value='Read my summary';
+ await older.nodes.get('analysis-guide-ask').onclick();
+ assert.equal(Object.hasOwn(older.sent[0],'chat_mode'),false);
+ assert.equal(Object.hasOwn(older.sent[0],'output_type'),false);
+ assert.match(older.sent[0].question,/^UI scope: interpretation;/);
 });

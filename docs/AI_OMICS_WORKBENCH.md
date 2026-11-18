@@ -22,7 +22,7 @@
 bash webapp/scripts/start_local.sh
 ```
 
-macOS / Linux 需要 Python >=3.10、R >=4.3.3 和项目已有依赖。若系统 `python3` 是旧版，设置 `EMPI_PYTHON` 指向已安装的合适解释器，例如项目已有的 `.local_run/metadata_venv/bin/python`。Windows 使用 `webapp/scripts/start_local_windows.ps1`。本次未执行原生 Windows 启动验证。
+macOS / Linux 需要 Python >=3.10、R >=4.3.3 和项目已有依赖。启动器会查找符合要求的 Python，包括项目的 `.local_run/metadata_venv` 和已注册的 Conda 环境。可用 `EMPI_PYTHON` 指定解释器路径。Windows 使用 `webapp/scripts/start_local_windows.ps1`。本次未执行原生 Windows 启动验证。
 
 完整启动器同时管理 R API、静态页面及元数据/工作台服务。元数据端口默认 8081，可通过 `EMP_PUBLIC_DATA_PORT` 配置，须与 API、页面及 gateway 端口不同。停止脚本只处理当前源码目录记录且能核对身份的 PID。启动器涉及已有服务的重启，请在当前任务结束后再使用；本次验证使用独立端口，没有重启用户现有服务。
 

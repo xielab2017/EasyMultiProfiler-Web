@@ -47,38 +47,6 @@ emp_min_r_version() {
   echo "4.3.3"
 }
 
-# Compare dotted version strings ($1 >= $2 ?).
-emp_ver_ge() {
-  local v1="$1" v2="$2" IFS=.
-  local i a b
-  local -a aa bb
-  read -r -a aa <<< "$v1"
-  read -r -a bb <<< "$v2"
-  for i in 0 1 2; do
-    a="${aa[i]:-0}"; b="${bb[i]:-0}"
-    if (( a > b )); then return 0; fi
-    if (( a < b )); then return 1; fi
-  done
-  return 0
-}
-
-# Return the installed R version, or empty.
-emp_detect_r_version() {
-  if command -v "${EMPI_RSCRIPT:-Rscript}" >/dev/null 2>&1; then
-    "${EMPI_RSCRIPT:-Rscript}" -e 'cat(as.character(getRversion()))' 2>/dev/null
-  fi
-}
-
-# Decide whether we need to install R.
-emp_need_r_install() {
-  local want_min cur
-  want_min="$(emp_min_r_version)"
-  cur="$(emp_detect_r_version)"
-  if [[ -z "$cur" ]]; then return 0; fi
-  if emp_ver_ge "$cur" "$want_min"; then return 1; fi
-  return 0
-}
-
 # Decide whether we need to install git.
 emp_need_git_install() {
   command -v git >/dev/null 2>&1 && return 1 || return 0
@@ -86,14 +54,7 @@ emp_need_git_install() {
 
 # Decide whether we need to install python3.
 emp_need_python_install() {
-  for c in python3 python; do
-    if command -v "$c" >/dev/null 2>&1; then
-      if "$c" -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,10) else 1)" 2>/dev/null; then
-        return 1
-      fi
-    fi
-  done
-  return 0
+  ! bash "$(dirname "${BASH_SOURCE[0]}")/../resolve_python.sh" >/dev/null 2>&1
 }
 
 # Print "Y" to allow emp_install_r to run with elevated privileges when needed.

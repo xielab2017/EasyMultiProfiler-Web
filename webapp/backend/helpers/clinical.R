@@ -699,9 +699,11 @@ make_clinical_three_line_table_experiment <- function(session_id, experiment, gr
 }
 
 .clinical_count_paired_samples <- function(design) {
-  pair_key_before <- unique(design$pair_key[design$phase == "before" & !is.na(design$cohort) & nzchar(design$pair_key)])
-  pair_key_after <- unique(design$pair_key[design$phase == "after" & !is.na(design$cohort) & nzchar(design$pair_key)])
-  length(intersect(pair_key_before, pair_key_after))
+  complete <- !is.na(design$cohort) & !is.na(design$pair_key) & nzchar(design$pair_key)
+  pairs <- unique(design[complete, c("cohort", "pair_key", "phase"), drop = FALSE])
+  before <- subset(pairs, phase == "before", select = c(cohort, pair_key))
+  after <- subset(pairs, phase == "after", select = c(cohort, pair_key))
+  nrow(merge(before, after, by = c("cohort", "pair_key")))
 }
 
 .clinical_fmt_med_iqr <- function(v) {
@@ -796,15 +798,21 @@ make_clinical_three_line_table_experiment <- function(session_id, experiment, gr
   baseline_cd <- cd
   baseline_group_var <- .clinical_preferred_group_var(cd, group_var = group_var, max_levels = max_levels)
   if (is.null(baseline_group_var) || !nzchar(baseline_group_var)) baseline_group_var <- group_var
-  if (isTRUE(longitudinal) && (is.null(group_var) || !nzchar(group_var))) {
-    keep_base <- design$phase == "before" & !is.na(design$cohort)
+  if (longitudinal) {
+    labelled <- design[!is.na(design$phase) & !is.na(design$cohort), , drop = FALSE]
+    if (anyDuplicated(labelled[c("cohort", "pair_key", "phase")])) {
+      stop("Invalid paired design: duplicate patient and visit within a cohort; review repeated measurements")
+    }
+    keep_base <- !is.na(design$phase) & design$phase == "before" & !is.na(design$cohort)
     if (length(cohorts_to_run) && !identical(sort(cohorts_to_run), sort(c("UC", "IBS")))) {
       keep_base <- keep_base & design$cohort %in% cohorts_to_run
     }
     if (any(keep_base)) {
       baseline_cd <- cd[keep_base, , drop = FALSE]
-      baseline_cd$Cohort <- design$cohort[keep_base]
-      baseline_group_var <- "Cohort"
+      if (is.null(group_var) || !nzchar(group_var)) {
+        baseline_cd$Cohort <- design$cohort[keep_base]
+        baseline_group_var <- "Cohort"
+      }
     }
   }
 
@@ -883,9 +891,7 @@ make_clinical_three_line_table_experiment <- function(session_id, experiment, gr
   if (length(cohorts_to_run) && !identical(sort(cohorts_to_run), sort(c("UC", "IBS")))) {
     d <- d[d$cohort %in% cohorts_to_run, , drop = FALSE]
   }
-  pair_key_before <- unique(d$pair_key[d$phase == "before"])
-  pair_key_after <- unique(d$pair_key[d$phase == "after"])
-  n_pairs_total <- length(intersect(pair_key_before, pair_key_after))
+  n_pairs_total <- .clinical_count_paired_samples(d)
   if (!longitudinal) {
     grp_var <- .clinical_preferred_group_var(cd, group_var = group_var, max_levels = max_levels)
     between_tbl <- .clinical_cross_group_table(cd = cd, group_var = grp_var)
@@ -1531,6 +1537,13 @@ run_clinical_marker_model <- function(session_id, experiments, outcome_var,
   suppressWarnings(as.numeric(v))
 }
 
+.clinical_heatmap_preview <- function(ph, width, height) {
+  tryCatch(plot_to_base64(ph, width, height), error = function(e) {
+    message("Clinical heatmap preview failed: ", conditionMessage(e))
+    NA_character_
+  })
+}
+
 # ---------------------------------------------------------------------------
 # run_clinical_cor(session_id, experiment, traits, method, top_n_features,
 #                   p_adjust, on_progress = NULL)
@@ -1689,25 +1702,8 @@ run_clinical_cor <- function(session_id, experiment, traits,
       silent          = TRUE
     )
 
-    if (!is.null(pdf_path) && nzchar(pdf_path)) {
-      tryCatch(save_plot_pdf(ph, pdf_path, width = auto_w, height = auto_h),
-               error = function(e) message("[clinical_cor] PDF write failed: ",
-                                            conditionMessage(e)))
-      pdf_out <- pdf_path
-    }
-    png_b64 <- tryCatch({
-      tmp <- tempfile(fileext = ".png"); on.exit(if (file.exists(tmp)) file.remove(tmp))
-      if (requireNamespace("ragg", quietly = TRUE)) {
-        ragg::agg_png(tmp, width = auto_w, height = auto_h,
-                       units = "in", res = 300, background = "white")
-      } else {
-        grDevices::png(tmp, width = auto_w, height = auto_h, units = "in",
-                        res = 300, bg = "white",
-                        type = if (.Platform$OS.type == "windows") "windows" else "cairo")
-      }
-      grid::grid.newpage(); grid::grid.draw(ph$gtable); grDevices::dev.off()
-      base64enc::base64encode(tmp)
-    }, error = function(e) NA_character_)
+    pdf_out <- viz_optional_pdf(ph, pdf_path, auto_w, auto_h)
+    png_b64 <- .clinical_heatmap_preview(ph, auto_w, auto_h)
   }
 
   bump(100, "Done")
@@ -1809,12 +1805,7 @@ make_fitline_scatter <- function(session_id, experiment, feature, trait,
   if (!is.finite(width))  width  <- 7
   if (!is.finite(height)) height <- 5.5
 
-  pdf_out <- NULL
-  if (!is.null(pdf_path) && nzchar(pdf_path)) {
-    tryCatch({ grDevices::pdf(pdf_path, width = width, height = height); print(p); grDevices::dev.off() },
-             error = function(e) message("[fitline] PDF write failed: ", conditionMessage(e)))
-    pdf_out <- pdf_path
-  }
+  pdf_out <- viz_optional_pdf(p, pdf_path, width, height)
   png_b64 <- plot_to_base64(p, width = width, height = height)
   list(
     png = png_b64, pdf = pdf_out, r = r_val, p = p_val, n = nrow(df),
@@ -1931,25 +1922,8 @@ run_clinical_wgcna <- function(session_id, experiment, traits = NULL,
                               "* p<=0.05   ** p<=0.01   *** p<=0.001"),
     silent          = TRUE
   )
-  pdf_out <- NULL
-  if (!is.null(pdf_path) && nzchar(pdf_path)) {
-    tryCatch(save_plot_pdf(ph, pdf_path, width = auto_w, height = auto_h),
-             error = function(e) message("[wgcna] PDF write failed: ", conditionMessage(e)))
-    pdf_out <- pdf_path
-  }
-  png_b64 <- tryCatch({
-    tmp <- tempfile(fileext = ".png"); on.exit(if (file.exists(tmp)) file.remove(tmp))
-    if (requireNamespace("ragg", quietly = TRUE)) {
-      ragg::agg_png(tmp, width = auto_w, height = auto_h, units = "in", res = 300,
-                     background = "white")
-    } else {
-      grDevices::png(tmp, width = auto_w, height = auto_h, units = "in",
-                      res = 300, bg = "white",
-                      type = if (.Platform$OS.type == "windows") "windows" else "cairo")
-    }
-    grid::grid.newpage(); grid::grid.draw(ph$gtable); grDevices::dev.off()
-    base64enc::base64encode(tmp)
-  }, error = function(e) NA_character_)
+  pdf_out <- viz_optional_pdf(ph, pdf_path, auto_w, auto_h)
+  png_b64 <- .clinical_heatmap_preview(ph, auto_w, auto_h)
 
   # Long table of module–trait associations.
   long <- data.frame(

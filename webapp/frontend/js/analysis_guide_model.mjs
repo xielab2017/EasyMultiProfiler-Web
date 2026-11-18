@@ -88,25 +88,31 @@ export function modelQuestion(question, context = {}) {
   if(context.plotSettings&&step==='viz-heatmap')question+='\nCurrent heatmap settings: '+JSON.stringify(Object.fromEntries(Object.entries(context.plotSettings).filter(([key,value])=>['width_inches','height_inches','top_n'].includes(key)&&typeof value==='number'&&Number.isFinite(value))));
   let message=`UI scope: ${workflow}; registered step: ${step}.\nQuestion: ${question.trim()}`;
   if(context.locale)message+='\nRespond in '+(['zh','zh-TW'].includes(context.locale)?'Chinese':'the selected UI language ('+context.locale+')')+'.';
+  if(context.outputInstruction) {
+    const style='\nOutput: '+context.outputInstruction;
+    const historyStart=message.indexOf('\nPrior conversation for reference only;');
+    if(historyStart>=0 && message.length+style.length>3650)message=message.slice(0,Math.max(historyStart,3650-style.length));
+    message+=style;
+  }
   const cap=3700;
   if(context.completedUi?.length){const log=JSON.stringify(context.completedUi.slice(-5));if(message.length+log.length+100<=cap)message+='\nAlready completed local actions (do not repeat; proceed to the next requested action): '+log;}
   if(context.pageContext){
     const input=context.pageContext,p={page:workflow};
-    if(context.availableAction)p.submit_current=context.availableAction;
+    if(!context.readOnly&&context.availableAction)p.submit_current=context.availableAction;
     if(input.experiment)p.experiment=input.experiment;
-    p.navigation={differential:'analysis:ana-diff',PCA:'analysis:ana-dim',volcano:'visualization:viz-volcano',heatmap:'visualization:viz-heatmap',ordination:'visualization:viz-scatter',GO_KEGG:'visualization:viz-enrichment-dotplot'};
+    if(!context.readOnly)p.navigation={differential:'analysis:ana-diff',PCA:'analysis:ana-dim',volcano:'visualization:viz-volcano',heatmap:'visualization:viz-heatmap',ordination:'visualization:viz-scatter',GO_KEGG:'visualization:viz-enrichment-dotplot'};
     if(input.workbench&&['workbench','matrix'].includes(workflow)){const w=input.workbench;p.readiness={active_input:workflow==='workbench',input:w.has_input,dataset:w.has_dataset,groups:w.group_count,unassigned:w.unassigned,design_review:w.needs_design_review,relationship:w.sample_relationship,pairing:w.pairing_review,grouping_warnings:w.grouping_warnings};if(w.accession)p.accession=w.accession;}
     if(input.profile)p.matrix={features:input.profile.feature_count,samples:input.profile.candidate_sample_columns,count_compatible:input.profile.count_compatible,negative:input.profile.negative_cells,missing:input.profile.missing_or_nonfinite_cells};
     const append=()=>{const json=JSON.stringify(p);return message.length+json.length+23<=cap;};
     if(!append()){delete p.matrix;}
     if(append()){
-      const controls=[];for(const f of input.fields||[]){const row={id:f.id,type:f.type,value:String(f.value||'').slice(0,80),options:f.options?.slice(0,12)};controls.push(row);p.fields=controls;if(!append()){controls.pop();break;}}
+      const controls=[];for(const f of context.readOnly?[]:(input.fields||[])){const row={id:f.id,type:f.type,value:String(f.value||'').slice(0,80),options:f.options?.slice(0,12)};controls.push(row);p.fields=controls;if(!append()){controls.pop();break;}}
       if(!controls.length)delete p.fields;
       if(input.workbench?.steps){p.selected_steps=input.workbench.steps;if(!append())delete p.selected_steps;}
       if(input.files?.length){p.files=input.files.slice(0,5);if(!append())delete p.files;}
       p.status=(input.statuses||[]).map(x=>String(x).slice(0,160)).slice(-1);if(!append())delete p.status;
       if(input.headings?.length){p.headings=input.headings.slice(0,3);if(!append())delete p.headings;}
-      message+='\nCurrent page controls: '+JSON.stringify(p);
+      message+=(context.readOnly?'\nCurrent page summary: ':'\nCurrent page controls: ')+JSON.stringify(p);
     }
   }
   if(context.memory){const memory=JSON.stringify(context.memory);if(memory.length<700&&message.length+memory.length+50<=cap)message+='\nPreferences only, never scientific evidence: '+memory;}

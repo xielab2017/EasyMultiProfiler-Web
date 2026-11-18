@@ -1,0 +1,17 @@
+{
+  "abi": "emp.analysis.v1",
+  "id": "sample-quality",
+  "name": "Sample quality summary",
+  "version": "1.0.0",
+  "permissions": ["assay.read", "job.result.write"],
+  "definition": {
+    "axis": "sample",
+    "metrics": [
+      {"key":"observed","expression":{"stat":"observed"}},
+      {"key":"missing","expression":{"stat":"missing"}},
+      {"key":"mean","expression":{"stat":"mean"}},
+      {"key":"sd","expression":{"stat":"sd"}},
+      {"key":"cv","expression":{"op":"divide","left":{"stat":"sd"},"right":{"stat":"mean"}}}
+    ]
+  }
+}

@@ -3,7 +3,7 @@ import {UI_LANGUAGE_ALIASES} from './ui_language_aliases.mjs';
 import {buildUIIndex,localizeUI,observeUILanguage} from './ui_language.mjs';
 import {UI_LANGUAGE_PAIRS} from './ui_language_catalog.mjs';
 /**
- * UI locale (v9.3.0): Auto (IP country -> browser language) or a manual
+ * UI locale (v10.5.1): Auto (IP country -> browser language) or a manual
  * choice from SUPPORTED_LOCALES (zh, zh-TW, en, ja, ko, ar, es, fr, de,
  * pt, ru). Arabic resolves to an RTL document direction.
  * Dispatches emp:locale-change when the active locale changes.
@@ -252,7 +252,7 @@ let _mode = "auto";
 let _autoMeta = { country: "", source: "browser" };
 
 export function getLocale() {
-  // v9.3.0: returns the actual resolved locale code (for example "ja",
+  // v10.5.1: returns the actual resolved locale code (for example "ja",
   // "ko", "ar", "zh-TW"), not the old binary zh/en. Callers that compare
   // ==="zh" keep zh behaviour for Simplified Chinese only; long-tail
   // strings for other locales fall back through t().
@@ -316,7 +316,7 @@ async function fetchIpCountry() {
 }
 
 async function detectLocaleAuto() {
-  // Manual-less resolution chain (v9.3.0):
+  // Manual-less resolution chain (v10.5.1):
   //   1. IP country (fetchIpCountry) -> localeForCountry
   //   2. browser language -> localeForBrowserLang
   //   3. product default "zh" (preserved product decision: the primary
@@ -370,9 +370,9 @@ function applyCourseBanner() {
   if (!root) return;
   const loc = getLocale();
   if (!isZhFamily(loc)) {
-    root.innerHTML = `<strong>v9.3.0</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
+    root.innerHTML = `<strong>v10.5.1</strong> · New users: see <button type="button" class="btn-link" id="btn-course-to-guide">Guide</button> in the sidebar (Mac vs Windows differ) · One-click demo + recommended defaults per lesson`;
   } else {
-    root.innerHTML = `<strong>v9.3.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
+    root.innerHTML = `<strong>v10.5.1</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>（Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」`;
   }
   document.getElementById("btn-course-to-guide")?.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent("emp:navigate", { detail: { page: "guide" } }));

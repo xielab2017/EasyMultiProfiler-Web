@@ -22,3 +22,25 @@ test('task receipts use server job progress and do not equate submission with co
  receipt.update({status:'running',progress:42,message:'PCA'});assert.match(text(root),/运行中 · 42%/);
  receipt.update({status:'error',progress:42,message:'Missing groups'});assert.match(text(root),/失败/);assert(!text(root).includes('已完成'));
 });
+
+test('read-only chat sends relevant page evidence without action controls',()=>{
+ const context={workflow:'workbench',tab:'main',availableAction:{button:'run-button'},pageContext:{profile:{feature_count:12},fields:[{id:'one-control',type:'text',value:'internal-control-value'}]}};
+ const chat=modelQuestion('Summarize this matrix',{...context,readOnly:true});
+ assert.match(chat,/"features":12/);assert.doesNotMatch(chat,/internal-control-value|run-button|navigation/);
+ const agent=modelQuestion('Prepare this workflow',context);
+ assert.match(agent,/internal-control-value/);assert.match(agent,/run-button/);
+});
+
+test('a long answer keeps its final paragraphs with larger profile output limits',()=>{
+  const root=new El('div');
+  renderRichText(root,'Research text. '.repeat(1350)+'\n\nFinal finding.',doc);
+  assert.match(text(root),/Final finding\.$/);
+});
+
+test('paper workflow renders ordered inert stages and keeps activity folded during a request',()=>{
+  const root=new El('div');
+  renderRichText(root,'```emp-flow\nSamples\n<img src=x>\nCounts\n```',doc);
+  assert.equal(root.children[0].tag,'ol');
+  assert.deepEqual(root.children[0].children.map(n=>n.textContent),['Samples','<img src=x>','Counts']);
+  assert.equal(createActivity(root,{doc}).card.open,false);
+});

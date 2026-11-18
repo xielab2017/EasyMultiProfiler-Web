@@ -46,15 +46,13 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
 esac
 
 r_version=""
-if command -v Rscript >/dev/null 2>&1; then
-  r_version="$(Rscript -e 'cat(as.character(getRversion()))' 2>/dev/null || true)"
+if rscript="$(bash "$(dirname "${BASH_SOURCE[0]}")/resolve_rscript.sh" 2>/dev/null)"; then
+  r_version="$("$rscript" --vanilla -e 'cat(as.character(getRversion()))' 2>/dev/null || true)"
 fi
 
 python_version=""
-if command -v python3 >/dev/null 2>&1; then
-  python_version="$(python3 -c 'import platform; print(platform.python_version())' 2>/dev/null || true)"
-elif command -v python >/dev/null 2>&1; then
-  python_version="$(python -c 'import platform; print(platform.python_version())' 2>/dev/null || true)"
+if py="$(bash "$(dirname "${BASH_SOURCE[0]}")/resolve_python.sh" 2>/dev/null)"; then
+  python_version="$("$py" -c 'import platform; print(platform.python_version())')"
 fi
 
 git_version=""

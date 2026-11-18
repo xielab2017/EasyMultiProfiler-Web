@@ -3,30 +3,27 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v9.3.0
+# EasyMultiProfiler Web · v10.5.1
 
-**开发版源码 · 内部版本 9.3.0** — 集成公开矩阵发现与下载、论文和 PDF 证据、AI Agent 对话、可选 Plan、分析工作台、后台任务、结果快照与组学可视化。
+**主分支版本 10.5.1** — 集成公开矩阵发现与下载、论文和 PDF 证据、AI Agent 对话、可选 Plan、分析工作台、后台任务、结果快照与组学可视化。
 
-![](https://img.shields.io/badge/version-9.3.0-1f6feb)
-![](https://img.shields.io/badge/branch-main-0e8a16)
+![](https://img.shields.io/badge/version-10.5.1-1f6feb)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
-> **分支**：[`main`](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main)
-> **版本**：`9.3.0`
+> **版本**：`10.5.1` · [主分支](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main) · [源码 ZIP](https://github.com/xielab2017/EasyMultiProfiler-Web/archive/refs/tags/v10.5.1.zip)
 
-## v9.3.0
+「插件」页面可安装第三方分析与展示插件。[插件开发与示例](plugins/README.md) · 外部模型服务可以通过独立目录接入「模型与 API」。[模型插件开发与使用说明](plugins/ai-providers/README.md) · [Zotero 模型配置、笔记和对话模式](docs/ZOTERO_CHAT.md)
 
-详见 [v9.3.0 更新说明](docs/RELEASE_NOTES_v9.3.0.md)。本次发布为 main 分支源码；页面、欢迎信息、指南、启动器和打包版本统一从 DESCRIPTION 同步。此前版本的安装包示例保留作历史参考，本次未发布新的二进制安装包。
+## v10.5.1
 
-- AI 对话支持跨页面上下文、图片/PDF 附件、可选计划和后台任务协作；按模型能力设置并保存思考深度。
-- 完善 GEO/PRIDE 处理矩阵下载、论文证据和样本匹配；组别、配对和原始计数依据需要明确核对。
-- 接入分析快照、GO/KEGG 与 GSEA 出图、组学专用图型和 PCA 椭圆；结果保留来源、参数及任务记录。
-- 顶部与左侧共用导航、顺序与可见范围；统一 11 种界面语言、工作台表单及导出卡片样式。
+- **插件管理。** 在目录预览、安装、启用和配置插件。卡片会根据窗口及聊天侧栏的可用宽度自动换行，设置、插件定义和卸载分别显示。
+- **插件商店。** 提供 Zotero 风格研究助手、样本质量概览、样本质量条形图和 Groq 模型接口，均有中英文预览。[浏览插件商店](https://xielab2017.github.io/EasyMultiProfiler-Web-Plugins/)。
+- **分析工作台。** 支持双组 bulk RNA-seq 方案的准备与审核、后台运行和可复现结果查看。[本版更新说明](docs/RELEASE_NOTES_v10.5.1.md)。
 
 ## v9.1.3 — 教学视频入口与真实失败提示
 
-**找不到新功能？** 请看[开发版启动说明](docs/START_NEW_FEATURES.md)。旧Release及main安装器不含独立分支更新；完整开发源码解压到新目录后，单独启动元数据服务。
+完整应用与独立元数据服务的启动方式见[启动说明](docs/START_NEW_FEATURES.md)。
 
 - 启动课程页及元数据页新增 `tutorial.html` 教程入口：原创图解操作视频，离线英文解说、中英文字幕及文字步骤。**不是实机录屏**，不展示未执行的R分析或真实AI调用；附可复现制作脚本及解说源文件。
 - 发现旧课程目录引用的20段完整MP4均不在仓库中。现在能区分缺片、解码及网络失败，提示用户、展开讲稿/分镜并可重试。此次没有补齐20节课程，也不会将阅读记为已看视频；原30秒预览保持独立。
@@ -35,7 +32,7 @@
 
 ## v9.1.2 — 安装安全与选中上下文智能体
 
-- 新增Linux/macOS/Windows元数据专用启动器，需Python≥3.10，不需要R。运行 `python webapp/scripts/launch_metadata.py --check` 查看只读诊断；按平台使用 `Start-EMP-Metadata.sh` / `.command` / `.cmd`。复现此版应克隆当前独立开发分支，不是main。
+- 新增Linux/macOS/Windows元数据专用启动器，需Python≥3.10，不需要R。运行 `python webapp/scripts/launch_metadata.py --check` 查看只读诊断；按平台使用 `Start-EMP-Metadata.sh` / `.command` / `.cmd`。
 - 完整服务默认loopback、Funnel关闭，增加依赖/端口检查、空格路径支持，不再因端口占用误杀其他进程；自定义API/Web端口传递给前端。旧runtime.env的显式设置仍保留，启动前应核查旧的远程绑定/Funnel配置。
 - 修复Fedora依赖分发、Mac R路径、web运行依赖和项目本地R库。原Linux仓库/签名设置错误，已删除该不安全自动配置；管理员需先从经批准来源安装R≥4.3.3，不宣称各平台完整R环境一键安装已验证。
 - AI可通过受限只读工具查看用户选中的数据清单、流程及已完成矩阵检查摘要。网页先预览脱敏摘要、单独确认发送，再用指纹绑定；不发送PDF、矩阵数值、路径或样本/组别名称。审计只含工具名/状态/耗时。
@@ -52,7 +49,7 @@
 
 NVIDIA指定模型 `nvidia/nemotron-3-ultra-550b-a55b` 及工具调用有官方文档，但尚未真实调用或使用密钥。密钥仅由服务器安全配置，模型默认关闭，每次请求需明确同意发送范围。
 
-详见[版本说明](docs/RELEASE_NOTES_v9.1.1.md)与[元数据服务指南](webapp/docs/PUBLIC_DATA_METADATA.md)。本次为源码开发更新，不宣称已构建/验证9.1.1安装包；下方旧安装说明作为既有功能参考。原v9.1.0分支不变。
+详见[版本说明](docs/RELEASE_NOTES_v9.1.1.md)与[元数据服务指南](webapp/docs/PUBLIC_DATA_METADATA.md)。本次为源码开发更新，不宣称已构建/验证9.1.1安装包。
 
 ![EasyMultiProfiler Web Education banner](docs/images/emp-web-v9-education-banner.png)
 
@@ -62,7 +59,7 @@ NVIDIA指定模型 `nvidia/nemotron-3-ultra-550b-a55b` 及工具调用有官方�
 
 EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API + 静态前端 + EasyMultiProfiler 核心）。
 
-**v9.1.0** 面向科研与教学场景，学生与课程用户可以：
+平台支持科研分析与教学，学生可在课程和导出页面完成以下操作：
 
 1. 在 **Course** 里按 case / 周次完成微课、测验与实操  
 2. 用 **学号 + 姓名（必填）+ 自设口令** 登录课程身份  
@@ -91,15 +88,13 @@ EasyMultiProfiler Web 是浏览器版多组学下游分析平台（Plumber R API
 
 ## 一键安装（按操作系统）
 
-下载与你的系统对应的发布包，解压后运行包内根目录的一键安装文件即可（会自动检查并补齐 git / python3 / R 与 EMP 依赖，并启动网页）：
+[下载 v10.5.1 源码 ZIP](https://github.com/xielab2017/EasyMultiProfiler-Web/archive/refs/tags/v10.5.1.zip)，解压后运行对应系统的安装文件。安装器准备依赖并启动本机网页。
 
-| 操作系统 | 发布包 | 一键安装 |
-|------|------|------|
-| **Windows** | `EasyMultiProfiler-Web-v9.1.0-windows.zip` | 双击 `Install-EMP-Web-Windows.bat` |
-| **macOS** | `EasyMultiProfiler-Web-v9.1.0-macos.zip` | 双击 `Install-EMP-Web-Mac.command` |
-| **Linux** | `EasyMultiProfiler-Web-v9.1.0-linux.zip` | 终端运行 `bash Install-EMP-Web-Linux.sh` |
-
-每个发布包内还有一个 `PLATFORM.txt`，写明该平台的安装入口与备用的一行命令。
+| 操作系统 | 解压目录内的安装文件 |
+|---|---|
+| **Windows** | 双击 `Install-EMP-Web-Windows.bat` |
+| **macOS** | 打开 `Install-EMP-Web-Mac.command` |
+| **Linux** | 在终端运行 `bash Install-EMP-Web-Linux.sh` |
 
 ## 一行命令启动（main）
 
@@ -240,11 +235,11 @@ EMP2026/
 | [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Windows 安装 |
 | [docs/USER_GUIDE_V5.md](docs/USER_GUIDE_V5.md) | 用户操作指南 |
 | [docs/CHIP_OPS_GUIDE.md](docs/CHIP_OPS_GUIDE.md) | ChIP-seq / CUT&RUN Step1+Step2 操作路径 |
-| [docs/RELEASE_NOTES_v9.1.0.md](docs/RELEASE_NOTES_v9.1.0.md) | 本版说明 |
+| [docs/RELEASE_NOTES_v9.1.0.md](docs/RELEASE_NOTES_v9.1.0.md) | v9.1.0 历史说明 |
 | [docs/NAR_MANUSCRIPT_PLAN.md](docs/NAR_MANUSCRIPT_PLAN.md) | NAR (Web Server issue) 投稿计划 |
 | [CHANGELOG_V7.md](CHANGELOG_V7.md) | V7 变更 |
 
-Full English documentation: [README.md](README.md) is the complete, standalone English README for v9.1.0 (installation, features, architecture, citation).
+英文安装、功能、架构及引用说明见 [README.md](README.md)。
 
 网页内左侧 **Guide** / **Course** 也有交互说明。
 
@@ -259,7 +254,7 @@ EasyMultiProfiler-Web/
 ├── docs/
 │   ├── images/                 # README 配图（banner / sync / architecture PNG）
 │   ├── TECHNICAL_MODE_V9_EDUCATION.svg
-│   └── RELEASE_NOTES_v9.1.0.md
+│   └── RELEASE_NOTES_v*.md
 ├── README.md                   # English (main)
 ├── README_CN.md                # 中文（本文件）
 ├── README_EN.md                # English pointer page

@@ -1,15 +1,7 @@
-# Open the development features / 启动开发版新功能
+# Start EasyMultiProfiler Web
 
-The v9.1.3 development branch is `codex/v9.1.0-public-data-metadata`. It is not the default/main branch, and the old GitHub release packages do not contain these changes. An earlier development-slice ZIP was an overlay, not a complete installer.
+Download the source ZIP from the [main README](../README.md), extract it, and run the installer for your operating system. Once installed, use `Run-EMP-Web-Mac.command`, `Run-EMP-Web-Windows.bat` or `Start-EMP-Web-Linux.sh` to start the full application. The terminal prints the local URL, normally http://127.0.0.1:8080. Open **Plugins** to browse the plugin catalog or **Course** for the tutorial.
 
-1. Obtain this branch's complete source archive and extract into a **new sibling folder**. Do not overwrite an existing installation or reuse its running services.
-2. Install Python 3.10+ from an approved official source if it is absent.
-3. Run `Start-EMP-Metadata.cmd` on Windows, `Start-EMP-Metadata.command` on macOS, or `bash Start-EMP-Metadata.sh` on Linux. Alternatively run `python webapp/scripts/launch_metadata.py` from the extracted folder.
-4. Open the exact URL printed in the terminal. Default: `http://127.0.0.1:8081/public_data.html`. This address refers to the same computer that runs the launcher. A changed port requires the printed URL.
-5. Confirm the page says **v9.1.3**. This page exposes papers/PDFs, public metadata, confirmed processed-matrix downloads, workflow preflight and the restricted agent adapter.
+The full application also starts the metadata sidecar. To run only metadata discovery, public matrix downloads and PDF inspection, use `Start-EMP-Metadata.sh`, `.command` or `.cmd` and open the URL printed by the launcher, normally http://127.0.0.1:8081. PDF extraction requires `pypdf`. Configure a provider in **Models and API** before using an external AI model.
 
-The original R application on port8080 is separate. Its new sidebar/startup link gives these instructions rather than implying the sidecar is running. Full R dependencies are not bundled or verified in the current environment. Local PDF extraction additionally requires `pypdf`. No credentials are provided or collected in the page, and a live AI model is not configured by installing the package.
-
-中文：下载独立开发分支完整源码，不是旧Release或源码增量包。解压到新目录，启动 `Start-EMP-Metadata` 对应平台脚本，打开终端输出的网址，并检查v9.1.3版本文字。旧首页8080与新元数据页8081是不同服务；如果端口占用，先确认已有服务来源，不要误停其他程序。完整源码不代表已安装R/Python依赖，也不代表真实AI已配置。
-
-Tutorial: `tutorial.html` is an illustrated English-narrated guide with bilingual subtitles, not a live screen recording. Twenty legacy full lesson videos remain absent; readable fallbacks explain this instead of displaying an unexplained failed player.
+从[中文版 README](../README_CN.md)下载源码并解压，按系统运行安装器。安装后使用对应启动器打开完整应用，默认地址为 http://127.0.0.1:8080。插件商店在「插件」页，教程在「课程」页。只需查找文献、查看 PDF 或下载公开矩阵时，运行对应系统的 `Start-EMP-Metadata` 启动器并打开终端给出的网址，默认端口为 8081。

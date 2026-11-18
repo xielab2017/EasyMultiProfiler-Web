@@ -59,8 +59,15 @@ viz_save_session_pdf <- function(p, session_id, experiment, kind,
     return(NULL)
   }
   path <- viz_session_pdf_path(session_id, experiment, kind)
-  tryCatch(save_plot_pdf(p, path, width = width, height = height),
-           error = function(e) NULL)
+  viz_optional_pdf(p, path, width, height)
+}
+
+viz_optional_pdf <- function(p, path, width, height) {
+  if (is.null(path) || !nzchar(path)) return(NULL)
+  tryCatch(save_plot_pdf(p, path, width, height), error = function(e) {
+    message("PDF export failed: ", conditionMessage(e))
+    NULL
+  })
 }
 
 # PNG preview + editable vector PDF for web download buttons.
@@ -250,61 +257,52 @@ detect_taxonomy <- function(feature_values) {
   list(sep = sep, level = level)
 }
 
-# Render a ggplot to base64-encoded PNG string at publication DPI (300).
+# pheatmap objects carry a grid table. Other plot wrappers use their print method.
+.viz_draw_plot <- function(p) {
+  if (inherits(p, "pheatmap")) {
+    grid::grid.newpage()
+    grid::grid.draw(p$gtable)
+  } else {
+    print(p)
+  }
+}
+
+# Render a ggplot or heatmap to a base64-encoded PNG at publication DPI.
 plot_to_base64 <- function(p, width = 9, height = 6, dpi = 300) {
   tmp <- tempfile(fileext = ".png")
-  on.exit(if (file.exists(tmp)) file.remove(tmp))
-  # Use device + print so S3/S4 plot wrappers can dispatch their own plot methods.
-  # ragg::agg_png yields better text rendering when available; fall back to grDevices::png.
-  use_ragg <- requireNamespace("ragg", quietly = TRUE)
-  if (use_ragg) {
-    ragg::agg_png(
-      filename = tmp,
-      width = width,
-      height = height,
-      units = "in",
-      res = dpi,
-      background = "white",
-      scaling = 1
-    )
+  on.exit(unlink(tmp))
+  previous <- grDevices::dev.cur()
+  if (requireNamespace("ragg", quietly = TRUE)) {
+    ragg::agg_png(tmp, width = width, height = height, units = "in",
+                  res = dpi, background = "white")
   } else {
-    grDevices::png(
-      filename = tmp,
-      width = width,
-      height = height,
-      units = "in",
-      res = dpi,
-      type = if (.Platform$OS.type == "windows") "windows" else "cairo",
-      bg = "white"
-    )
+    # Use R's platform bitmap device (Quartz on a standard macOS install).
+    grDevices::png(tmp, width = width, height = height, units = "in",
+                   res = dpi, bg = "white")
   }
-  tryCatch(
-    print(p),
-    error = function(e) {
-      grDevices::dev.off()
-      stop("Could not render plot object: ", conditionMessage(e))
-    }
-  )
-  grDevices::dev.off()
+  device <- grDevices::dev.cur()
+  if (device == previous) stop("Could not open the PNG graphics device.")
+  tryCatch(.viz_draw_plot(p), finally = grDevices::dev.off(device))
+  if (!isTRUE(file.size(tmp) > 0)) stop("The PNG graphics device produced no output.")
   base64enc::base64encode(tmp)
 }
 
-# Render a ggplot / pheatmap object (or anything with a plot method) to a PDF
-# file at the requested size.  Returns the file path on success.
+# Render an editable vector PDF and publish it only after drawing succeeds.
 save_plot_pdf <- function(p, path, width = 9, height = 6) {
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-  grDevices::pdf(file = path, width = width, height = height,
-                  useDingbats = FALSE, onefile = FALSE)
-  tryCatch(
-    {
-      if (inherits(p, "pheatmap")) grid::grid.draw(p$gtable) else print(p)
-    },
-    error = function(e) {
-      grDevices::dev.off()
-      stop("PDF render failed: ", conditionMessage(e))
-    }
-  )
-  grDevices::dev.off()
+  tmp <- tempfile(tmpdir = dirname(path), fileext = ".pdf")
+  on.exit(unlink(tmp))
+  if (capabilities("aqua")) {
+    grDevices::quartz(type = "pdf", file = tmp, width = width, height = height)
+  } else {
+    grDevices::pdf(file = tmp, width = width, height = height,
+                   useDingbats = FALSE, onefile = FALSE)
+  }
+  device <- grDevices::dev.cur()
+  tryCatch(.viz_draw_plot(p), finally = grDevices::dev.off(device))
+  if (!isTRUE(file.size(tmp) > 0) || !file.rename(tmp, path)) {
+    stop("Could not save PDF to ", path)
+  }
   if (identical(getOption("emp.viz_style", list())$figure_method, "self_built") && inherits(p, "ggplot")) {
     archive <- tempfile(pattern = paste0(tools::file_path_sans_ext(basename(path)), "_"), tmpdir = dirname(path))
     emp_export_figure_methods(p, archive, width, height, dpi = 300)
@@ -428,7 +426,7 @@ safe_api <- function(expr, res) {
       message <- conditionMessage(e)
       if (!is.null(res)) {
         lower <- tolower(message)
-        res$status <- if (grepl("access denied|ownership|allowed root|outside allowed|not allowed|invalid session_id|invalid project_id|invalid job_id", lower)) 403 else if (
+        res$status <- if (inherits(e, "emp_capacity_error")) 429 else if (inherits(e, "emp_validation_error")) 400 else if (grepl("access denied|ownership|allowed root|outside allowed|not allowed|invalid session_id|invalid project_id|invalid job_id", lower)) 403 else if (
           grepl("still running|wait before sync|busy or incomplete|conflict|homework sync blocked", lower)
         ) 409 else if (
           grepl("validation|metadata|sample|group|invalid|required|unsupported", lower)

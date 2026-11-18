@@ -1,7 +1,9 @@
+import {openPmcText} from './paper_reading.mjs';
 import {parseDiscovery,geoCandidates,repositoryCandidate} from './discovery_model.mjs';
 import {paperSummary} from './study_model.mjs';
 import {getLocale} from './locale.js?v=nav-language-20261108';
 const TEXT={
+ example:['试读 DESeq2 论文','Try the DESeq2 paper'], addAbstract:['将摘要加入对话','Attach abstract to chat'], addFull:['将 PMC 正文加入对话','Attach PMC article text to chat'], addPdf:['将本篇 PDF 加入对话','Attach this PDF to chat'], openFull:['在 PMC 阅读全文','Read article on PMC'],
  title:['论文与组学数据工作区','Paper and omics data workspace'],
  hint:['输入数据库编号、DOI、PMID 或论文题目，也可以上传 PDF。系统按论文中实际的数据来源提供后续入口；GEO 文件可在本页审核下载，其他数据库先查看其文件与访问条件。','Enter repository accessions, DOI, PMID or a paper title, or upload PDFs. Follow the actual sources. Review and download GEO files here; inspect files and access conditions at other repositories.'],
  placeholder:['例如：GSE60450、PXD000001、MTBLS1、PRJNA123456；或 DOI / PMID / 论文题目','e.g. GSE60450, PXD000001, MTBLS1, PRJNA123456; or DOI / PMID / paper title'],
@@ -49,13 +51,15 @@ if(root){
  const paperList=make('section');paperList.id='discovery-paper-list';const uploaded=[];
  const status=make('p');status.id='discovery-status';status.setAttribute('role','status');
  const articles=make('div'),paper=make('section',undefined,'discovery-paper'),candidates=make('div'),results=make('div');paper.id='discovery-paper';results.id='discovery-results';let manualCandidates=[];
- controls.append(clear);
+ const example=make('button',undefined,'btn btn-outline');
+ example.type='button';example.onclick=()=>{if(working)return;mode.value='auto';input.value='PMID 25516281';search.click();};
+ controls.append(example,clear);
  root.append(heading,hint,input,modeLabel,controls,pdfHeading,pdfInput,pdfLabel,filename,removePDF,pdfHint,paperList,status,articles,paper,candidates,results);
  const currentPaper=()=>paperSummary({...pdfExtraction,...extraction,evidence:[...(pdfExtraction?.evidence||[]),...(extraction?.evidence||[])]},currentFile?.name||'');
  async function api(op,body,extra={}){const response=await fetch('/api/public-data/'+op,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),credentials:'omit',redirect:'error',...extra});const data=await response.json();if(!response.ok)throw Error(data.error||`HTTP ${response.status}`);return data;}
  function setStatus(key,vars={}){statusMessage=key?{key,vars}:null;status.textContent=key?tr(key,vars):'';}
  function labels(){
-  heading.textContent=tr('title');hint.textContent=tr('hint');input.placeholder=tr('placeholder');input.setAttribute('aria-label',tr('title'));modeText.textContent=tr('mode');for(const option of mode.children)option.textContent=tr(option.value);
+  example.textContent=tr('example');heading.textContent=tr('title');hint.textContent=tr('hint');input.placeholder=tr('placeholder');input.setAttribute('aria-label',tr('title'));modeText.textContent=tr('mode');for(const option of mode.children)option.textContent=tr(option.value);
   search.textContent=tr('search');stop.textContent=tr('stop');pdfHeading.textContent=tr('pdf');pdfLabel.textContent=tr('file');clear.textContent=tr('clear');removePDF.textContent=tr('remove');pdfHint.textContent=tr('pdfHint',{max:pdfMaxBytes/1024**2});if(!pdfInput.files?.length)filename.textContent=tr('none');exportButton.textContent=tr('export');
   renderArticles();renderPaper();renderCandidates();renderStudies();renderPaperList();if(statusMessage)status.textContent=tr(statusMessage.key,statusMessage.vars);
  }
@@ -77,7 +81,37 @@ if(root){
   for(const row of dois){const button=make('button',tr('doi')+': '+row.doi,'btn btn-outline');button.type='button';button.onclick=()=>{input.value=row.doi;search.click();};paper.append(button);}
   if(context.evidence.length){const details=make('details'),summary=make('summary',tr('evidence'));details.append(summary);for(const row of context.evidence)details.append(make('p',tr('page',{pages:row.page})+' · '+row.text));paper.append(details);}
   if(pdfExtraction?.first_page_preview){const details=make('details');details.append(make('summary',tr('firstPage')),make('p',pdfExtraction.first_page_preview));paper.append(details);}
-  if(extraction?.abstract)paper.append(make('p',extraction.abstract.slice(0,1800),'hint'));
+  const selected=extraction, pdf=currentFile;
+  const reading=make('div',undefined,'wb-actions'), notice=make('p',undefined,'hint');
+  notice.setAttribute('role','status');
+  const attach=(key,obtain)=>{
+    const button=make('button',tr(key),'btn btn-outline');button.type='button';
+    button.onclick=async()=>{
+      button.disabled=true;notice.textContent=tr('loading');
+      try{
+        const file=await obtain();
+        if(!button.isConnected)return;
+        window.dispatchEvent(new CustomEvent('emp:attach-paper',{detail:{file}}));
+        notice.textContent='';
+      }catch(error){notice.textContent=tr('failed',{error:error.message});}
+      finally{button.disabled=false;}
+    };reading.append(button);
+  };
+  if(selected?.abstract){
+    paper.append(make('p',selected.abstract,'hint'));
+    attach('addAbstract',()=>new File([selected.title,'\nPMID ',selected.pmid,'\n',selected.url,'\n\nAbstract\n',selected.abstract], 'PMID-'+selected.pmid+'-abstract.txt',{type:'text/plain'}));
+  }
+  const pmc=(selected?.links||[]).map(link=>/^https:\/\/pmc\.ncbi\.nlm\.nih\.gov\/articles\/(PMC[1-9]\d*)\/?$/.exec(link.url)).find(Boolean);
+  if(pmc){
+    const link=make('a',tr('openFull'),'btn btn-outline');link.href=pmc[0];link.target='_blank';link.rel='noopener noreferrer';reading.append(link);
+    attach('addFull',async()=>{
+      const article=await openPmcText(pmc[1]);
+      const note=article.excerpt?'Section excerpts from PMC. […] marks omitted text.':'PMC article body';
+      return new File([selected.title.slice(0,500),'\n',pmc[0],'\n',note,'\n\n',article.text],pmc[1]+(article.excerpt?'-excerpts':'')+'.txt',{type:'text/plain'});
+    });
+  }
+  if(pdf&&pdfExtraction)attach('addPdf',()=>pdf);
+  paper.append(reading,notice);
   paper.append(make('p',tr('noInference'),'hint'));
  }
  function renderCandidates(){

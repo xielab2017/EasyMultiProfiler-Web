@@ -8,11 +8,11 @@ m16s_profile <- function(session_id, experiment, tax_sep = ";") {
   if (!length(taxa_parts)) stop("No taxonomy feature names were found.")
 
   tax_depth <- vapply(taxa_parts, function(parts) {
-    max(which(!is.na(parts) & nzchar(parts)), 0L)
+    sum(!is.na(parts) & nzchar(parts))
   }, integer(1))
   top_levels <- stats::setNames(rep(0L, length(.m16s_tax_levels)), .m16s_tax_levels)
   for (i in seq_along(.m16s_tax_levels)) {
-    top_levels[[i]] <- sum(tax_depth >= i, na.rm = TRUE)
+    top_levels[[i]] <- sum(vapply(taxa_parts, function(parts) !is.na(parts[i]) && nzchar(parts[i]), logical(1)))
   }
 
   list(

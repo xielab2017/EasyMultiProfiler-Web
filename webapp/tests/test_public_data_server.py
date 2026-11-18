@@ -29,6 +29,7 @@ class ServerTests(unittest.TestCase):
     def test_health(self):
         status,body=self.call('/api/public-data/health');self.assertEqual(status,200)
         self.assertFalse(json.loads(body)['download_enabled'])
+        self.assertEqual(json.loads(body)['version'], s.app_version())
     def test_resolve_to_plan(self):
         status,body=self.call('/api/public-data/resolve',{'accession':'SRR123'})
         self.assertEqual(status,200); value=json.loads(body)
@@ -51,7 +52,7 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(plan['blockers']);self.assertFalse(plan['download_enabled'])
         with self.assertRaises(s.metadata.MetadataError):s.download_plan(value,[],10**12)
     def test_manifest_expiry(self):
-        store=s.Store();key=store.put({});store.items[key]=(0,{})
+        store=s.Store();key=store.put({});store.items[key]=(s.time.monotonic()-1801,{})
         with self.assertRaises(s.metadata.MetadataError):store.get(key)
     def test_workflow_templates_and_invalid_plan(self):
         status,body=self.call('/api/public-data/workflows/templates')
@@ -74,6 +75,22 @@ class ServerTests(unittest.TestCase):
             status,body=self.call('/api/public-data/agent/respond',{'question':'public RNA-seq'})
             self.assertEqual(status,200);self.assertIn(json.loads(body)['status'],['unconfigured','consent_required'])
 
+    def test_connection_test_uses_candidate_sampling_and_preserves_active_profile(self):
+        from unittest.mock import patch
+        body = {'provider': 'custom', 'model': 'fixture-chat', 'base_url': 'http://localhost:9000/v1',
+                'enabled': True, 'consent': True, 'temperature': 0, 'max_tokens_output': 512}
+        before = s.agent_adapter.model_settings.active()
+        with patch.object(s.agent_adapter, 'build_opener') as opener:
+            response = opener.return_value.open.return_value.__enter__.return_value
+            response.read.return_value = b'{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}]}'
+            status, raw = self.call('/api/public-data/agent/test', body)
+            self.assertEqual(status, 200)
+            self.assertTrue(json.loads(raw)['chat_verified'])
+            self.assertFalse(json.loads(raw)['tool_verified'])
+            payload = json.loads(opener.return_value.open.call_args.args[0].data)
+            self.assertEqual((payload['temperature'], payload['max_tokens']), (0, 512))
+        self.assertEqual(s.agent_adapter.model_settings.active(), before)
+
     def test_context_preview_redacts_and_binds_digest(self):
         from unittest.mock import patch
         value=s.metadata.manifest(s.metadata.parse_ena(report()),'SRR123',selected=['SRR123'])
@@ -82,13 +99,16 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status,200);preview=json.loads(body)
         self.assertNotIn(b'SensitivePatient',body);self.assertEqual(preview['manifest']['selected_run_count'],1)
         request={'question':'Public context question','consent':True,'expected_provider':'openai',
-                 'context_ids':{'manifest_id':key},'context_sha256':'stale','context_consent':True}
+                 'context_ids':{'manifest_id':key},'context_sha256':'stale','context_consent':True,
+                 'chat_mode':'chat','output_type':'comparison'}
         with patch.object(s.agent_adapter,'status',return_value={'provider':'openai'}),patch.object(s.agent_adapter,'respond',return_value={'status':'ok'}) as respond:
             self.assertEqual(self.call('/api/public-data/agent/respond',request)[0],409);respond.assert_not_called()
             request['context_sha256']=preview['snapshot_sha256']
             self.assertEqual(self.call('/api/public-data/agent/respond',request)[0],200)
             self.assertEqual(respond.call_args.kwargs['context']['manifest']['request'],'SRR123')
             self.assertTrue(respond.call_args.kwargs['context_consent'])
+            self.assertEqual(respond.call_args.kwargs['chat_mode'],'chat')
+            self.assertEqual(respond.call_args.kwargs['output_type'],'comparison')
     def test_context_rejects_payloads_and_paths(self):
         for payload in [{'context':{'anything':'arbitrary'}}, {'context_ids':{'download_id':'../../secret'}},
                         {'context_ids':{'unexpected':'value'}}]:

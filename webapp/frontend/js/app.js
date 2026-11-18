@@ -1,3 +1,4 @@
+import {selectedStoreId} from './plugin_store.js';
 import {initAppVersion} from './app_version.mjs';
 import {syncTopNavigation,RETIRED_PAGES} from './navigation_sync.mjs';
 import {attachResultPlot} from './plot_attachment.mjs';
@@ -880,7 +881,12 @@ function navigateTo(page) {
   if (page === "preparation" && window._emp.currentExp) refreshPrepareSnapshots();
   if (page === "clinical") refreshClinicalVars();
   if (page === "course" || page === "prompts") onTeachingPage(page);
-  if (page === "guide") initGuide();
+  if (page === "guide") {
+    initGuide();
+    const main = document.getElementById("main");
+    main.scrollTop = 0;
+    main.scrollIntoView({ block: "start" });
+  }
   if (page === "chipseq") {
     ensureChipUnifiedLayout();
     refreshChipBamTable();
@@ -917,6 +923,7 @@ function openChipseqWorkspace({ skipNavigate = false } = {}) {
 }
 
 window.__empNavigate = navigateTo;
+window.addEventListener("hashchange", () => { if (selectedStoreId()) navigateTo("plugins"); });
 
 window.addEventListener("emp:toast", (e) => {
   const { msg, type } = e.detail || {};
@@ -950,6 +957,7 @@ document.getElementById("btn-help-guide")?.addEventListener("click", () => navig
 document.getElementById("btn-welcome-guide")?.addEventListener("click", () => {
   document.getElementById("welcome-card")?.classList.add("hidden");
   navigateTo("guide");
+  openGuideInstallTab();
 });
 document.getElementById("btn-course-to-guide")?.addEventListener("click", () => navigateTo("guide"));
 document.getElementById("btn-help-course")?.addEventListener("click", () => navigateTo("course"));
@@ -7851,7 +7859,7 @@ document.getElementById("clin-btn-marker-model")?.addEventListener("click", asyn
   if (localStorage.getItem("emp_welcome_dismissed")) {
     document.getElementById("welcome-card")?.classList.add("hidden");
   }
-  const savedPage = localStorage.getItem("emp_last_page");
+  const savedPage = selectedStoreId() ? "plugins" : localStorage.getItem("emp_last_page");
   if (savedPage && document.getElementById(`page-${savedPage}`)) {
     navigateTo(savedPage);
   } else {

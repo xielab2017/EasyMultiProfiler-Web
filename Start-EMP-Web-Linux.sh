@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${ROOT_DIR}"
 
 echo "================================================================"
-echo "  EasyMultiProfiler Web v9.1.0  (Linux launcher)"
+echo "  EasyMultiProfiler Web  (Linux launcher)"
 echo "  Folder: ${ROOT_DIR}"
 echo "  Windows users: use Run-EMP-Web-Windows.bat instead"
 echo "  macOS users:   use Run-EMP-Web-Mac.command instead"

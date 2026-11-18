@@ -21,34 +21,12 @@ API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-8080}"
 GATEWAY_PORT="${GATEWAY_PORT:-8090}"
 
-stop_pid_file() {
-  local pid_file="$1"
-  local label="${2:-process}"
-  if [[ -f "${pid_file}" ]]; then
-    local pid
-    pid="$(cat "${pid_file}" 2>/dev/null || true)"
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null &&
-       emp_command_belongs_to_repo "$(ps -p "$pid" -o args= 2>/dev/null || true)" "$ROOT_DIR"; then
-      kill "${pid}" 2>/dev/null || true
-      # Give graceful shutdown a moment, then force if still alive.
-      sleep 0.5
-      if kill -0 "${pid}" 2>/dev/null; then
-        kill -9 "${pid}" 2>/dev/null || true
-      fi
-      echo "Stopped ${label} PID ${pid}"
-    else
-      echo "No live ${label} for ${pid_file}"
-    fi
-    rm -f "${pid_file}"
-  fi
-}
-
-stop_pid_file "${API_PID_FILE}" "API"
-stop_pid_file "${WEB_PID_FILE}" "Web"
-stop_pid_file "${GW_PID_FILE}" "Gateway"
-stop_pid_file "${PIDS_DIR}/metadata.pid" "Metadata/workbench"
+emp_stop_recorded_process "${API_PID_FILE}" "$ROOT_DIR"
+emp_stop_recorded_process "${WEB_PID_FILE}" "$ROOT_DIR"
+emp_stop_recorded_process "${GW_PID_FILE}" "$ROOT_DIR"
+emp_stop_recorded_process "${PIDS_DIR}/metadata.pid" "$ROOT_DIR"
 for service in api web metadata; do
-  stop_pid_file "${PIDS_DIR}/workbench_runtime/${service}.pid" "Workbench ${service}"
+  emp_stop_recorded_process "${PIDS_DIR}/workbench_runtime/${service}.pid" "$ROOT_DIR"
 done
 
 echo "Recorded EMP services stopped; unrelated port listeners were not touched."

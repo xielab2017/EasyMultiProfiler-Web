@@ -17,9 +17,18 @@ SCRIPTS_DIR="${ROOT_DIR}/webapp/scripts"
 MODE="${1:-}"
 SKIP_INSTALL="${EMP_SKIP_INSTALL:-0}"
 
+for option in "$@"; do
+  if [[ "$option" == "--dry-run" ]]; then export EMP_DRY_RUN=1; fi
+done
+if [[ "${EMP_DRY_RUN:-0}" == "1" ]]; then
+  bash "${SCRIPTS_DIR}/check_prerequisites.sh"
+  exec bash "${SCRIPTS_DIR}/start_local.sh" --dry-run
+fi
+
 # ── V7: if R is missing, bootstrap R + git + python3 ───────────────────
-if ! command -v "${EMPI_RSCRIPT:-Rscript}" >/dev/null 2>&1; then
-  echo "[launch] R not found on PATH — invoking V7 auto-installer."
+if ! RSCRIPT="$(bash "${SCRIPTS_DIR}/resolve_rscript.sh")"; then
+  [[ -z "${EMPI_RSCRIPT:-}" ]] || exit 1
+  echo "[launch] No compatible R installation found — invoking auto-installer."
   bash "${INSTALL_DIR}/install_system_deps.sh" || {
     echo "[launch] System deps install failed."
     exit 1
@@ -28,32 +37,26 @@ if ! command -v "${EMPI_RSCRIPT:-Rscript}" >/dev/null 2>&1; then
     echo "[launch] R install failed."
     exit 1
   }
-  hash -r
+  RSCRIPT="$(bash "${SCRIPTS_DIR}/resolve_rscript.sh")"
 fi
+export EMPI_RSCRIPT="$RSCRIPT"
 
 bash "${SCRIPTS_DIR}/check_prerequisites.sh"
 
 need_install=0
 if [[ "${MODE}" == "--repair" ]] || [[ "${MODE}" == "repair" ]]; then
   need_install=1
-elif ! "${EMPI_RSCRIPT:-Rscript}" -e 'quit(status=if (requireNamespace("EasyMultiProfiler", quietly=TRUE)) 0 else 1)' 2>/dev/null; then
+elif ! "$RSCRIPT" --vanilla "${SCRIPTS_DIR}/check_runtime.R" "${ROOT_DIR}"; then
   need_install=1
-  echo "[launch] EasyMultiProfiler not found — first-time install will run (may take 15–40 min)."
 fi
 
-if [[ "${need_install}" -eq 1 ]] && [[ "${SKIP_INSTALL}" != "1" ]]; then
-  bash "${SCRIPTS_DIR}/install_runtime.sh"
+if [[ "${need_install}" -eq 1 ]]; then
+  if [[ "${SKIP_INSTALL}" == "1" ]]; then
+    echo "[launch] EMP_SKIP_INSTALL=1 — skipping R package installation."
+  else
+    echo "[launch] Installing R runtime packages."
+    bash "${SCRIPTS_DIR}/install_runtime.sh"
+  fi
 fi
 
-bash "${SCRIPTS_DIR}/start_local.sh"
-
-WEB_PORT="${WEB_PORT:-8080}"
-URL="http://127.0.0.1:${WEB_PORT}"
-if [[ "${EMP_NO_BROWSER:-0}" == "1" ]]; then
-  :
-elif command -v open >/dev/null 2>&1; then
-  open "${URL}" >/dev/null 2>&1 || true
-elif command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "${URL}" >/dev/null 2>&1 || true
-fi
-echo "EasyMultiProfiler Web is running: ${URL}"
+exec bash "${SCRIPTS_DIR}/start_local.sh" --open-browser

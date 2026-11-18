@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 source "${ROOT_DIR}/webapp/scripts/process_identity.sh"
+requested_dry_run="${EMP_DRY_RUN:-0}"
 RUNTIME_CONFIG="${ROOT_DIR}/webapp/config/runtime.env"
 if [[ -f "${RUNTIME_CONFIG}" ]]; then
   set -a
@@ -34,26 +35,17 @@ GW_LOG="${PIDS_DIR}/gateway.log"
 AUTH_JS="${ROOT_DIR}/webapp/frontend/js/runtime_auth.local.js"
 
 # Validate prerequisites before writing auth files or stopping existing services.
-PY=""
-for candidate in "${EMPI_PYTHON:-}" "${ROOT_DIR}/.local_run/metadata_venv/bin/python" python3 python; do
-  [[ -n "$candidate" ]] || continue
-  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 10))' >/dev/null 2>&1; then
-    PY="$candidate"
-    break
-  fi
-done
-[[ -n "$PY" ]] || { echo "Python >= 3.10 not found. Set EMPI_PYTHON to its executable." >&2; exit 1; }
-RSCRIPT="${EMPI_RSCRIPT:-Rscript}"
-command -v "$RSCRIPT" >/dev/null 2>&1 || { echo "Rscript not found. Install R >= 4.3.3 or set EMPI_RSCRIPT." >&2; exit 1; }
-"$RSCRIPT" --vanilla -e 'if (getRversion() < "4.3.3") quit(status=2)' || { echo "R >= 4.3.3 required." >&2; exit 1; }
+PY="$(bash "$ROOT_DIR/webapp/scripts/resolve_python.sh")"
+RSCRIPT="$(bash "${ROOT_DIR}/webapp/scripts/resolve_rscript.sh")"
+echo "Using Rscript: ${RSCRIPT}"
 command -v curl >/dev/null 2>&1 || { echo "curl is required for readiness checks." >&2; exit 1; }
 for port in "$API_PORT" "$WEB_PORT" "$GATEWAY_PORT" "$EMP_PUBLIC_DATA_PORT"; do
   [[ "$port" =~ ^[0-9]+$ ]] && (( 10#$port >= 1 && 10#$port <= 65535 )) || { echo "Invalid port: $port" >&2; exit 1; }
 done
 [[ "$API_PORT" != "$WEB_PORT" && "$API_PORT" != "$GATEWAY_PORT" && "$WEB_PORT" != "$GATEWAY_PORT" ]] || { echo "Service ports must be distinct." >&2; exit 1; }
 [[ "$EMP_PUBLIC_DATA_PORT" != "$API_PORT" && "$EMP_PUBLIC_DATA_PORT" != "$WEB_PORT" && "$EMP_PUBLIC_DATA_PORT" != "$GATEWAY_PORT" ]] || { echo "Metadata port must be distinct." >&2; exit 1; }
-if [[ "${EMP_DRY_RUN:-0}" == "1" ]]; then
-  printf 'Validated: API %s:%s; Web %s:%s; Funnel %s\n' "$API_HOST" "$API_PORT" "$WEB_HOST" "$WEB_PORT" "$EMP_ENABLE_FUNNEL"
+if [[ "${1:-}" == "--dry-run" || "$requested_dry_run" == "1" || "${EMP_DRY_RUN:-0}" == "1" ]]; then
+  printf 'Dry run validated: API %s:%s; Web %s:%s; Funnel %s\n' "$API_HOST" "$API_PORT" "$WEB_HOST" "$WEB_PORT" "$EMP_ENABLE_FUNNEL"
   exit 0
 fi
 
@@ -111,23 +103,10 @@ EOF
 
 ensure_network_auth
 
-kill_if_running() {
-  local pid_file="$1"
-  if [[ -f "${pid_file}" ]]; then
-    local pid
-    pid="$(cat "${pid_file}" 2>/dev/null || true)"
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null &&
-       emp_command_belongs_to_repo "$(ps -p "$pid" -o args= 2>/dev/null || true)" "$ROOT_DIR"; then
-      kill "${pid}" || true
-    fi
-    rm -f "${pid_file}"
-  fi
-}
-
-kill_if_running "${API_PID_FILE}"
-kill_if_running "${WEB_PID_FILE}"
-kill_if_running "${GW_PID_FILE}"
-kill_if_running "${METADATA_PID_FILE}"
+emp_stop_recorded_process "${API_PID_FILE}" "$ROOT_DIR"
+emp_stop_recorded_process "${WEB_PID_FILE}" "$ROOT_DIR"
+emp_stop_recorded_process "${GW_PID_FILE}" "$ROOT_DIR"
+emp_stop_recorded_process "${METADATA_PID_FILE}" "$ROOT_DIR"
 
 # Never terminate an unrelated application just because it owns a configured port.
 for port in "$API_PORT" "$WEB_PORT" "$EMP_PUBLIC_DATA_PORT"; do
@@ -135,7 +114,9 @@ for port in "$API_PORT" "$WEB_PORT" "$EMP_PUBLIC_DATA_PORT"; do
 import socket, sys
 with socket.socket() as sock:
     try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("127.0.0.1", int(sys.argv[1])))
+        sock.listen(1)
     except OSError as exc:
         sys.exit(f"Port {sys.argv[1]} unavailable: {exc}. Stop its owner or choose another port.")
 CHECK_PORT
@@ -145,11 +126,16 @@ start_detached() {
   local pid_file="$1"
   local log_file="$2"
   shift 2
-  # Always detach via nohup+bash so the recorded PID is the long-lived child
-  # (macOS has no setsid; bare `env ... &` can leave a short-lived wrapper PID
-  # and the API later gets reaped when the launcher shell exits).
-  nohup bash -c 'exec "$@"' _ "$@" >"${log_file}" 2>&1 < /dev/null &
-  echo $! > "${pid_file}"
+  # Give the service its own session so closing the launcher cannot reap it.
+  "$PY" - "$log_file" "$@" > "$pid_file" <<'DETACH'
+import subprocess
+import sys
+
+with open(sys.argv[1], "wb") as log:
+    process = subprocess.Popen(sys.argv[2:], stdin=subprocess.DEVNULL, stdout=log,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+    print(process.pid)
+DETACH
 }
 
 detect_lan_ip() {
@@ -340,36 +326,23 @@ start_detached "${WEB_PID_FILE}" "${WEB_LOG}" \
   env WEB_HOST="${WEB_HOST}" WEB_PORT="${WEB_PORT}" EMP_PUBLIC_DATA_PORT="${EMP_PUBLIC_DATA_PORT}" \
   "${PY}" "${ROOT_DIR}/webapp/scripts/static_server.py" "${WEB_PORT}" "webapp/frontend" "${WEB_HOST}"
 
-web_pid="$(cat "${WEB_PID_FILE}" 2>/dev/null || true)"
-if [[ -z "${web_pid}" ]] || ! kill -0 "${web_pid}" 2>/dev/null; then
-  echo "Frontend process exited immediately. Recent log:" >&2
-  tail -n 40 "${WEB_LOG}" >&2 || true
-  exit 1
-fi
-
 curl_ok() {
-  curl --noproxy '*' -fsS --retry 2 --retry-connrefused --retry-delay 1 --max-time 5 "$1" >/dev/null 2>&1
-}
-
-api_failed_in_log() {
-  [[ -f "${API_LOG}" ]] && grep -Eiq '(^|[^a-z])(error in|execution halted|cannot open|failed to start)' "${API_LOG}"
+  curl --noproxy '*' -fsS --max-time 3 "$1" >/dev/null 2>&1
 }
 
 wait_for_services() {
-  local max_attempts="${1:-120}"
-  local attempt api_ok web_ok metadata_ok
-  for attempt in $(seq 1 "${max_attempts}"); do
+  local timeout="${1:-120}"
+  local deadline=$((SECONDS + timeout))
+  local api_pid web_pid metadata_pid api_ok web_ok metadata_ok
+  while (( SECONDS < deadline )); do
     api_ok=1
     web_ok=1
     metadata_ok=1
     curl_ok "http://127.0.0.1:${API_PORT}/api/health" && api_ok=0
     curl_ok "http://127.0.0.1:${WEB_PORT}/" && web_ok=0
     curl_ok "http://127.0.0.1:${EMP_PUBLIC_DATA_PORT}/api/public-data/health" && metadata_ok=0
-    if [[ "${api_ok}" -eq 0 && "${web_ok}" -eq 0 && "${metadata_ok}" -eq 0 ]]; then
-      return 0
-    fi
     api_pid="$(cat "${API_PID_FILE}" 2>/dev/null || true)"
-    if [[ -z "$api_pid" ]] || ! kill -0 "$api_pid" 2>/dev/null || api_failed_in_log; then
+    if [[ -z "$api_pid" ]] || ! kill -0 "$api_pid" 2>/dev/null; then
       echo "API failed while starting. Recent log:"
       tail -n 80 "${API_LOG}" || true
       return 1
@@ -386,24 +359,38 @@ wait_for_services() {
       tail -n 40 "${PIDS_DIR}/metadata.log" || true
       return 1
     fi
+    if [[ "${api_ok}" -eq 0 && "${web_ok}" -eq 0 && "${metadata_ok}" -eq 0 ]]; then
+      return 0
+    fi
     sleep 1
   done
   if [[ "${api_ok}" -ne 0 ]]; then
-    echo "API did not become ready after ${max_attempts}s. Recent log:"
+    echo "API did not become ready within ${timeout}s. Recent log:"
     tail -n 80 "${API_LOG}" || true
   fi
   if [[ "${web_ok}" -ne 0 ]]; then
-    echo "Frontend did not become ready after ${max_attempts}s. Recent log:"
+    echo "Frontend did not become ready within ${timeout}s. Recent log:"
     tail -n 80 "${WEB_LOG}" || true
+  fi
+  if [[ "${metadata_ok}" -ne 0 ]]; then
+    echo "Matrix/workbench service did not become ready. Recent log:"
+    tail -n 40 "${PIDS_DIR}/metadata.log" || true
   fi
   return 1
 }
 
 if ! wait_for_services 120; then
-  kill_if_running "$API_PID_FILE"
-  kill_if_running "$WEB_PID_FILE"
-  kill_if_running "$METADATA_PID_FILE"
+  emp_stop_recorded_process "$API_PID_FILE" "$ROOT_DIR"
+  emp_stop_recorded_process "$WEB_PID_FILE" "$ROOT_DIR"
+  emp_stop_recorded_process "$METADATA_PID_FILE" "$ROOT_DIR"
   exit 1
 fi
 start_gateway_and_funnel
 print_access_urls
+if [[ "${1:-}" == "--open-browser" && "${EMP_NO_BROWSER:-0}" != "1" ]]; then
+  if command -v open >/dev/null 2>&1; then
+    open "http://127.0.0.1:${WEB_PORT}" >/dev/null 2>&1 || true
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "http://127.0.0.1:${WEB_PORT}" >/dev/null 2>&1 || true
+  fi
+fi

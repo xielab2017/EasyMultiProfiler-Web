@@ -16,13 +16,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./_platform.sh
 source "${SCRIPT_DIR}/_platform.sh"
 
-if ! emp_should_auto_install; then
-  if emp_need_git_install || emp_need_python_install || ! command -v curl >/dev/null 2>&1; then
-    emp_err "EMP_AUTO_INSTALL=0: git, Python >= 3.10 and curl must be installed manually."
-    exit 1
-  fi
-  emp_ok "Prerequisites present; no system changes requested."
+# Installed runtimes can live outside PATH (e.g. a registered Conda environment).
+if ! emp_need_git_install && ! emp_need_python_install && command -v curl >/dev/null 2>&1; then
+  emp_ok "Git, Python >= 3.10 and curl already available."
   exit 0
+fi
+if [[ -n "${EMPI_PYTHON:-}" ]]; then
+  bash "${SCRIPT_DIR}/../resolve_python.sh" >/dev/null || exit 1
+fi
+if ! emp_should_auto_install; then
+  emp_err "EMP_AUTO_INSTALL=0: git, Python >= 3.10 and curl must be installed manually."
+  exit 1
 fi
 
 os="$(emp_detect_os)"
@@ -108,7 +112,11 @@ install_with_dnf() {
 
 case "${os}" in
   macos)
-    install_with_brew git python@3.12
+    packages=()
+    if emp_need_git_install; then packages+=(git); fi
+    if emp_need_python_install; then packages+=(python@3.12); fi
+    if ! command -v curl >/dev/null 2>&1; then packages+=(curl); fi
+    install_with_brew "${packages[@]}"
     ;;
   debian|ubuntu|linuxmint|pop)
     install_with_apt git python3 python3-pip python3-venv curl ca-certificates

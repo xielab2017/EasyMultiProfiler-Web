@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PY="$(bash "$ROOT_DIR/webapp/scripts/resolve_python.sh")"
 API_BASE="${EMP_API_BASE:-http://127.0.0.1:8000}"
 
 echo "Running smoke tests against ${API_BASE}"
@@ -19,4 +20,4 @@ for attempt in $(seq 1 120); do
 done
 
 NO_PROXY='*' no_proxy='*' EMP_API_BASE="${API_BASE}" \
-python "webapp/tests/smoke_workflows.py"
+"$PY" "webapp/tests/smoke_workflows.py"

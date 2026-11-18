@@ -6,6 +6,7 @@ from pathlib import Path
 from version_source import app_version
 
 ROOT = Path(__file__).resolve().parents[2]
+VERSION_NUMBER = r'\d+\.\d+\.\d+(?:[-+][\w.-]+)?'
 UI_FILES = (
  'webapp/frontend/index.html', 'webapp/frontend/js/guide.js',
  'webapp/frontend/js/locale.js', 'webapp/frontend/js/i18n_catalog.js',
@@ -20,20 +21,20 @@ def sync_release(root=ROOT, check=False):
  for name in UI_FILES:
   path = root/name
   if path.exists():
-   outputs[name] = re.sub(r'\bv9\.\d+\.\d+(?:[-+][\w.-]+)?\b', 'v'+version, path.read_text(), flags=re.I)
+   outputs[name] = re.sub(r'\bv(?:9|[1-9]\d+)\.\d+\.\d+(?:[-+][\w.-]+)?\b', 'v'+version, path.read_text(), flags=re.I | re.ASCII)
  for name in ('README.md', 'README_CN.md', 'README_EN.md'):
   path = root/name
   if not path.exists():
    continue
   text = path.read_text()
-  text = re.sub(r'(EasyMultiProfiler Web [· ]*)v9\.\d+\.\d+', r'\g<1>v'+version, text)
-  text = re.sub(r'(badge/version-)9\.\d+\.\d+', r'\g<1>'+version, text)
+  text = re.sub(r'(EasyMultiProfiler Web [· ]*)v'+VERSION_NUMBER, r'\g<1>v'+version, text)
+  text = re.sub(r'(badge/version-)'+VERSION_NUMBER+r'(?=-[A-Za-z0-9]+[)?])', r'\g<1>'+version, text)
   text = re.sub(r'(\*\*(?:Version:|版本)\*\*[:：]?\s*`)[^`]+', r'\g<1>'+version, text)
-  text = re.sub(r'(内部版本 )9\.\d+\.\d+', r'\g<1>'+version, text)
+  text = re.sub(r'(内部版本 )'+VERSION_NUMBER, r'\g<1>'+version, text)
   # Only the leading current-release block changes; older release headings stay intact.
-  text = re.sub(r'(?m)^## v9\.\d+\.\d+(?:[^\n]*)', '## v'+version, text, count=1)
-  text = re.sub(r'docs/RELEASE_NOTES_v9\.\d+\.\d+\.md', 'docs/RELEASE_NOTES_v'+version+'.md', text, count=1)
-  text = re.sub(r'(R package metadata \(version )9\.\d+\.\d+', r'\g<1>'+version, text)
+  text = re.sub(r'(?m)^## v'+VERSION_NUMBER+r'[^\n]*', '## v'+version, text, count=1)
+  text = re.sub(r'docs/RELEASE_NOTES_v'+VERSION_NUMBER+r'\.md', 'docs/RELEASE_NOTES_v'+version+'.md', text, count=1)
+  text = re.sub(r'(R package metadata \(version )'+VERSION_NUMBER, r'\g<1>'+version, text)
   outputs[name] = text
  changed = [name for name,text in outputs.items() if not (root/name).exists() or (root/name).read_text()!=text]
  if not check:

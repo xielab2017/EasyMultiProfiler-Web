@@ -106,8 +106,10 @@ run_alpha <- function(session_id, experiment, method = "shannon", source = "curr
     if (.need_fill(result, "^ace$")) {
       result$ACE <- .est_pick(est, "S.ACE", sid)
     }
-    if (!any(grepl("observed|observerd", names(result), ignore.case = TRUE))) {
-      result$observed <- if (is_count_like) .est_pick(est, "S.obs", sid) else rowSums(X > 0, na.rm = TRUE)
+    if (!"observed" %in% names(result)) {
+      # EMP also exposes the legacy "observerd_index". Compute richness by
+      # sample ID so old objects and normalized abundances share one public field.
+      result$observed <- unname(rowSums(X > 0)[sid])
     }
     if (!any(grepl("pielou", names(result), ignore.case = TRUE))) {
       sh <- if ("shannon" %in% names(result)) result$shannon else suppressWarnings(vegan::diversity(X, index = "shannon"))
@@ -224,8 +226,6 @@ run_alpha <- function(session_id, experiment, method = "shannon", source = "curr
     padj <- stats::p.adjust(pvalue, method = "fdr")
   } else {
     padj <- suppressWarnings(as.numeric(padj))
-    miss <- is.na(padj) & is.finite(pvalue)
-    if (any(miss)) padj[miss] <- stats::p.adjust(pvalue[miss], method = "fdr")
   }
   fc <- ifelse(is.finite(log2fc), 2^log2fc, NA_real_)
   if (length(sign_group) == 1L && (is.na(sign_group) || !nzchar(sign_group))) {
@@ -349,7 +349,7 @@ run_alpha <- function(session_id, experiment, method = "shannon", source = "curr
   if (is.na(y$common.dispersion)) {
     stop("Cannot estimate edgeR dispersion for this pair — need at least 2 replicates per group.")
   }
-  et <- edgeR::exactTest(y, pair = c(2L, 1L))
+  et <- edgeR::exactTest(y, pair = c(ref_safe, test_safe))
   tt <- edgeR::topTags(et, n = Inf, sort.by = "none")$table
   vs <- paste0(test_group, " vs ", ref_group)
   .diff_format_native_result(

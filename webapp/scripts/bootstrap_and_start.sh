@@ -25,9 +25,17 @@ SCRIPTS_DIR="${ROOT_DIR}/webapp/scripts"
 INSTALL_DIR="${SCRIPTS_DIR}/install"
 
 echo "════════════════════════════════════════════════════════"
-echo "  EasyMultiProfiler Web v7 — bootstrap"
+echo "  EasyMultiProfiler Web — bootstrap"
 echo "  Folder: ${ROOT_DIR}"
 echo "════════════════════════════════════════════════════════"
+
+for option in "$@"; do
+  if [[ "$option" == "--dry-run" ]]; then export EMP_DRY_RUN=1; fi
+done
+if [[ "${EMP_DRY_RUN:-0}" == "1" ]]; then
+  bash "${SCRIPTS_DIR}/check_prerequisites.sh"
+  exec bash "${SCRIPTS_DIR}/start_local.sh" --dry-run
+fi
 
 # ── 1. OS-level deps (git, python3) ───────────────────────────────────────
 if [[ "${EMP_SKIP_DEPS:-0}" != "1" ]]; then
@@ -53,12 +61,8 @@ else
   echo "[bootstrap] EMP_SKIP_R_INSTALL=1 — skipping R auto-install."
 fi
 
-# Make sure R is on PATH in this shell even if we just installed it.
-hash -r
-if ! command -v "${EMPI_RSCRIPT:-Rscript}" >/dev/null 2>&1; then
-  echo "[bootstrap] Rscript still not on PATH. Open a new shell and re-run."
-  exit 1
-fi
+EMPI_RSCRIPT="$(bash "${SCRIPTS_DIR}/resolve_rscript.sh")"
+export EMPI_RSCRIPT
 
 # ── 3. R packages + EMP ──────────────────────────────────────────────────
 echo "[bootstrap] Installing CRAN + Bioconductor + EasyMultiProfiler packages…"
@@ -66,21 +70,4 @@ bash "${SCRIPTS_DIR}/install_runtime.sh" "$@"
 
 # ── 4. Start services ─────────────────────────────────────────────────────
 echo "[bootstrap] Starting API + web UI…"
-bash "${SCRIPTS_DIR}/start_local.sh"
-
-WEB_PORT="${WEB_PORT:-8080}"
-URL="http://127.0.0.1:${WEB_PORT}"
-if [[ "${EMP_NO_BROWSER:-0}" == "1" ]]; then
-  :
-elif command -v open >/dev/null 2>&1; then
-  open "${URL}" >/dev/null 2>&1 || true
-elif command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "${URL}" >/dev/null 2>&1 || true
-fi
-
-echo ""
-echo "════════════════════════════════════════════════════════"
-echo "  EasyMultiProfiler Web is running at: ${URL}"
-echo "  Stop: double-click Stop-EMP-Web-Mac.command"
-echo "    or: bash webapp/scripts/stop_local.sh"
-echo "════════════════════════════════════════════════════════"
+exec bash "${SCRIPTS_DIR}/start_local.sh" --open-browser

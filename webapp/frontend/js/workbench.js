@@ -4,6 +4,7 @@ import {featureText, applyFeatureLocale} from './feature_i18n.mjs?v=2';
 import {getLocale} from './locale.js?v=nav-language-20261108';
 import {request as rRequest} from './api.js?v=nav-language-20261108';
 import {CONTRACT, WorkflowState, resultTSV} from './workbench_core.mjs';
+import {mountPlanReview, appendResultEvidence, clarification} from './rnaseq_plan_review.mjs';
 import {studyContexts} from './study_model.mjs';
 import {mountSampleReview} from './sample_review.js';
 import {mountSimpleWorkbench} from './workbench_simple.js';
@@ -15,6 +16,7 @@ const $ = id => document.getElementById(`wb-${id}`);
 const state = new WorkflowState(ft);
 let catalog, input, busy = false, provider = null, proposal = null, result = null, pollTimer = null;
 let agentInfo = null, runtimeInfo = null, designer = null, sampleReview = null, quickUI = null, selectedDifferential = 0, readinessVisible = false;
+let planReview;
 const learnedJobs=new Set();
 const jobPatterns=new Map();
 const labels = {qc:ft('计数质量检查'), normalize:ft('Size-factor 归一化'), pca:'PCA', deseq2:ft('DESeq2 差异分析'), heatmap:ft('高变基因热图')};
@@ -40,18 +42,23 @@ async function perform(action) {
 }
 function edited() {
   state.sampleDesignReview=null;
+  quickUI?.invalidate();
+  revokePreparedReview();
+}
+function revokePreparedReview() {
   state.change(); $('confirm').checked = false; $('run').disabled = true; $('export-plan').disabled = true;
   $('confirm').disabled=true;message('run','请先完成输入与准备检查');$('review-summary').replaceChildren();if(readinessVisible)renderReadiness();
   $('cloud-consent').checked = false; $('context-result').textContent = '';
-  message('review', '数据或流程已改变，请重新检查。'); quickUI?.invalidate();guide();
+  message('review', '数据或流程已改变，请重新检查。');guide();
 }
 function guide() {
-  window._empWorkbenchState={has_input:!!input,has_dataset:!!state.dataset,source_sha256:input?.source_sha256,scope:designer?.composer.scope,accession:sampleReview?.context?.accession,steps:designer?.composer.steps.map(s=>s.operation),group_count:new Set(samples().map(s=>s.group).filter(Boolean)).size,unassigned:samples().filter(s=>!s.group).length,prepared:!!state.prepared,sample_relationship:state.sampleDesignReview?.relationship||'unreviewed',grouping_warnings:state.groupingWarnings||[],pairing_review:state.sampleDesignReview?{relationship:state.sampleDesignReview.relationship,subject_count:state.sampleDesignReview.subject_count,batch_adjustment:state.sampleDesignReview.batch_adjustment}:null,needs_design_review:!$('independent')?.checked};
+  window._empWorkbenchState={has_input:!!input,has_dataset:!!state.dataset,source_sha256:input?.source_sha256,scope:designer?.composer.scope,accession:sampleReview?.context?.accession,steps:designer?.composer.steps.map(s=>s.operation),group_count:new Set(samples().map(s=>s.group).filter(Boolean)).size,unassigned:samples().filter(s=>!s.group).length,prepared:!!state.prepared&&!state.prepared.submitted,sample_relationship:state.sampleDesignReview?.relationship||'unreviewed',grouping_warnings:state.groupingWarnings||[],pairing_review:state.sampleDesignReview?{relationship:state.sampleDesignReview.relationship,subject_count:state.sampleDesignReview.subject_count,batch_adjustment:state.sampleDesignReview.batch_adjustment}:null,needs_design_review:!$('independent')?.checked};
   quickUI?.update();
+  planReview?.update();
   if(designer&&(designer.composer.scope!=='bulk_rnaseq'||designer.composer.inputType!=='raw_counts')){message('guide','已切换组学流程：从步骤库组合并审核依赖，再到对应页面导入和分析。');return;}
   message('guide', !input ? ft('引导已启动：在矩阵页下载后送入工作台，或上传本地矩阵。')
     : !state.dataset ? ft('请选择真正的样本计数列；Length 等注释列可手动取消勾选。')
-      : !state.prepared ? ft('请填写样本分组、原始计数来源和比较方向，编辑流程后点击“检查并准备流程”。')
+      : !state.prepared||state.prepared.submitted ? ft('请填写样本分组、原始计数来源和比较方向，编辑流程后点击“检查并准备流程”。')
         : ft('流程已准备。请审核分组、排除列和参数，再确认运行。'));
 }
 function save(value, name, type = 'application/json') {
@@ -64,6 +71,8 @@ function renderSteps() { designer?.render(); }
 
 async function acceptInput(value) {
   window._empWorkbenchProfile=value.profile||null;
+  $('evidence').value = ''; $('reference').value = ''; $('test').value = '';
+  $('independent').checked = false; $('comparison-mode').value = 'one_to_one';
   input = value; state.dataset = null;state.groupingWarnings=[]; edited(); $('samples').replaceChildren();
   $('input-info').textContent = `${value.source_name} · ${value.feature_count} features · SHA-256 ${value.source_sha256}`;
   $('columns').replaceChildren();
@@ -78,7 +87,7 @@ async function acceptInput(value) {
     $('columns').append(label);
   }
   $('select').disabled = false;
-  if(!$('evidence').value.trim())$('evidence').value=[sampleReview.context?.accession,sampleReview.context?.paper?.doi,value.source_name,'SHA-256 '+value.source_sha256].filter(Boolean).join(' · ');
+
   if(value.profile){
     window._empWorkbenchProfile=value.profile;
   }
@@ -138,6 +147,7 @@ function applyProposal(value) {
   if (!designer) throw Error(ft('流程目录未加载'));
   if (value.status !== 'draft' || !value.steps?.length) throw Error(ft('所述数据或设计需要专门流程；当前执行器仅支持独立样本 bulk RNA-seq raw counts。'));
   designer.applyCountProposal(value);
+  planReview?.show();
 }
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -161,6 +171,7 @@ function addChart(svg, filename) {
 function pcaChart(pca) {
   if (!Array.isArray(pca.scores) || !pca.scores.length || !('PC2' in pca.scores[0])) return;
   const svg = chart('PCA · log2 size-factor normalized counts + 1');
+  svg.id='wb-result-pca';
   const xs = pca.scores.map(r => r.PC1), ys = pca.scores.map(r => r.PC2);
   const scale = (v, values, low, high) => low + (v - Math.min(...values)) / (Math.max(...values)-Math.min(...values) || 1) * (high-low);
   svg.append(node('path',{d:'M70 60 V350 H610', stroke:'#64748b', fill:'none'}));
@@ -182,6 +193,7 @@ function pcaChart(pca) {
 function heatmapChart(heatmap) {
   const rows = heatmap.feature_ids.length, columns = heatmap.sample_ids.length;
   const height = Math.max(420, rows*14+140), svg = chart('High-variance features · row z-score');
+  svg.id='wb-result-heatmap';
   svg.setAttribute('viewBox',`0 0 640 ${height}`);
   const cellH = (height-140)/rows, cellW = 450/columns;
   heatmap.values.forEach((values,i) => {
@@ -196,8 +208,9 @@ function heatmapChart(heatmap) {
   svg.append(node('text',{x:140,y:height-8,'font-size':11},'blue ≤ −2.5   white = 0   red ≥ +2.5 (display clipped)'));
   addChart(svg, 'high_variance_heatmap.svg');
 }
-function table(rows, columns) {
+function table(rows, columns, id) {
   const el = document.createElement('table'), header = document.createElement('tr');
+  el.id=id;
   columns.forEach(k => { const th=document.createElement('th'); th.textContent=k; header.append(th); }); el.append(header);
   rows.forEach(row => { const tr=document.createElement('tr'); columns.forEach(k => { const td=document.createElement('td'); td.textContent=row[k]??'';tr.append(td); });el.append(tr); });
   $('results').append(el);
@@ -205,23 +218,27 @@ function table(rows, columns) {
 function displayResult(value) {
   if (value.contract !== CONTRACT || value.execution_performed !== true || !value.success ||
       (state.active?.plan_sha256 && value.plan_sha256 !== state.active.plan_sha256)) throw Error(ft('结果未通过流程身份校验'));
-  result=value; $('results').replaceChildren();
   const artifacts=value.artifacts;
-  table(artifacts.qc.samples,['sample','library_size','detected_features']);
-  if (artifacts.pca) pcaChart(artifacts.pca);
-  if (artifacts.heatmap) heatmapChart(artifacts.heatmap);
   const differentials=artifacts.differentials||[artifacts.differential].filter(Boolean);
+  const declared=value.plan.design.contrasts||[{test:value.plan.design.test,reference:value.plan.design.reference}];
+  if(differentials.some(de=>!['DESeq2','edgeR'].includes(de.method)||de.positive_log2fc!=='test / reference'||!declared.some(pair=>pair.test===de.test&&pair.reference===de.reference)))throw Error(ft('差异分析方法或比较方向未验证'));
+  result=value; $('results').replaceChildren();
   if (differentials.length) {
-    const declared=value.plan.design.contrasts||[{test:value.plan.design.test,reference:value.plan.design.reference}];
-    if(differentials.some(de=>!['DESeq2','edgeR'].includes(de.method)||de.positive_log2fc!=='test / reference'||!declared.some(pair=>pair.test===de.test&&pair.reference===de.reference)))throw Error(ft('差异分析方法或比较方向未验证'));
     selectedDifferential=Math.min(selectedDifferential,differentials.length-1);
     const select=document.createElement('select');select.id='wb-result-contrast';select.setAttribute('aria-label',ft('选择差异方法与比较'));differentials.forEach((de,i)=>{const option=document.createElement('option');option.value=String(i);option.textContent=`${de.method} · ${de.test} / ${de.reference}`;select.append(option);});select.value=String(selectedDifferential);select.onchange=()=>{selectedDifferential=Number(select.value);displayResult(result);};$('results').append(select);
     const de=differentials[selectedDifferential],edger=de.method==='edgeR',fdr=edger?'FDR':'padj';
-    const caption=document.createElement('p');caption.textContent=ft('{method} · {test} / {reference} · BH FDR < {alpha}：{significant}/{tested}。前 20 行按 FDR 排序，完整结果可单独下载。',{method:de.method,test:de.test,reference:de.reference,alpha:de.alpha,significant:de.significant_features,tested:de.tested_features});$('results').append(caption);
-    table([...de.rows].sort((a,b)=>(a[fdr]??Infinity)-(b[fdr]??Infinity)).slice(0,20),edger?['feature_id','logFC','PValue','FDR']:['feature_id','log2FoldChange','pvalue','padj']);
+    const n=group=>value.plan.samples.filter(s=>s.group===group).length;
+    const caption=document.createElement('p');caption.id='wb-result-summary';
+    caption.textContent=ft('实验组 {test}（n={testN}），参考组 {reference}（n={referenceN}）。正 log2FC 表示在 {test} 中更高。检验特征数 {tested}，BH FDR < {alpha} 的显著特征数 {significant}。',{test:de.test,testN:n(de.test),reference:de.reference,referenceN:n(de.reference),tested:de.tested_features,alpha:de.alpha,significant:de.significant_features});
+    $('results').append(caption);
+    table([...de.rows].sort((a,b)=>(a[fdr]??Infinity)-(b[fdr]??Infinity)).slice(0,20),edger?['feature_id','logFC','PValue','FDR']:['feature_id','log2FoldChange','pvalue','padj'],'wb-result-differential');
   }
+  table(artifacts.qc.samples,['sample','library_size','detected_features'],'wb-result-qc');
+  if (artifacts.pca) pcaChart(artifacts.pca);
+  if (artifacts.heatmap) heatmapChart(artifacts.heatmap);
   const note=document.createElement('p');note.textContent=(value.warnings||[]).join(' ');$('results').append(note);
-  $('export-result').disabled=false; $('export-de').disabled=!artifacts.differential;
+  $('export-result').disabled=false; $('export-de').disabled=!differentials.length;
+  appendResultEvidence($('results'),value,getLocale(),selectedDifferential);
   const deferred=value.plan.deferred_steps||[];if(deferred.length)message('guide','本次登记分析已完成；以下步骤尚未执行：{steps}。',{steps:deferred.join(', ')});else message('guide','分析完成：检查 QC、样本结构和效应方向，结合来源与生物学背景解释；可导出结果、流程及软件版本。');
 }
 async function refreshJob() {
@@ -269,7 +286,7 @@ async function selectColumns(){
 }
 $('select').onclick=()=>perform(selectColumns);
 for(const id of ['reference','test','evidence','independent','seed'])$(id).addEventListener('input',edited);
-$('question').oninput=()=>{proposal=null;$('apply-ai').disabled=true;$('cloud-consent').checked=false;};
+$('question').oninput=()=>{planReview?.reset();proposal=null;$('apply-ai').disabled=true;$('cloud-consent').checked=false;};
 $('propose').onclick=()=>perform(async()=>{
   const q=$('question').value;
   if(designer.composer.scope!=='bulk_rnaseq'||designer.composer.inputType!=='raw_counts'){
@@ -277,7 +294,16 @@ $('propose').onclick=()=>perform(async()=>{
     catch{throw Error(ft('本地规则未能生成兼容流程。请明确列出步骤；否定、复杂设计或输入类型冲突请通过步骤库逐项调整。'));}
     return;
   }
-  const data=await api('workbench/propose',{question:q});if(q!==$('question').value)throw Error(ft('问题已改变'));message('answer',data.status==='draft'?'已将指令转为可编辑流程。请选数据、分组并审核。':'所述数据或设计需要专门流程；当前执行器仅支持独立样本 bulk RNA-seq raw counts。');applyProposal(data);
+  const rev=state.revision;
+  const data=await api('workbench/propose',{question:q});
+  if(q!==$('question').value||rev!==state.revision)throw Error(ft('问题或流程已改变，旧 AI 响应已丢弃'));
+  if(data.status==='needs_clarification'){
+    planReview.reset();delete $('answer').dataset.featureMessage;
+    $('answer').textContent=clarification(data.reason,getLocale());return;
+  }
+  if(data.status!=='draft'){planReview.reset();message('answer','所述数据或设计需要专门流程；当前执行器仅支持独立样本 bulk RNA-seq raw counts。');return;}
+  applyProposal(data);
+  message('answer','已将指令转为可编辑流程。请选数据、分组并审核。');planReview.show();
 });
 async function preparePlan(){
   const structural=designer.composer.status();
@@ -301,19 +327,25 @@ async function runPrepared(){
   if(rev!==state.revision)throw Error(ft('计划已改变，请重新审核'));const request=state.executionRequest(payload,$('confirm').checked);
   const executedPattern=JSON.parse(payload.plan_json);
   const submitted=await rRequest('POST','/workbench/run',request,false,{skipSessionHeader:true,timeoutMs:60000});
-  if(submitted.contract!==CONTRACT||!submitted.job_id)throw Error(ft('未收到可验证的任务 ID；请先查看任务列表，避免重复提交'));
+  if(submitted.contract!==CONTRACT||!submitted.job_id||submitted.plan_sha256!==request.plan_sha256)throw Error(ft('未收到可验证的任务 ID；请先查看任务列表，避免重复提交'));
   jobPatterns.set(submitted.job_id,{scope:executedPattern.omics,operations:executedPattern.steps.map(s=>s.operation)});
+  clearDisplayedResult();
   state.active={job_id:submitted.job_id,plan_sha256:submitted.plan_sha256};$('analysis-job').value=submitted.job_id;
-  localStorage.setItem('emp_workbench_last_job',JSON.stringify(state.active));$('confirm').checked=false;$('run').disabled=true;
+  if(rev===state.revision){
+    state.prepared.submitted=true;quickUI?.invalidate();$('confirm').checked=false;$('confirm').disabled=true;$('run').disabled=true;
+    $('review-summary').replaceChildren();if(readinessVisible)renderReadiness();guide();
+  }
+  try{localStorage.setItem('emp_workbench_last_job',JSON.stringify(state.active));}catch{}
   clearTimeout(pollTimer);await refreshJob();
 }
 $('run').onclick=()=>perform(runPrepared);
 $('refresh').onclick=()=>perform(async()=>{clearTimeout(pollTimer);await refreshJob();});
-$('analysis-job').oninput=()=>{clearTimeout(pollTimer);state.active=null;result=null;$('results').replaceChildren();$('export-result').disabled=true;$('export-de').disabled=true;$('cancel').disabled=true;};
+function clearDisplayedResult(){result=null;selectedDifferential=0;$('results').replaceChildren();$('export-result').disabled=true;$('export-de').disabled=true;$('cancel').disabled=true;$('progress').value=0;}
+$('analysis-job').oninput=()=>{clearTimeout(pollTimer);state.active=null;clearDisplayedResult();};
 $('cancel').onclick=()=>perform(async()=>{clearTimeout(pollTimer);const id=$('analysis-job').value.trim();const response=await rRequest('POST',`/jobs/${encodeURIComponent(id)}/cancel`,{},false,{skipSessionHeader:true});say('取消请求：{status}',{status:response.cancellation?.status||ft('未确认')});await refreshJob();});
 $('export-plan').onclick=()=>perform(async()=>{const blueprint=designer.composer.blueprint();if(!designer.composer.status().valid)throw Error(ft('请先修正步骤依赖、顺序或输入类型。'));if(state.prepared){const prepared_input=await api(`workbench/prepared/${encodeURIComponent(state.prepared.prepared_id)}`);save({blueprint,prepared_input},'emp-count-workflow-input.json');}else save(blueprint,'emp-workflow-blueprint.json');});
 $('export-result').onclick=()=>{if(result)save(result,'emp-count-workflow-results.json');};
-$('export-de').onclick=()=>{const items=result?.artifacts.differentials||[result?.artifacts.differential].filter(Boolean);const de=items[selectedDifferential];if(de)save(resultTSV(de.rows,de.method),`contrast-${selectedDifferential+1}-${de.method}.tsv`,'text/tab-separated-values;charset=utf-8');};
+$('export-de').onclick=()=>{const items=result?.artifacts.differentials||[result?.artifacts.differential].filter(Boolean);const de=items[selectedDifferential];if(!de)return;const safe=s=>s.replace(/[^\p{L}\p{N}._-]+/gu,'_').slice(0,48);save(resultTSV(de.rows,de.method),`${safe($('analysis-job').value)}-contrast-${selectedDifferential+1}-${de.method}-${safe(de.test)}-vs-${safe(de.reference)}.tsv`,'text/tab-separated-values;charset=utf-8');};
 $('context').onclick=()=>perform(async()=>{
   const rev=state.revision;const ids=state.prepared?{workbench_id:state.prepared.prepared_id}:{};
   const data=await api('agent/context-preview',{context_ids:ids});if(rev!==state.revision)throw Error(ft('流程已改变，请重新预览'));
@@ -354,6 +386,7 @@ function renderConnections() {
   else if(runtimeInfo)message('runtime','当前 R 服务未提供此执行器；请用更新后的项目启动 R API。');
 }
 window.addEventListener('emp:locale-change',()=>{
+  planReview?.update();
   applyFeatureLocale(document,getLocale());renderSteps();renderConnections();
   if(designer)$('external-scope').textContent=textPair(designer.composer.library.label,getLocale());
   for(const control of $('samples').querySelectorAll('input[data-sample]'))control.setAttribute('aria-label',ft('{sample} 的组别',{sample:control.dataset.sample}));
@@ -393,6 +426,7 @@ window.addEventListener('emp:study-reset',()=>{
 });
 editorChanged(designer.composer);
 quickUI=mountSimpleWorkbench({
+ onReviewChange:revokePreparedReview,
  isNative:()=>designer.composer.scope==='bulk_rnaseq'&&designer.composer.inputType==='raw_counts',
  describe:()=>{const rows=samples(),groups=[...new Set(rows.map(r=>r.group).filter(Boolean))],steps=designer.composer.steps.filter(s=>!['data_input','sample_metadata','export'].includes(s.operation)).map(s=>textPair(designer.composer.library.steps[s.operation].label,getLocale())).join(' → ');return{steps,lines:[input?`${input.source_name} · ${rows.length} ${getLocale()==='en'?'samples':'个样本'}`:ft('读取下载矩阵或上传本地矩阵'),...groups.map(group=>`${group}: n=${rows.filter(row=>row.group===group).length}`),$('comparison-preview')?.textContent||'']};},
  onStart:()=>perform(async()=>{
@@ -403,11 +437,29 @@ quickUI=mountSimpleWorkbench({
   if(!quickUI.reviewed()){window.dispatchEvent(new CustomEvent('emp:agent-review-samples'));return;}
   try{sampleReview.design();}catch{quickUI.focus('reference');throw Error(ft('选择有效的参考组与比较方向'));}
   $('group-reviewed').checked=true;$('independent').checked=true;
-  await preparePlan();if(!state.prepared)return;$('confirm').checked=true;await runPrepared();quickUI.invalidate();
+  await preparePlan();if(!state.prepared||!quickUI.reviewed())return;$('confirm').checked=true;await runPrepared();
  })
 });
+planReview=mountPlanReview({
+ composer:()=>designer.composer, seed:()=>Number($('seed').value), locale:getLocale, save, notice:say,
+ context:()=>{
+   let contrasts=[];
+   try{contrasts=sampleReview.design().contrasts;}catch{}
+   const rows=samples();
+   return {hasDataset:!!state.dataset, incompatible:input?.profile?.count_compatible===false,
+     hasEvidence:!!$('evidence').value.trim(), groupsReviewed:rows.length>0&&rows.every(s=>s.group)&&$('group-reviewed').checked,
+     samples:rows, contrasts, hasContrast:contrasts.length>0, independent:$('independent').checked, differential:designer.composer.steps.some(s=>['deseq2','edger'].includes(s.operation))};
+ },
+ apply:template=>{
+   $('seed').value=template.seed;
+   $('group-reviewed').checked=false;$('independent').checked=false;
+   designer.applyBlueprint(template.blueprint);
+ }
+});
+planReview.update();
+$('simple-consent').addEventListener('change',()=>planReview.update());
 $('external-open').onclick=()=>openWorkflowPage(designer.composer.scope);
-window.addEventListener('emp:workbench-proposal',event=>{try{const {proposal,question}=event.detail||{};if(!proposal)return;designer.applyCountProposal(proposal);if(typeof question==='string')$('question').value=question;}catch(e){say(e.message);}});
+window.addEventListener('emp:workbench-proposal',event=>{try{const {proposal,question}=event.detail||{};if(!proposal)return;applyProposal(proposal);if(typeof question==='string')$('question').value=question;}catch(e){say(e.message);}});
 window.addEventListener('emp:agent-download-ready',event=>{const {job,annotations}=event.detail;studyContexts.set(job.job_id,{accession:job.accession,annotations,paper:null});window.dispatchEvent(new CustomEvent('emp:agent-flow',{detail:{...job,stage:'importing',message:'下载完成，自动读取矩阵并匹配样本…'}}));perform(async()=>{$('job').value=job.job_id;window._empAgentImporting=true;try{await ingest();}finally{window._empAgentImporting=false;}window.dispatchEvent(new CustomEvent('emp:agent-flow',{detail:{...job,stage:'ready',message:'矩阵已导入；可用的精确元数据分组已填入。',readiness:window._empWorkbenchState}}));});});
 window.addEventListener('emp:agent-review-samples',()=>{
  const values=samples();
@@ -419,7 +471,7 @@ window.addEventListener('emp:agent-review-samples',()=>{
    if(mode==='one_to_many')for(const control of document.querySelectorAll('#wb-study-review input[data-test-group]')){control.checked=true;control.onchange?.();}
    const consent=$('simple-consent');consent.checked=true;consent.dispatchEvent(new Event('change',{bubbles:true}));
    await preparePlan();if(!state.prepared)throw Error('输入检查尚未通过，请查看具体缺项。');
-   $('confirm').checked=true;await runPrepared();state.sampleDesignReview={...review,dataset_id:state.dataset.dataset_id,execution_allowed:true};guide();
+   state.sampleDesignReview={...review,dataset_id:state.dataset.dataset_id,execution_allowed:true};$('confirm').checked=true;await runPrepared();guide();
   },
   onReview:async review=>{
    $('independent').checked=false;$('group-reviewed').checked=false;quickUI.invalidate();state.change();

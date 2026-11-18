@@ -1,0 +1,8 @@
+{
+  "abi": "emp.view.v1",
+  "id": "quality-bars",
+  "name": "Sample quality bars",
+  "version": "1.0.0",
+  "permissions": ["job.result.read"],
+  "definition": {"input":"emp.metric-table.v1","layout":"bars","label":"item","value":"mean","limit":30}
+}

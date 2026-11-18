@@ -19,6 +19,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'webapp/scripts'))
+from launch_metadata import analysis_rscript
 import omics_workbench as wb
 import public_data_server
 import static_server
@@ -40,9 +41,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('fixture', type=Path)
     parser.add_argument('--serve', action='store_true', help='Keep isolated services alive for a manual browser review')
+    parser.add_argument('--verify-recovery', action='store_true', help='Verify cancellation, resubmission and result-cache fallback')
     args = parser.parse_args()
     fixture = json.loads(args.fixture.read_text())
-    with tempfile.TemporaryDirectory(prefix='emp-wb-', dir=ROOT / '.local_run/verification') as folder:
+    rscript = analysis_rscript(ROOT / 'webapp/scripts')
+    if not rscript:
+        parser.error('A working Rscript >= 4.3.3 is required; set EMPI_RSCRIPT to its executable.')
+    evidence_dir = ROOT / '.local_run/verification/workbench'
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='emp-wb-', dir=evidence_dir) as folder:
         output = Path(folder)
         # Plumber's port validator rejects the OS ephemeral range above 49151.
         for _ in range(100):
@@ -54,9 +61,11 @@ def main():
         token = secrets.token_hex(24)
         env = dict(os.environ, API_HOST='127.0.0.1', API_PORT=str(api_port), EMP_DATA_DIR=str(output / 'r-data'),
                    EMP_API_TOKEN=token, EMP_API_TOKEN_SHA256S='', EMP_ENABLE_USER_R='false',
+                   EMP_SESSION_DIR=str(output / 'r-data/sessions'), EMP_JOB_DIR=str(output / 'r-data/jobs'),
+                   EMP_PROJECT_DIR=str(output / 'r-data/projects'),
                    EMP_BACKEND_DIR=str(ROOT / 'webapp/backend'), BACKEND_DIR=str(ROOT / 'webapp/backend'))
         log = open(output / 'r.log', 'w+')
-        process = subprocess.Popen(['Rscript', str(ROOT / 'webapp/backend/run_api.R')], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
+        process = subprocess.Popen([rscript, str(ROOT / 'webapp/backend/run_api.R')], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
         servers = []
         try:
             deadline = time.monotonic() + 90
@@ -100,6 +109,12 @@ def main():
             payload = call(web.server_port, prefix + 'prepared/' + prepared['prepared_id'])
             payload['confirmed'] = True
             run = call(api_port, '/api/workbench/run', payload, token=token)
+            if args.verify_recovery:
+                cancelled_id = run['job_id']
+                cancelled = call(api_port, '/api/jobs/' + cancelled_id + '/cancel', {}, token=token)
+                assert cancelled['cancellation']['status'] == 'cancelled', cancelled
+                run = call(api_port, '/api/workbench/run', payload, token=token)
+                assert run['job_id'] != cancelled_id, 'Cancelled plans should be allowed to run again'
             duplicate = call(api_port, '/api/workbench/run', payload, token=token)
             assert run['job_id'] == duplicate['job_id'], 'Duplicate submission started another job'
             deadline = time.monotonic() + 120
@@ -110,6 +125,14 @@ def main():
                 time.sleep(.5)
             else: raise RuntimeError('Job did not finish; isolated worker must be inspected')
             result = call(api_port, '/api/jobs/' + run['job_id'] + '/result', token=token)
+            if args.verify_recovery:
+                response_file = output / 'r-data/jobs' / (run['job_id'] + '.response')
+                assert response_file.is_file(), 'The worker should publish a JSON response cache'
+                cached = json.loads(response_file.read_bytes())
+                assert cached['artifacts'] == result['artifacts']
+                response_file.write_bytes(b'{"success":')
+                fallback = call(api_port, '/api/jobs/' + run['job_id'] + '/result', token=token)
+                assert fallback['artifacts'] == result['artifacts'], 'A truncated cache should fall back to RDS'
             assert result['contract'] == wb.CONTRACT and result['execution_performed'] is True
             assert result['plan_sha256'] == prepared['plan_sha256']
             assert len(result['artifacts']['differential']['rows']) == 400
@@ -117,8 +140,9 @@ def main():
             evidence = {'status':'passed', 'data':'synthetic fixture only', 'dimensions':[401,6], 'contract':wb.CONTRACT,
                         'job_id':run['job_id'], 'plan_sha256':prepared['plan_sha256'], 'environment':result['environment'],
                         'steps':result['steps'], 'tested_features':400, 'original_file_download_tested':False,
-                        'provider_live_tested':False, 'idempotency_tested':True}
-            (ROOT / '.local_run/verification/workbench/http-acceptance.json').write_text(json.dumps(evidence, indent=2))
+                        'provider_live_tested':False, 'idempotency_tested':True,
+                        'cancel_resubmit_and_cache_fallback_tested':args.verify_recovery}
+            (evidence_dir / 'http-acceptance.json').write_text(json.dumps(evidence, indent=2))
             print(json.dumps(evidence), flush=True)
             if args.serve:
                 print(f'BROWSER_REVIEW_URL=http://127.0.0.1:{gateway.server_port}/', flush=True)

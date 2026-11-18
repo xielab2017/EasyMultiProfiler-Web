@@ -20,36 +20,17 @@ else
   hint "Mac: brew install git   |   Ubuntu: sudo apt install git"
 fi
 
-PY=""
-for c in "${EMPI_PYTHON:-}" "${ROOT_DIR}/.local_run/metadata_venv/bin/python" python3 python; do
-  if [[ -n "$c" ]] && command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 10))' >/dev/null 2>&1; then
-    PY="$c"
-    break
-  fi
-done
-if [[ -n "$PY" ]]; then
-  say "Python: $("$PY" --version 2>&1)"
+if PY="$(bash "$ROOT_DIR/webapp/scripts/resolve_python.sh")"; then
+  say "Python: $("$PY" --version 2>&1) ($PY)"
 else
   fail "Python >= 3.10 not found (required for web UI on port 8080)."
   hint "Mac: brew install python@3.12"
 fi
 
-if command -v "${EMPI_RSCRIPT:-Rscript}" >/dev/null 2>&1; then
-  RV=$("${EMPI_RSCRIPT:-Rscript}" -e 'cat(as.character(getRversion()))' 2>/dev/null || echo "?")
-  say "R: ${RV}"
-  "${EMPI_RSCRIPT:-Rscript}" -e 'if (getRversion() < "4.3.3") quit(status=2)' 2>/dev/null || {
-    fail "R version must be >= 4.3.3 (found ${RV})."
-    hint "Mac: brew install --cask r   |   https://cran.r-project.org/"
-  }
+if RSCRIPT="$(bash "${ROOT_DIR}/webapp/scripts/resolve_rscript.sh")"; then
+  say "R: $("$RSCRIPT" --vanilla -e 'cat(as.character(getRversion()))') ($RSCRIPT)"
 else
-  fail "Rscript not found."
-  echo ""
-  echo "════════════════════════════════════════════════════════"
-  echo "  请先安装 R（>= 4.3.3），然后重新运行本脚本或 bootstrap。"
-  echo "  Mac 推荐:  brew install --cask r"
-  echo "  详细步骤:  docs/INSTALL_MAC.md"
-  echo "════════════════════════════════════════════════════════"
-  exit 1
+  fail "A working R >= 4.3.3 is required."
 fi
 
 if [[ "$OK" -ne 0 ]]; then

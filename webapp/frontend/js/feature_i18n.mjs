@@ -2,6 +2,8 @@ import {UI_LOCALES_FULL} from './ui_locales_full.mjs';
 // New feature text uses the same resolved locale as the application.
 // Other long-tail locales use the application's established English fallback.
 export const FEATURE_TEXT = {
+  '打开助手':'Open assistant',
+  '实验组 {test}（n={testN}），参考组 {reference}（n={referenceN}）。正 log2FC 表示在 {test} 中更高。检验特征数 {tested}，BH FDR < {alpha} 的显著特征数 {significant}。':'Test: {test} (n={testN}), reference: {reference} (n={referenceN}). Positive log2FC means higher in {test}. Tested features: {tested}. Significant at BH FDR < {alpha}: {significant}.',
   'AI 正在查询或生成建议，请等待；尚未执行分析。':'AI is searching or drafting suggestions; no analysis has been executed.',
   'AI 建议已返回；请核对工具记录与步骤，实际运行仍需审核。':'AI suggestions returned. Review tool records and steps before approving execution.',
   '查看历史下载':'View download history',
@@ -152,7 +154,7 @@ export const FEATURE_TEXT = {
   '取消任务':'Cancel job',
   '下载完整结果与审计 JSON':'Download full results and audit JSON',
   '下载完整差异结果 TSV':'Download full differential TSV',
-  'v9.3.0 · 新功能在这里 / New features':'v9.3.0 · New features',
+  'v10.5.1 · 新功能在这里 / New features':'v10.5.1 · New features',
   '完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。':'The full launcher starts matrix and AI workflow services together. For metadata only, the metadata service can also run separately.',
   '在主页面下载矩阵 / Matrix download':'Download matrices in the main page',
   '计数质量检查':'Count QC',
@@ -310,3 +312,10 @@ const pages = {
 export const FEATURE_NAV = Object.fromEntries(Object.entries(pages).map(([loc, labels])=>[loc,Object.fromEntries(['nav.matrix','nav.workbench','page.matrix','page.workbench'].map((key,i)=>[key,labels[i]]))]));
 for(const [locale,values]of Object.entries(FEATURE_NAV)){const label=locale==='zh'?'模型与 API':locale==='zh-TW'?'模型與 API':'Models and API';values['nav.models']=label;values['page.models']=label;}
 for(const [locale,values]of Object.entries(FEATURE_NAV)){const label=locale==='zh'?'多研究整合':locale==='zh-TW'?'多研究整合':'Multi-study integration';values['nav.integration']=label;values['page.integration']=label;}
+
+const pluginLabels = {zh:'插件', 'zh-TW':'外掛程式', en:'Plugins', ja:'プラグイン', ko:'플러그인',
+  ar:'الإضافات', es:'Complementos', fr:'Extensions', de:'Plugins', pt:'Plugins', ru:'Плагины'};
+for (const [locale, label] of Object.entries(pluginLabels)) {
+  FEATURE_NAV[locale]['nav.plugins'] = label;
+  FEATURE_NAV[locale]['page.plugins'] = label;
+}

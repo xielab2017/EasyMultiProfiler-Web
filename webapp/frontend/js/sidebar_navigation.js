@@ -19,7 +19,13 @@ if(list){
   function visible(){return ordered().filter(item=>!item.hidden&&!item.classList.contains('hidden')&&getComputedStyle(item).display!=='none');}
   function save(){try{localStorage.setItem(key,JSON.stringify(ordered().map(item=>item.dataset.page)));}catch{status.textContent=text('本次顺序已改变，浏览器未允许保存。','Order changed; browser storage is unavailable.');}}
   function restore(order){if(!Array.isArray(order))return;for(const page of [...new Set([...order,...defaults])]){const item=items.find(row=>row.dataset.page===page);if(item)list.append(item);}}
-  try{restore(JSON.parse(localStorage.getItem(key)||'null'));}catch{/* Keep the default order when storage is unavailable. */}
+  try{
+    const saved=JSON.parse(localStorage.getItem(key)||'null');
+    if(Array.isArray(saved) && !saved.includes('plugins') && saved.includes('models')){
+      saved.splice(saved.indexOf('models')+1,0,'plugins');
+    }
+    restore(saved);
+  }catch{/* Keep the default order when storage is unavailable. */}
   function update(){
     syncTopNavigation();
     const rows=visible();list.classList.toggle('nav-list--editing',editing);edit.setAttribute('aria-pressed',String(editing));

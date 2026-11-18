@@ -1,0 +1,8 @@
+{
+  "abi": "emp.chat-ui.v1",
+  "id": "zotero-style-chat",
+  "name": "Zotero 风格研究助手 · Research Chat",
+  "version": "1.0.0",
+  "permissions": ["chat.panel"],
+  "definition": {"renderer": "research-chat", "startup": "adaptive"}
+}

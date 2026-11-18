@@ -25,7 +25,7 @@ export class WorkflowState {
     this.prepared = value.valid ? value : null;
   }
   executionRequest(payload, confirmed) {
-    if (!this.prepared || confirmed !== true || payload.plan_sha256 !== this.prepared.plan_sha256) throw Error(this.translate('请重新审核并明确确认当前计划'));
+    if (!this.prepared || this.prepared.submitted || confirmed !== true || payload.plan_sha256 !== this.prepared.plan_sha256) throw Error(this.translate('请重新审核并明确确认当前计划'));
     return {...payload, confirmed: true};
   }
 }

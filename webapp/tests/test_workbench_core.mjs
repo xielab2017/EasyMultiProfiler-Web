@@ -19,6 +19,16 @@ test('model proposals cannot smuggle code, unknown operations or duplicates into
   for(const invalid of [[{operation:'system',parameters:{}}],[steps[0],steps[0]],[{operation:'qc',parameters:{code:'stop()'}}]])assert.throws(()=>state.setSteps(invalid,catalog));
   state.setSteps(steps,catalog);steps[2].parameters.components=5;assert.equal(state.steps[2].parameters.components,2);
 });
+test('submitted prepared input remains exportable but cannot authorize another run',()=>{
+  const state=new WorkflowState();
+  state.acceptPrepared({valid:true,plan_sha256:'digest',prepared_id:'first'},state.revision);
+  state.prepared.submitted=true;
+  assert.equal(state.prepared.prepared_id,'first');
+  assert.throws(()=>state.executionRequest({plan_sha256:'digest'},true));
+  state.acceptPrepared({valid:true,plan_sha256:'digest',prepared_id:'second'},state.revision);
+  assert.throws(()=>state.executionRequest({plan_sha256:'digest'},false));
+  assert.equal(state.executionRequest({plan_sha256:'digest'},true).confirmed,true);
+});
 test('TSV retains missing statistics and protects spreadsheet text without changing numeric signs',()=>{
   const text=resultTSV([{feature_id:'=formula',log2FoldChange:-2,pvalue:null,padj:null}]);
   assert.match(text,/'=formula\t\t-2/);assert.doesNotMatch(text,/null|undefined/);

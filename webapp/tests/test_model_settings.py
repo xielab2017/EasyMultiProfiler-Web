@@ -29,6 +29,23 @@ class ModelSettingsTests(unittest.TestCase):
             self.assertEqual(reply['answer'],'Test reply')
             self.assertEqual(request.call_args.kwargs['endpoint'],'http://127.0.0.1:11434/v1/chat/completions')
 
+    def test_named_profile_parameters_validate_and_do_not_leak_credentials(self):
+        base = {'provider':'openai','model':'gpt-4.1','api_key':'only-test','enabled':True}
+        options = dict(base, profile_id='profile-test', temperature=0, max_tokens_output=123)
+        loaded = settings.configure(options)
+        self.assertEqual(loaded['profile_id'], 'profile-test')
+        self.assertEqual(settings.active()['temperature'], 0)
+        self.assertEqual(loaded['max_tokens_output'], 123)
+        self.assertNotIn('only-test', json.dumps(loaded))
+        for bad in [dict(temperature=True), dict(temperature=3), dict(max_tokens_output=0),
+                    dict(max_tokens_output=True), dict(provider='minimax',temperature=0.7),
+                    dict(model='gpt-5',temperature=1)]:
+            with self.subTest(bad=bad), self.assertRaises(settings.GenerationOptionError):
+                settings.configure({**base, **bad})
+        self.assertEqual(settings.public_status()['config_revision'], loaded['config_revision'])
+        settings.configure(base)
+        self.assertNotIn('temperature', settings.active())
+
     def test_unsupported_settings_do_not_change_configuration(self):
         base={'provider':'openai','model':'gpt-4.1-mini','api_key':'synthetic-secret','enabled':True}
         for changed in [dict(base,enabled='true'),dict(base,model='fusion'),dict(base,base_url='https://other.example/v1'),dict(base,provider='auto')]:

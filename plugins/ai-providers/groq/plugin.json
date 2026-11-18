@@ -1,0 +1,9 @@
+{
+  "api_version": 1,
+  "id": "groq",
+  "version": "1.0.0",
+  "name": "Groq",
+  "protocol": "openai-chat-completions",
+  "base_url": "https://api.groq.com/openai/v1",
+  "default_model": "llama-3.3-70b-versatile"
+}

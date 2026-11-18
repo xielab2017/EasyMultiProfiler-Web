@@ -34,10 +34,16 @@ if [[ -f "${ROOT_DIR}/webapp/scripts/bootstrap_and_start.sh" ]]; then
   echo "[install] Local project copy found - running the local installer."
   echo "[安装] 检测到本地项目副本 - 运行本地安装流程 (bash install.sh)。"
   echo ""
-  bash "${ROOT_DIR}/install.sh"
+  bash "${ROOT_DIR}/install.sh" "$@"
 else
+  if [[ "${EMP_DRY_RUN:-0}" == "1" || " $* " == *" --dry-run "* ]]; then
+    echo "Dry run requires a local project copy." >&2
+    exit 1
+  fi
   echo "[install] No local project copy - downloading the installer from GitHub."
   echo "[安装] 未检测到本地项目副本 - 从 GitHub 下载安装脚本。"
   echo ""
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.sh)"
+  installer="$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.sh)" || exit $?
+  [[ -n "$installer" ]] || { echo "Downloaded installer is empty." >&2; exit 1; }
+  bash -c "$installer"
 fi

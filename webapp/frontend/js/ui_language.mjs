@@ -30,7 +30,7 @@ export function uiTranslation(value,locale,index,translate){
  target=String(target).trim();
  return (raw.match(/^\s*/)?.[0]||'')+target+(raw.match(/\s*$/)?.[0]||'');
 }
-const SKIP='script,style,pre,code,textarea,[contenteditable="true"],table,.plot-area,.code-lab-console,.agent-message,.agent-attachments,.agent-sent-attachment,[data-retired-page],#matrix-files,#matrix-series,#matrix-receipt,#rp-studies,#wb-samples,#scat-groups-filter label';
+const SKIP='script,style,pre,code,textarea,[contenteditable="true"],table,.plot-area,.code-lab-console,.agent-message,.agent-reading-actions,.agent-attachments,.agent-sent-attachment,[data-retired-page],#matrix-files,#matrix-series,#matrix-receipt,#rp-studies,#wb-samples,#scat-groups-filter label';
 const DATA_SELECT=/(?:group|reference|ref|test|subject|sample|feature|experiment|snapshot|source|project|pathway|omics-pipeline|locale-select|llm-model|chat-model)/i;
 const uiNodeSources=new WeakMap();
 function translateNode(node,key,current,locale,index,translate){
@@ -41,7 +41,10 @@ export function localizeUI(root,{locale,index,translate,doc=root.ownerDocument||
  const visit=element=>{
   if(element.closest?.(SKIP))return;
   if(element.tagName==='OPTION'){
-   const select=element.closest('select');if(select&&DATA_SELECT.test(select.id)&&!['omics-pipeline'].includes(select.id)&&!['','auto','current','__custom__'].includes(element.value))return;
+   const select=element.closest('select');
+   // The composer owns the localized labels for its four response formats.
+   if(select?.id==='analysis-output-type')return;
+   if(select&&DATA_SELECT.test(select.id)&&!['omics-pipeline'].includes(select.id)&&!['','auto','current','__custom__'].includes(element.value))return;
   }
   for(const node of element.childNodes||[])if(node.nodeType===3&&normalizeUI(node.textContent)){
    const text=translateNode(node,'text',node.textContent,locale,index,translate);if(text!==node.textContent)node.textContent=text;

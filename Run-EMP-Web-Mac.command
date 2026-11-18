@@ -20,18 +20,12 @@ _on_exit() {
     echo ""
     echo "════════════════════════════════════════════════════════"
     echo "  启动失败 (exit ${ec})。请阅读上方错误信息。"
-    echo "  EasyMultiProfiler Web v${EMP_WEB_VERSION} 已自动尝试安装 R / python3 / EMP；若失败,"
-    echo "  可手动: xcode-select --install"
-    echo "  或: bash webapp/scripts/launch_emp_web.sh --repair"
+    echo "  修复依赖: bash webapp/scripts/launch_emp_web.sh --repair"
     echo "════════════════════════════════════════════════════════"
-  else
-    echo ""
-    echo "服务已在后台运行。关闭本窗口不会停止服务。"
-    echo "停止: 双击 Stop-EMP-Web-Mac.command"
-    echo "  或: bash webapp/scripts/stop_local.sh"
   fi
   echo ""
-  read -r -p "按回车键关闭此窗口… " _ || sleep 8
+  if [[ -t 0 ]]; then read -r -p "按回车键关闭此窗口… " _ || true; fi
+  exit "${ec}"
 }
 trap _on_exit EXIT
 

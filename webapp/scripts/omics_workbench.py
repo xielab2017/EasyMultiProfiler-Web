@@ -98,22 +98,54 @@ def propose(question):
         return {'mode': 'local_rules', 'status': 'needs_specialist_workflow', 'steps': [],
                 'message': '此执行器仅支持独立样本的 bulk RNA-seq raw counts。所述数据或设计请使用对应组学页面，不能套用本流程。',
                 'execution_performed': False}
+    def clarify(reason):
+        return {'mode': 'local_rules', 'status': 'needs_clarification', 'reason': reason,
+                'steps': [], 'execution_performed': False}
+
+    if re.search(r'不要|排除|去掉|跳过|不做|不需要|不包含|除外|without|exclude|skip|omit|\bno\b|\bnot\b', question, re.I):
+        return clarify('explicit_steps')
+    if re.search(r'富集|通路|enrichment|GSEA|WGCNA|火山图|volcano', question, re.I):
+        return clarify('unconnected_steps')
+    full = bool(re.search(r'完整|全流程|一键|full|pipeline|workflow|工作流', question, re.I))
+    differential = bool(re.search(r'差异|比较|对比|上调|下调|differential|up.?regulat|down.?regulat|compar(?:e|ison)|\bvs\.?\s|DESeq|edgeR', question, re.I))
+    pca = bool(re.search(r'PCA|主成分', question, re.I))
+    heatmap = bool(re.search(r'热图|heatmap', question, re.I))
+    normalize = bool(re.search(r'归一|normaliz', question, re.I))
+    if not (full or differential or pca or heatmap or normalize or re.search(r'质控|质量检查|\bQC\b|quality', question, re.I)):
+        return clarify('analysis_goal')
     ops = ['qc']
-    if re.search(r'完整|全流程|一键|full|pipeline|workflow|工作流|差异|differential|DESeq', question, re.I):
-        ops = ['qc', 'normalize', 'pca', 'deseq2', 'heatmap']
-    else:
-        if re.search(r'PCA|主成分|热图|heatmap|归一|normaliz', question, re.I): ops.append('normalize')
-        if re.search(r'PCA|主成分', question, re.I): ops.append('pca')
-        if re.search(r'热图|heatmap', question, re.I): ops.append('heatmap')
+    if normalize or full or pca or heatmap: ops.append('normalize')
+    if pca or full: ops.append('pca')
+    if full or differential:
+        if not re.search('edgeR', question, re.I) or re.search('DESeq', question, re.I): ops.append('deseq2')
+        if re.search('edgeR', question, re.I): ops.append('edger')
+    if heatmap or full: ops.append('heatmap')
+    steps = steps_for(ops)
+
+    # Only user-specified, registered parameters can replace the defaults.
+    number = r'(-?(?:\d+(?:\.\d+)?|\.\d+)(?:[Ee][+-]?\d+)?)'
+    specs = (
+        ('alpha', r'(?:FDR|padj|alpha)\s*(?:阈值|threshold)?\s*(?:<=|[<≤=]|为|of)?\s*' + number + r'\s*([%％]?)', .001, .999),
+        ('top_n', r'(?:前\s*|top\s*)' + number + r'\s*(?:个|genes?|features?|基因|特征)', 1, 500),
+        ('components', number + r'\s*(?:个主成分|principal components?|PCs\b)', 1, 10),
+    )
+    for key, pattern, low, high in specs:
+        found = list(re.finditer(pattern, question, re.I))
+        if not found:
+            if key == 'alpha' and re.search(r'(?:FDR|padj|alpha)\s*(?:阈值|threshold)?\s*[<>≥≤=]', question, re.I):
+                return clarify('parameters')
+            continue
+        targets = [step['parameters'] for step in steps if key in step['parameters']]
+        values = {float(m[1]) / (100 if key == 'alpha' and m[2] in ('%', '％') else 1) for m in found}
+        if not targets or len(values) != 1: return clarify('parameters')
+        value = values.pop()
+        if not low <= value <= high or (key != 'alpha' and not value.is_integer()): return clarify('parameters')
+        for params in targets: params[key] = value if key == 'alpha' else int(value)
     accession = re.search(r'\bGSE[0-9]{1,9}\b', question, re.I)
-    if re.search(r'\bedgeR\b', question, re.I):
-        if re.search(r'\bDESeq2?\b', question, re.I):
-            ops.insert(ops.index('heatmap') if 'heatmap' in ops else len(ops), 'edger')
-        else:
-            ops = ['edger' if op == 'deseq2' else op for op in ops]
-            if 'edger' not in ops: ops.append('edger')
-    return {'mode': 'local_rules', 'status': 'draft', 'steps': steps_for(ops),
+    return {'mode': 'local_rules', 'status': 'draft', 'steps': steps,
             'accession': accession.group().upper() if accession else None,
+            'review_fields': ['input', 'raw_counts_evidence', 'sample_groups'] +
+                             (['contrast', 'independence'] if differential or full else []),
             'message': '已将指令转为可编辑流程。请选择真实矩阵、填写样本分组并审核后运行。',
             'execution_performed': False}
 
@@ -333,6 +365,31 @@ class Workbench:
                     'confirmation_required': True, 'dataset': {k: v for k, v in dataset.items() if k != 'matrix_csv'}}
 
     def payload(self, key):
+        unavailable = 'Prepared plan unavailable; prepare it again'
+        if not isinstance(key, str) or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', key):
+            raise ValueError(unavailable)
         with self.lock:
-            if key not in self.prepared: raise ValueError('Prepared plan unavailable; prepare it again')
-            return deepcopy(self.prepared[key])
+            if key in self.prepared:
+                return deepcopy(self.prepared[key])
+        # Prepared envelopes from previous versions carry both checksums.
+        # Read only the requested envelope and keep the in-memory registry bounded.
+        path = self.root / (key + '.plan.json')
+        if path.is_symlink():
+            raise ValueError(unavailable)
+        limit = 34 * 1024 * 1024
+        try:
+            with path.open('rb') as stream:
+                raw = stream.read(limit + 1)
+            if len(raw) > limit:
+                raise ValueError(unavailable)
+            payload = json.loads(raw)
+            if not isinstance(payload, dict) or set(payload) != {'plan_json', 'plan_sha256', 'matrix_csv'} or not all(isinstance(v, str) for v in payload.values()):
+                raise ValueError(unavailable)
+            plan = json.loads(payload['plan_json'])
+            if (not isinstance(plan, dict) or plan.get('contract') != CONTRACT
+                    or sha(payload['plan_json'].encode()) != payload['plan_sha256']
+                    or sha(payload['matrix_csv'].encode()) != plan.get('input_sha256')):
+                raise ValueError(unavailable)
+            return payload
+        except (OSError, ValueError, RecursionError) as exc:
+            raise ValueError(unavailable) from exc

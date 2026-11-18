@@ -187,7 +187,7 @@ emp_agent_capabilities <- function() {
   list(
     success = TRUE,
     api_version = "1.0",
-    emp_version = Sys.getenv("EMP_WEB_VERSION", unset = "9.1.3"),
+    emp_version = emp_web_version(),
     package_version = package_version,
     features = list(
       path_import = length(.emp_allowed_roots()) > 0,
@@ -197,8 +197,13 @@ emp_agent_capabilities <- function() {
       persistent_sessions = TRUE,
       persistent_projects = TRUE,
       bearer_auth = emp_auth_required(),
+      analysis_plugins = TRUE,
+      result_view_plugins = TRUE,
+      chat_ui_plugins = TRUE,
       arbitrary_r = user_r_enabled
     ),
+    extensions = list(catalog = "/api/extensions", analysis = "emp.analysis.v1", view = "emp.view.v1", chat_ui = "emp.chat-ui.v1",
+                      result = "emp.metric-table.v1"),
     workflows = workflows,
     tools = agent_tools,
     limits = list(

@@ -17,3 +17,26 @@ test('registered requests submit once, retain auth, notify the tray and return b
  assert.equal(JSON.parse(seen[1].opts.body).payload.method,'PCA');
  assert.equal(events.filter(e=>e.type==='emp:job-submitted').length,1);
 });
+
+test('background submit uses the discovered API and never replays an uncertain write', async () => {
+  const requests = [];
+  const sandbox=vm.createContext({
+    headers:()=>({}),resolveApiCandidates:()=>['/unreachable','/reachable'],
+    window:{dispatchEvent(){}},CustomEvent:class{},setTimeout,clearTimeout,
+    fetch:async(url,opts)=>{
+      requests.push([opts.method,url]);
+      if(url==='/reachable/tasks/capabilities') return {
+        ok:true,status:200,headers:{get:()=> 'application/json'},
+        json:async()=>({success:true,routes:['/analyze/dimension']})
+      };
+      throw new Error('Connection lost');
+    },
+  });
+  vm.runInContext(code+';globalThis.run=request',sandbox);
+  await assert.rejects(sandbox.run('POST','/analyze/dimension',{session_id:'current'}),/Check Background Tasks/);
+  assert.deepEqual(requests,[
+    ['GET','/unreachable/tasks/capabilities'],
+    ['GET','/reachable/tasks/capabilities'],
+    ['POST','/reachable/tasks/submit'],
+  ]);
+});

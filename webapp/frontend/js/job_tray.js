@@ -242,7 +242,10 @@ export function initJobTray() {
       }
     });
     window.addEventListener("emp:locale-change", () => render());
-    window.addEventListener('emp:job-submitted', () => { _open=true; poll(); });
+    window.addEventListener('emp:job-submitted', () => {
+      if (!window.matchMedia('(max-width: 900px)').matches) _open=true;
+      poll();
+    });
     window.addEventListener('emp:tasks-refresh', () => { _open=true; poll(); });
     render();
     poll();

@@ -632,30 +632,8 @@ make_boxplot <- function(session_id, experiment, group = NULL, feature = NULL,
 # Render a pheatmap gtable to PNG base64 + optional PDF (classic DESeq2 style).
 .pheatmap_to_outputs <- function(ph, pdf_path = NULL, width, height,
                                  cluster_rows = TRUE, cluster_cols = TRUE) {
-  pdf_out <- NULL
-  if (!is.null(pdf_path) && nzchar(pdf_path)) {
-    tryCatch(
-      save_plot_pdf(ph, pdf_path, width = width, height = height),
-      error = function(e) message("[heatmap] PDF write failed: ", conditionMessage(e))
-    )
-    pdf_out <- pdf_path
-  }
-  png_b64 <- tryCatch({
-    tmp <- tempfile(fileext = ".png")
-    on.exit(if (file.exists(tmp)) file.remove(tmp), add = TRUE)
-    if (requireNamespace("ragg", quietly = TRUE)) {
-      ragg::agg_png(filename = tmp, width = width, height = height, units = "in",
-                    res = 300, background = "white")
-    } else {
-      grDevices::png(filename = tmp, width = width, height = height, units = "in",
-                     res = 300, bg = "white",
-                     type = if (.Platform$OS.type == "windows") "windows" else "cairo")
-    }
-    grid::grid.newpage()
-    grid::grid.draw(ph$gtable)
-    grDevices::dev.off()
-    base64enc::base64encode(tmp)
-  }, error = function(e) NA_character_)
+  png_b64 <- plot_to_base64(ph, width, height)
+  pdf_out <- viz_optional_pdf(ph, pdf_path, width, height)
   list(png = png_b64, pdf = pdf_out)
 }
 

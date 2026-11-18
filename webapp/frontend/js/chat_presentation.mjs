@@ -1,3 +1,4 @@
+import {downloadMarkdown} from './chat_history.mjs';
 // Construct DOM nodes only: model HTML, images and unsafe URLs never execute.
 const make=(doc,tag,text,cls)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const safeURL=value=>{try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)?u.href:null;}catch{return null;}};
@@ -14,11 +15,18 @@ function inline(parent,text,doc){
   if(last<text.length)parent.append(make(doc,'span',text.slice(last)));
 }
 export function renderRichText(root,value,doc=globalThis.document){
-  const lines=String(value||'').slice(0,16000).replace(/\r\n?/g,'\n').split('\n');root.replaceChildren();let i=0;
+  const lines=String(value||'').replace(/\r\n?/g,'\n').split('\n');root.replaceChildren();let i=0;
   const cells=line=>line.trim().replace(/^\||\|$/g,'').split('|').map(x=>x.trim());
   const separator=line=>/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line||'');
   while(i<lines.length){
     const line=lines[i];if(!line.trim()){i++;continue;}
+    if(line.trim()==='```emp-flow'){
+      const flow=make(doc,'ol',undefined,'agent-flow-diagram');i++;
+      while(i<lines.length&&!/^\s*```/.test(lines[i])){
+        const stage=lines[i++].trim();if(stage)flow.append(make(doc,'li',stage));
+      }
+      root.append(flow);i++;continue;
+    }
     if(/^\s*```/.test(line)){const pre=make(doc,'pre'),code=make(doc,'code'),body=[];i++;while(i<lines.length&&!/^\s*```/.test(lines[i]))body.push(lines[i++]);code.textContent=body.join('\n');pre.append(code);root.append(pre);i++;continue;}
     if(line.includes('|')&&separator(lines[i+1])){
       const wrap=make(doc,'div',undefined,'agent-table-scroll'),table=make(doc,'table'),head=make(doc,'thead'),tr=make(doc,'tr');
@@ -34,12 +42,19 @@ export function renderRichText(root,value,doc=globalThis.document){
 }
 export function appendChatMessage(root,role,text,{doc=globalThis.document,english=false}={}){
   const card=make(doc,'article',undefined,'agent-message agent-message--'+role);card.append(make(doc,'div',role==='user'?(english?'You':'我'):'AI','agent-message-role'));
-  const body=make(doc,'div',undefined,'agent-message-body');if(role==='user')body.textContent=String(text);else renderRichText(body,text,doc);card.append(body);root.append(card);return card;
+  const body=make(doc,'div',undefined,'agent-message-body');if(role==='user')body.textContent=String(text);else renderRichText(body,text,doc);card.append(body);
+  if(role==='assistant'){
+    const save=make(doc,'button',english?'Save Markdown note':'保存 Markdown 笔记','agent-save-note');
+    save.type='button';
+    save.onclick=()=>downloadMarkdown(String(text),'emp-note.md');
+    card.append(save);
+  }
+  root.append(card);return card;
 }
 const LABELS={provider_request:['正在生成方案','Preparing response'],tool_started:['正在调用工具','Calling tool'],tool_finished:['工具已返回','Tool returned'],completed:['本轮完成','Turn complete'],error:['本轮未完成','Turn incomplete'],round_limit:['已达到工具调用上限','Tool limit reached'],configuration_changed:['模型配置已变化','Model configuration changed'],unconfigured:['请先加载模型配置','Load model settings first']};
 const TOOLS={propose_count_workflow:'生成分析步骤草案',fill_page_fields:'准备页面参数',request_page_action:'请求页面操作',set_heatmap_size:'调整热图尺寸',search_papers:'检索论文',fetch_paper_abstract:'读取论文摘要',discover_processed:'查找处理矩阵',discover_pride_files:'查找蛋白质组文件',search_metadata:'检索数据库',resolve_accession:'核对数据编号',get_selected_context:'读取已选数据摘要',validate_plan:'检查流程依赖'};
 export function createActivity(root,{doc=globalThis.document,english=false}={}){
-  const card=make(doc,'details',undefined,'agent-activity');card.open=true;const summary=make(doc,'summary',english?'Reading page and preparing response':'正在读取页面并准备回应');const list=make(doc,'ol');card.append(summary,list);root.append(card);let last='';
+  const card=make(doc,'details',undefined,'agent-activity');card.open=false;const summary=make(doc,'summary',english?'Reading page and preparing response':'正在读取页面并准备回应');const list=make(doc,'ol');card.append(summary,list);root.append(card);let last='';
   return {card,update(events=[]){const key=JSON.stringify(events);if(key===last)return;last=key;list.replaceChildren();for(const event of events.slice(-24)){const label=(LABELS[event.stage]||[event.stage,event.stage])[english?1:0];const name=event.tool?(english?event.tool:(TOOLS[event.tool]||event.tool)):'';const state=event.status&&event.status!=='ok'?' · '+event.status:'';list.append(make(doc,'li',label+(name?'：'+name:'')+state+(Number.isFinite(event.duration_ms)?' · '+(event.duration_ms/1000).toFixed(1)+'s':'')));}if(events.length){const final=events.at(-1);summary.textContent=(LABELS[final.stage]||[final.stage,final.stage])[english?1:0];}},note(text){list.append(make(doc,'li',text));},finish(ok){summary.textContent=english?(ok?'Actions and results':'Action needs attention'):(ok?'本轮操作与结果':'本轮需要处理');card.open=!ok;}};
 }
 export function appendWorkflowCard(root,proposal,onApply,{doc=globalThis.document,english=false}={}){

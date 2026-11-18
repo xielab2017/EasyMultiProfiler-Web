@@ -3,10 +3,18 @@
 .m16s_tax_levels <- c("Domain", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "Strain")
 
 m16s_parse_taxonomy <- function(x, tax_sep = ";") {
-  parts <- strsplit(as.character(x), tax_sep, fixed = TRUE)[[1]]
-  parts <- trimws(parts)
-  parts[parts == ""] <- NA_character_
-  parts
+  parts <- trimws(strsplit(as.character(x), tax_sep, fixed = TRUE)[[1]])
+  out <- rep(NA_character_, length(.m16s_tax_levels))
+  prefixes <- c(d = "Domain", k = "Kingdom", p = "Phylum", c = "Class", o = "Order",
+                f = "Family", g = "Genus", s = "Species")
+  rank <- 0L
+  for (part in parts) {
+    prefix <- if (grepl("^[dkpcofgs]_{1,2}", part, ignore.case = TRUE)) tolower(substr(part, 1L, 1L)) else ""
+    rank <- if (nzchar(prefix)) match(prefixes[[prefix]], .m16s_tax_levels) else rank + 1L
+    label <- if (nzchar(prefix)) sub("^[A-Za-z]_{1,2}", "", part) else part
+    if (rank <= length(out) && !is.na(label) && nzchar(label) && !grepl("^_+$", label)) out[rank] <- label
+  }
+  out
 }
 
 m16s_tax_index <- function(level) {
@@ -18,20 +26,22 @@ m16s_tax_index <- function(level) {
 m16s_taxonomy_parts <- function(empt, tax_sep = ";") {
   ad <- SummarizedExperiment::assays(empt)[[1]]
   taxa_raw <- rownames(ad)
-  if (!is.null(taxa_raw) && any(grepl(tax_sep, taxa_raw, fixed = TRUE))) {
-    return(lapply(taxa_raw, m16s_parse_taxonomy, tax_sep = tax_sep))
-  }
-
-  rd <- tryCatch(as.data.frame(SummarizedExperiment::rowData(empt)), error = function(e) data.frame())
+  rd <- as.data.frame(SummarizedExperiment::rowData(empt))
+  # EMP imports commonly start at Kingdom (spelled Kindom in older objects).
+  # The imported rank columns remain authoritative after prefixes are stripped.
+  if ("Kindom" %in% names(rd) && !"Kingdom" %in% names(rd)) names(rd)[names(rd) == "Kindom"] <- "Kingdom"
   level_cols <- intersect(.m16s_tax_levels, names(rd))
-  if (!length(level_cols)) {
-    feature_col <- if ("feature" %in% names(rd)) as.character(rd$feature) else taxa_raw
-    return(lapply(feature_col, m16s_parse_taxonomy, tax_sep = tax_sep))
-  }
+  original <- if ("original_taxonomy" %in% names(rd)) as.character(rd$original_taxonomy) else NULL
+  if (is.null(original)) original <- if ("feature" %in% names(rd)) as.character(rd$feature) else taxa_raw
+  if (!length(level_cols)) return(lapply(original, m16s_parse_taxonomy, tax_sep = tax_sep))
 
+  # Prefer explicitly ranked input to imputed labels such as
+  # Bacteria_unclassified. Unranked legacy input uses its imported column names.
+  has_prefix <- !is.na(original) & grepl("^\\s*[dkpcofgs]_{1,2}", original, ignore.case = TRUE)
   lapply(seq_len(nrow(rd)), function(i) {
+    if (isTRUE(has_prefix[i])) return(m16s_parse_taxonomy(original[i], tax_sep))
     vals <- as.character(rd[i, level_cols, drop = TRUE])
-    vals[is.na(vals) | vals == ""] <- NA_character_
+    vals[is.na(vals) | vals == "" | grepl("^_+$|(^|_)unclassified$", vals, ignore.case = TRUE)] <- NA_character_
     names(vals) <- level_cols
     out <- rep(NA_character_, length(.m16s_tax_levels))
     names(out) <- .m16s_tax_levels
@@ -77,7 +87,12 @@ m16s_prepare_taxonomy <- function(empt, tax_sep = ";", collapse_level = "Genus",
     if (is.na(val) || !nzchar(val)) "Unassigned" else val
   }, character(1))
 
-  grouped <- rowsum(ad, group = taxa_label, reorder = FALSE, na.rm = TRUE)
+  # Integer rowsum can overflow before the downstream integer-count check.
+  storage.mode(ad) <- "double"
+  grouped <- rowsum(ad, group = taxa_label, reorder = FALSE)
+  if (any(!is.finite(grouped)) || any(grouped > .Machine$integer.max)) {
+    stop("Aggregated 16S counts exceed the supported integer range.")
+  }
   totals <- rowSums(grouped, na.rm = TRUE)
   keep <- rep(TRUE, length(totals))
 
@@ -88,19 +103,15 @@ m16s_prepare_taxonomy <- function(empt, tax_sep = ";", collapse_level = "Genus",
     keep <- keep & totals >= min_total_abundance
   }
   if (isTRUE(keep_top_n > 0)) {
-    ord <- order(totals, decreasing = TRUE)
-    top_names <- rownames(grouped)[ord[seq_len(min(length(ord), as.integer(keep_top_n)))]]
-    keep <- keep & rownames(grouped) %in% top_names
+    eligible <- which(keep)
+    ordered <- eligible[order(totals[eligible], decreasing = TRUE)]
+    keep <- seq_along(keep) %in% head(ordered, as.integer(keep_top_n))
   }
 
   grouped <- grouped[keep, , drop = FALSE]
   if (!nrow(grouped)) stop("All taxa were filtered out. Relax filtering thresholds.")
 
-  # Many downstream EMP_* analyses (alpha, tax composition, enterotype)
-  # assume an *integer* count matrix. rowsum() on an integer matrix can
-  # still return numeric, so coerce back explicitly and drop NAs.
   storage.mode(grouped) <- "integer"
-  grouped[is.na(grouped)] <- 0L
 
   new_rd <- S4Vectors::DataFrame(
     feature        = rownames(grouped),
@@ -109,6 +120,15 @@ m16s_prepare_taxonomy <- function(empt, tax_sep = ";", collapse_level = "Genus",
     taxonomy_level = collapse_level,
     row.names      = rownames(grouped)
   )
+  # Preserve known ancestors for subsequent coarser aggregation and Sankey plots.
+  lineages <- do.call(rbind, taxa_parts)
+  group_rows <- split(seq_along(taxa_label), taxa_label)
+  for (rank in seq_len(level_idx)) {
+    new_rd[[.m16s_tax_levels[rank]]] <- vapply(rownames(grouped), function(label) {
+      values <- unique(stats::na.omit(lineages[group_rows[[label]], rank]))
+      if (length(values) == 1L) as.character(values) else NA_character_
+    }, character(1), USE.NAMES = FALSE)
+  }
   assay_name <- names(SummarizedExperiment::assays(empt))[1]
   new_empt <- SummarizedExperiment::SummarizedExperiment(
     assays  = list(tmp_assay = grouped),

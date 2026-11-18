@@ -12,11 +12,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class LauncherTests(unittest.TestCase):
     def test_bash_syntax(self):
-        for script in list(ROOT.rglob('*.sh')) + list(ROOT.glob('*.command')):
-            if '.git' in script.parts or '.local_run' in script.parts:
-                continue
-            with self.subTest(script=str(script)):
-                subprocess.run(['bash', '-n', str(script)], check=True, capture_output=True)
+        for directory, folders, files in os.walk(ROOT):
+            folders[:] = [name for name in folders if name not in {'.git', '.local_run'}]
+            for name in files:
+                if name.endswith(('.sh', '.command')):
+                    script = Path(directory) / name
+                    with self.subTest(script=str(script)):
+                        subprocess.run(['bash', '-n', str(script)], check=True, capture_output=True)
 
     def test_metadata_check(self):
         result = subprocess.run([sys.executable, str(ROOT / 'webapp/scripts/launch_metadata.py'), '--check'], capture_output=True, text=True, check=True)
@@ -33,6 +35,8 @@ class LauncherTests(unittest.TestCase):
             scripts.mkdir(parents=True)
             shutil.copy(ROOT / 'webapp/scripts/start_local.sh', scripts)
             shutil.copy(ROOT / 'webapp/scripts/process_identity.sh', scripts)
+            shutil.copy(ROOT / 'webapp/scripts/resolve_rscript.sh', scripts)
+            shutil.copy(ROOT / 'webapp/scripts/resolve_python.sh', scripts)
             fake_r = root / 'fake Rscript'
             fake_r.write_text('#!/bin/sh\nexit 0\n')
             fake_r.chmod(0o755)
@@ -51,6 +55,25 @@ class LauncherTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('Rscript not found', result.stderr)
 
+    def test_r_discovery_skips_incompatible_versions_and_honors_override(self):
+        with tempfile.TemporaryDirectory(prefix="EMP R environments ") as folder:
+            scripts = Path(folder) / 'webapp/scripts'
+            scripts.mkdir(parents=True)
+            resolver = Path(shutil.copy(ROOT / 'webapp/scripts/resolve_rscript.sh', scripts))
+            env = dict(os.environ, R_HOME=folder + '/old', CONDA_PREFIX=folder + '/active')
+            env.pop('EMPI_RSCRIPT', None)
+            for prefix, status in [('old', 2), ('active', 0)]:
+                exe = Path(folder) / prefix / 'bin/Rscript'
+                exe.parent.mkdir(parents=True)
+                exe.write_text(f'#!/bin/sh\nexit {status}\n')
+                exe.chmod(0o755)
+            result = subprocess.run(['bash', str(resolver)], env=env, capture_output=True, text=True, check=True)
+            self.assertEqual(result.stdout.strip(), str(Path(env['CONDA_PREFIX']) / 'bin/Rscript'))
+            env['EMPI_RSCRIPT'] = str(Path(env['R_HOME']) / 'bin/Rscript')
+            result = subprocess.run(['bash', str(resolver)], env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(env['EMPI_RSCRIPT'], result.stderr)
+
     def test_metadata_shell_wrapper(self):
         result = subprocess.run(['bash', str(ROOT / 'Start-EMP-Metadata.command'), '--check'], env=dict(os.environ, EMPI_PYTHON=sys.executable), capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(result.stdout)['mode'], 'metadata-only')
@@ -60,6 +83,8 @@ class LauncherTests(unittest.TestCase):
         root = "/tmp/EMP project's copy"
         cases = [
             (f"Rscript {root}/webapp/backend/run_api.R", True),
+            (f"R --no-echo --file={root.replace(' ', '~+~')}/webapp/backend/run_api.R", True),
+            (f"R --file={root.replace(' ', '~+~')}/webapp/backend/run_api.R.backup", False),
             (f'python "{root}/webapp/scripts/static_server.py" 8080', True),
             ("Rscript /tmp/another/webapp/backend/run_api.R", False),
             (f"Rscript /prefix{root}/webapp/backend/run_api.R", False),

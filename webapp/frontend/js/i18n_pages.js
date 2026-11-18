@@ -295,7 +295,6 @@ function applyAnalysisPage() {
   setLastText($("#tx-btn-profile"), "ana.profile");
   setLastText($("#tx-btn-diff"), "ana.tab.diff");
   setLastText($("#tx-btn-gsea"), "ana.gsea");
-  setLastText($("#tx-btn-wgcna"), "ana.tab.network");
   setText($("#ana-mgx h3"), "ana.mgxTitle");
   setLastText($("#mgx-btn-profile"), "ana.profileMatrix");
   setLastText($("#mgx-btn-preprocess"), "ana.preprocess");

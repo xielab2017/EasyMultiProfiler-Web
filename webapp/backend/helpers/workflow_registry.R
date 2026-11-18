@@ -10,7 +10,7 @@ get_workflow_registry <- function() {
         list(id = "import", name = "Import", steps = c("Load count/TPM matrix", "Attach sample metadata")),
         list(id = "preparation", name = "Preparation", steps = c("Filter low-expression features", "Normalize and impute if needed")),
         list(id = "analysis", name = "Analysis", steps = c("Differential analysis", "Dimension reduction", "Correlation/cluster")),
-        list(id = "advanced", name = "Advanced", steps = c("GSEA", "WGCNA")),
+        list(id = "advanced", name = "Advanced", steps = c("GSEA", "Feature correlation screen")),
         list(id = "visualization", name = "Visualization", steps = c("Volcano/heatmap/scatter", "Enrichment visual summaries")),
         list(id = "export", name = "Export", steps = c("Result tables", "Session RDS"))
       )

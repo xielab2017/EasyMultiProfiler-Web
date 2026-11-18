@@ -47,6 +47,28 @@
 #models-test-status{white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
 .wb-simple-shell{display:grid;gap:16px}
 .wb-simple-shell>.card{margin:0}
+.wb-simple-shell,.wb-simple-shell>.card,.wb-simple-shell details {min-width:0;}
+.wb-simple-shell{grid-template-columns:minmax(0,1fr);}
+#wb-result-summary{overflow-wrap:anywhere;margin:10px 0;}
+@media(max-width:900px){
+  #main:has(>#page-workbench.active){min-width:0;}
+  #main>#page-workbench.active{max-width:100%;padding:12px;}
+  #page-workbench .wb-simple-shell :is(.wb-simple-summary,pre){overflow-wrap:anywhere;}
+  #page-workbench .wb-actions>button{max-width:100%;}
+  #wb-result-summary{margin-bottom:12px;}
+}
+@media(max-width:600px){
+  #main:has(>#page-workbench.active) #topbar{position:static;padding:12px;}
+  #main:has(>#page-workbench.active) .topbar-head{flex-wrap:wrap;gap:6px;}
+  #main:has(>#page-workbench.active) #page-title{flex-basis:100%;}
+  #main:has(>#page-workbench.active) .topbar-right{flex-wrap:wrap;max-width:100%;gap:6px;}
+  body:has(#page-workbench.active) .emp-hintbar{
+    left:66px;right:6px;bottom:56px;transform:none;max-width:none;
+    display:grid;grid-template-columns:1fr auto;gap:4px 8px;
+  }
+  body:has(#page-workbench.active) .emp-hintbar-msg{grid-column:1/-1;grid-row:2;}
+  body:has(#page-workbench.active) .emp-hintbar button{grid-column:2;grid-row:1;}
+}
 .wb-simple-shell #wb-count-inputs{padding:0;border:0;box-shadow:none}
 .wb-simple-shell #wb-study-review>p.hint{display:none}
 .wb-simple-shell #wb-simple-columns,.wb-simple-shell #wb-simple-samples{margin:12px 0}
@@ -57,11 +79,11 @@
 #research-project select,#research-project input:not([type=checkbox]){max-width:100%;margin:4px}
 [hidden]{display:none!important}
 /* Shared form system for Workbench and multi-study integration. */
-:is(#page-workbench,#research-project){--workbench-control-height:42px;--workbench-border:#cbd5e1;min-width:0}
-:is(#page-workbench,#research-project) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea){box-sizing:border-box;max-width:100%;min-height:var(--workbench-control-height);border:1px solid var(--workbench-border);border-radius:8px;padding:9px 12px;background:#fff;color:#1e293b;font:inherit;font-size:14px;line-height:1.5;transition:border-color .15s,box-shadow .15s}
-:is(#page-workbench,#research-project) :is(input,select,textarea):focus-visible{outline:0;border-color:#3563e9;box-shadow:0 0 0 3px #3563e91a}
-:is(#page-workbench,#research-project) input[type=checkbox]{width:16px;height:16px;flex:0 0 16px;margin:3px 0;accent-color:#3563e9}
-:is(#page-workbench,#research-project) .btn{box-sizing:border-box;min-height:var(--workbench-control-height);padding:9px 15px;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:14px;line-height:1.5;margin:0;white-space:normal;text-align:center}
+:is(#page-workbench,#page-plugins,#research-project){--workbench-control-height:42px;--workbench-border:#cbd5e1;min-width:0}
+:is(#page-workbench,#page-plugins,#research-project) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea){box-sizing:border-box;max-width:100%;min-height:var(--workbench-control-height);border:1px solid var(--workbench-border);border-radius:8px;padding:9px 12px;background:#fff;color:#1e293b;font:inherit;font-size:14px;line-height:1.5;transition:border-color .15s,box-shadow .15s}
+:is(#page-workbench,#page-plugins,#research-project) :is(input,select,textarea):focus-visible{outline:0;border-color:#3563e9;box-shadow:0 0 0 3px #3563e91a}
+:is(#page-workbench,#page-plugins,#research-project) input[type=checkbox]{width:16px;height:16px;flex:0 0 16px;margin:3px 0;accent-color:#3563e9}
+:is(#page-workbench,#page-plugins,#research-project) .btn{box-sizing:border-box;min-height:var(--workbench-control-height);padding:9px 15px;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:14px;line-height:1.5;margin:0;white-space:normal;text-align:center}
 #page-workbench :is(.wb-study-review,.wb-contrast,.wb-designer-settings){min-width:0}
 #page-workbench .wb-study-review{padding:20px;background:#f8fafc;border-radius:12px;display:flex;flex-wrap:wrap;align-items:end;gap:12px 16px}
 #page-workbench .wb-study-review>h3,#page-workbench .wb-study-review>h4,#page-workbench .wb-study-review>p,#page-workbench .wb-study-review>details,#page-workbench .wb-study-review>pre{flex-basis:100%;margin:0}

@@ -16,9 +16,9 @@
 # sequence is confirmed.
 #
 # Build (from the repository root):
-#   docker build -f container/Dockerfile -t emp-web:9.1.0 .
+#   docker build -f container/Dockerfile -t emp-web:local .
 # Run:
-#   docker run --rm -p 8080:8080 -p 8000:8000 -p 8090:8090 emp-web:9.1.0
+#   docker run --rm -p 8080:8080 -p 8000:8000 -p 8090:8090 emp-web:local
 # Then open http://127.0.0.1:8080 (UI) and
 # http://127.0.0.1:8000/api/health (API health check).
 

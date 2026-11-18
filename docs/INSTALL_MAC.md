@@ -24,9 +24,9 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProf
 |------|------|
 | ① 检查 / 安装 **git** | 缺失时通过 Homebrew 或 apt 自动装 |
 | ② **克隆仓库** 到当前目录的 `EasyMultiProfiler-Web` |
-| ③ 检查 / 安装 **python3 ≥ 3.8** | 同上 |
+| ③ 检查 / 安装 **Python ≥ 3.10** | 同上 |
 | ④ 检查 / 安装 **R ≥ 4.3.3** | macOS 直接下载 CRAN `.pkg`；Linux 添加 CRAN apt/yum 源后 `apt-get install r-base` |
-| ⑤ 安装 **CRAN + Bioconductor + EasyMultiProfiler** R 包 | `remotes::install_local()`，离线优先用本仓库的 EMP 源码 |
+| ⑤ 安装 **CRAN + Bioconductor + EasyMultiProfiler** R 包 | 用本地项目源码安装 EMP，并检查项目专用 R 包库内的版本 |
 | ⑥ 启动 **后端 API :8000** + **网页 :8080** | 并尝试 `open` Safari 打开 |
 
 首次安装大约 **15–40 分钟**（取决于网络，主要花在 Bioconductor）。
@@ -56,6 +56,17 @@ bash webapp/scripts/launch_emp_web.sh --repair   # 强制重装所有 R 包
 ---
 
 ## 4. 环境变量开关（高级）
+
+安装和启动会查找 R ≥ 4.3.3，优先使用项目的 `.local_run/r-runtime/bin/Rscript`，随后检查 `R_HOME`、当前 Conda 环境、`PATH`、macOS 的 CRAN 和 Homebrew 安装位置，以及 Conda 和 micromamba 环境。可先打印将要使用的解释器，再按需指定其他版本。
+
+```bash
+bash webapp/scripts/resolve_rscript.sh
+EMPI_RSCRIPT="/path/to/my R/bin/Rscript" bash webapp/scripts/launch_emp_web.sh
+```
+
+显式指定的 `EMPI_RSCRIPT` 无效或版本过低时，启动器会报告该路径并退出。
+
+Python 使用相同的版本检查。运行 `bash webapp/scripts/resolve_python.sh` 可查看所选解释器。可用 `EMPI_PYTHON="/path/to/bin/python"` 指定 Python 3.10 或更高版本。
 
 ```bash
 EMP_AUTO_INSTALL=0  bash webapp/scripts/bootstrap_and_start.sh   # 缺东西不装，只报错

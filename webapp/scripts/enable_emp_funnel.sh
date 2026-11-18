@@ -35,6 +35,8 @@ if ! curl --noproxy '*' -fsS --max-time 3 "http://127.0.0.1:${API_PORT}/api/heal
   exit 1
 fi
 
+PY="$(bash "$ROOT_DIR/webapp/scripts/resolve_python.sh")"
+
 # Restart local gateway
 if [[ -f "${GW_PID_FILE}" ]]; then
   old="$(cat "${GW_PID_FILE}" 2>/dev/null || true)"
@@ -50,15 +52,6 @@ if [[ -n "${pids}" ]]; then
   kill ${pids} 2>/dev/null || true
   sleep 1
 fi
-
-PY=""
-for _py in python3 python; do
-  if command -v "${_py}" >/dev/null 2>&1; then
-    PY="${_py}"
-    break
-  fi
-done
-[[ -n "${PY}" ]] || { echo "Python 3 not found" >&2; exit 1; }
 
 cd "${ROOT_DIR}"
 nohup env API_PORT="${API_PORT}" WEB_PORT="${WEB_PORT}" GATEWAY_PORT="${GATEWAY_PORT}" GATEWAY_HOST=127.0.0.1 \
@@ -78,7 +71,7 @@ tailscale funnel --bg --yes --https=443 "${GATEWAY_PORT}"
 
 
 sleep 1
-FUNNEL_URL="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys
+FUNNEL_URL="$(tailscale status --json 2>/dev/null | "$PY" -c 'import json,sys
 d=json.load(sys.stdin)
 name=(d.get("Self",{}) or {}).get("DNSName","").rstrip(".")
 print(f"https://{name}" if name else "")' 2>/dev/null || true)"

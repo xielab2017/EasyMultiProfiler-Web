@@ -5,6 +5,7 @@ import {guideFor, modelQuestion} from './analysis_guide_model.mjs';
 import {getLocale} from './locale.js?v=nav-language-20261108';
 import {request as rRequest} from './api.js?v=nav-language-20261108';
 import {currentAgentAction,resolveAgentAction,resolveHeatmapSize,resolveAgentNavigation,assertAgentSubmission} from './agent_actions.mjs';
+import {createChatHistory, conversationMarkdown, downloadMarkdown} from './chat_history.mjs';
 import {bindChatFollow} from './chat_layout.mjs';
 import {mountChatComposer} from './chat_composer.mjs';
 import {agentMemory} from './agent_memory.mjs';
@@ -40,7 +41,7 @@ const TEXT = {
 const tr=(key,vars={})=>{let text=UI_LOCALES_FULL[TEXT[key][1]]?.[getLocale()]||TEXT[key][['zh','zh-TW'].includes(getLocale())?0:1];for(const [k,v]of Object.entries(vars))text=text.replaceAll(`{${k}}`,String(v));return text;};
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 
-export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,modelBridge}) {
+export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,modelBridge,isActive=()=>true}) {
   const taskReceipts=new Map();const completedUi=new Map();
   const followJobs=new Map();let expectedSubmission=null;
   let approvedPlan=null,planFirst=false;try{planFirst=localStorage.getItem('emp_agent_plan_first_v1')==='true';}catch{}
@@ -52,9 +53,16 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
   const pending=el('p',undefined,'analysis-guide-note');
   const services=el('div',undefined,'analysis-guide-service');
   const questionLabel=el('label');const questionCaption=el('span');const question=el('textarea');question.rows=3;question.maxLength=3500;question.id='analysis-guide-question';questionLabel.append(questionCaption,question);
-  const agentLabel=el('label',undefined,'analysis-guide-consent'),agentMode=el('input'),agentText=el('span');agentMode.type='checkbox';agentMode.id='analysis-agent-mode';agentLabel.append(agentMode,agentText);
-  try{agentMode.checked=localStorage.getItem(AGENT_MODE_KEY)==='true';}catch{}
-  agentMode.addEventListener('change',()=>{try{localStorage.setItem(AGENT_MODE_KEY,String(agentMode.checked));}catch{}});
+  const agentLabel=el('label',undefined,'analysis-guide-consent'),agentMode=el('select'),agentText=el('span');
+  const chatOption=el('option'),agentOption=el('option');
+  agentMode.id='analysis-agent-mode';chatOption.value='chat';agentOption.value='agent';
+  agentMode.append(chatOption,agentOption);agentLabel.append(agentText,agentMode);agentMode.value='chat';
+  try{if(localStorage.getItem(AGENT_MODE_KEY)==='true')agentMode.value='agent';}catch{}
+  const agentEnabled=()=>isActive()&&agentMode.value==='agent';
+  agentMode.addEventListener('change',()=>{
+    try{localStorage.setItem(AGENT_MODE_KEY,String(agentEnabled()));}catch{}
+    approvedPlan=null;automaticRound=0;render();
+  });
   const connectionActions=el('div',undefined,'analysis-guide-actions'),modelSettings=el('button',undefined,'btn btn-outline'),reconnect=el('button',undefined,'btn btn-outline');modelSettings.type=reconnect.type='button';modelSettings.id='analysis-model-settings';reconnect.id='analysis-model-refresh';connectionActions.append(modelSettings,reconnect);
   const planToggle=el('button','先看 Plan：关闭','btn btn-outline');planToggle.type='button';planToggle.id='analysis-plan-toggle';connectionActions.append(planToggle);planToggle.onclick=()=>{planFirst=!planFirst;approvedPlan=null;try{localStorage.setItem('emp_agent_plan_first_v1',String(planFirst));}catch{}render();};
   const ask=el('button',undefined,'btn btn-primary');ask.type='button';ask.id='analysis-guide-ask';
@@ -67,12 +75,50 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
   const localDetails=el('details'),localSummary=el('summary');localDetails.append(localSummary,header,readiness,checks,actions,planArea,pending);
   const chatActions=el('div',undefined,'analysis-guide-actions analysis-chat-actions');chatActions.append(ask,clearChat);
   const jump=el('button','回到最新消息','agent-jump-latest');jump.type='button';jump.hidden=true;
-  root.append(services,connectionActions,chatHeading,taskLine,output,jump,apply,audit);
+
+  let transcript;
+  try { transcript = createChatHistory(localStorage, sessionStorage); }
+  catch { transcript = createChatHistory(null, null); }
+  const historyPanel = el('details', undefined, 'agent-history-panel');
+  const historySummary = el('summary'), historySelect = el('select');
+  const newThread = el('button'), exportThread = el('button');
+  const historyWarning = el('small');
+  historyPanel.id = 'analysis-chat-history';
+  newThread.type = exportThread.type = 'button';
+  historyPanel.append(historySummary, historySelect, newThread, exportThread, historyWarning);
+  root.append(services,connectionActions,chatHeading,taskLine,historyPanel,output,jump,apply,audit);
+  function updateHistoryMenu() {
+    const en = !['zh', 'zh-TW'].includes(getLocale());
+    historySummary.textContent = en ? 'Conversation history' : '对话历史';
+    newThread.textContent = en ? 'New conversation' : '新对话';
+    exportThread.textContent = en ? 'Export Markdown' : '导出 Markdown';
+    historySelect.setAttribute('aria-label', en ? 'Saved conversations' : '已保存的对话');
+    const entries = transcript.list();
+    historySelect.replaceChildren();
+    if (!entries.some(item => item.id === transcript.id))
+      entries.unshift({id:transcript.id, title:en ? 'Current conversation' : '当前对话'});
+    for (const item of entries) {
+      const option = el('option', item.title);
+      option.value = item.id;
+      historySelect.append(option);
+    }
+    historySelect.value = transcript.id;
+    exportThread.disabled = !transcript.messages.length;
+    historySelect.disabled = newThread.disabled = clearChat.disabled = busy;
+  }
+  function recordMessage(role, text, model) {
+    if (!transcript.append(role, text, model)) {
+      historyWarning.textContent = ['zh','zh-TW'].includes(getLocale()) ?
+        '浏览器未能保存这次对话。可以导出 Markdown。' : 'Browser storage unavailable. Export Markdown to keep this conversation.';
+    }
+    updateHistoryMenu();
+  }
   const follower=bindChatFollow(output,jump);
-  const composer=mountChatComposer(root,{question,agentLabel,actions:chatActions,status,modelBridge,onChange:()=>{automaticRound=0;},isEnglish:()=>!['zh','zh-TW'].includes(getLocale()),doc:document});
+  const composer=mountChatComposer(root,{question,agentLabel,actions:chatActions,status,modelBridge,onChange:()=>{automaticRound=0;},isEnglish:()=>!['zh','zh-TW'].includes(getLocale()),getLanguage:getLocale,doc:document});
   output.setAttribute('role','log');output.setAttribute('aria-label','AI 对话消息');output.setAttribute('aria-live','polite');
 
   function render(){
+    historySelect.disabled = newThread.disabled = clearChat.disabled = busy;
     guidance=guideFor(context,getLocale());
     localSummary.textContent=['zh','zh-TW'].includes(getLocale())?'当前页面与输入检查':'Current page and input checks';
     badge.textContent=tr('local');title.textContent=guidance.title;
@@ -89,12 +135,14 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
     welcome.hidden=history.length>0||busy;welcomeTitle.textContent=en?'AI Omics Assistant':'AI 组学助手';welcomeText.textContent=en?'Attach papers or images, or describe your research question. I can help find data, prepare workflows and interpret results.':'上传论文或图片，或描述您的研究问题。我可以协助定位数据、编排流程和解读结果。';
     const placeholders={matrix:['上传论文、粘贴图片，或告诉我想查找哪项研究的数据…','Attach a paper or image, or describe the study data you need…'],workbench:['描述研究问题，我会结合已上传矩阵推荐分析步骤…','Describe your question; I will suggest steps using the uploaded matrix…'],integration:['告诉我要整合哪些研究与组学，我会先核对样本对应…','Which studies and omics should be integrated? Start with sample alignment…'],visualization:['例如：解释当前图、调整布局，或选择保存的结果重新出图…','Explain this figure, change its layout, or plot saved results…']};
     if(placeholders[context.workflow])question.placeholder=placeholders[context.workflow][en?1:0];
-    agentText.textContent=['zh','zh-TW'].includes(getLocale())?'Agent 模式':'Agent mode';agentLabel.title=['zh','zh-TW'].includes(getLocale())?'记住选择；自动调用页面工具，执行前检查输入与参数。':'Remembered; use page tools and validate inputs before execution.';
+    agentText.textContent=en?'Mode':'对话模式';chatOption.textContent=en?'Chat':'问答';agentOption.textContent=en?'Agent':'Agent';
+    agentMode.setAttribute('aria-label',agentText.textContent);
+    agentLabel.title=agentEnabled()?(en?'Review inputs and use registered page actions.':'核对输入，调用已注册的页面操作。'):(en?'Discuss the current page and attachments.':'围绕当前页面与所选附件进行问答。');
     agentMode.disabled=busy;
     const serviceLines=[agent?tr(agent.status==='ready'?'modelReady':'modelMissing'):tr('loading'),caps?tr('rAvailable'):tr('rUnavailable')];
     services.textContent=serviceLines.join(' · ')+(agent?.status==='ready'?` · ${agent.provider} / ${agent.model}`:'');
     modelSettings.textContent=tr('modelSettings');reconnect.textContent=tr('reconnect');
-    const stateText=UI_LOCALES_FULL[planFirst?'On':'Off']?.[getLocale()]||(planFirst?'On':'Off');planToggle.textContent=(UI_LOCALES_FULL['Plan first: {state}']?.[getLocale()]||'Plan first: {state}').replace('{state}',stateText);planToggle.setAttribute('aria-pressed',String(planFirst));planToggle.disabled=busy;
+    const stateText=UI_LOCALES_FULL[planFirst?'On':'Off']?.[getLocale()]||(planFirst?'On':'Off');planToggle.textContent=(UI_LOCALES_FULL['Plan first: {state}']?.[getLocale()]||'Plan first: {state}').replace('{state}',stateText);planToggle.setAttribute('aria-pressed',String(planFirst));planToggle.disabled=busy||!agentEnabled();
     jump.textContent=['zh','zh-TW'].includes(getLocale())?'回到最新消息':'Jump to latest';question.setAttribute('aria-label',tr('askLabel'));composer.render();ask.disabled=busy;composer.setBusy(busy);apply.hidden=!proposal||!guidance.countWorkflowAvailable;
   }
   async function refreshAgent(){const response=await fetch('/api/public-data/agent/status',{credentials:'omit',redirect:'error'});if(!response.ok)throw Error('status');const next=await response.json();if(agent&&(next.provider!==agent.provider||next.config_revision!==agent.config_revision)){revision++;}agent=next;composer.refreshModels(agent);render();return agent;}
@@ -115,7 +163,7 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
   workbench.onclick=()=>openWorkbench();
   question.oninput=()=>{automaticRound=0;rootRequest='';if(!busy){approvedPlan=null;interpretationScope=null;proposal=null;answer=null;apply.hidden=true;audit.hidden=true;}};
   ask.onclick=async()=>{
-    if(busy)return;
+    if(busy||!isActive())return;
     if(agent?.status!=='ready') {
       try{await refreshAgent();}catch{status.textContent=tr('unavailable');return;}
       if(agent?.status!=='ready'){status.textContent=tr('configureFirst');return;}
@@ -127,42 +175,54 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
     if(!automaticRound&&!interpretationScope&&context.workflow==='visualization'&&/解读|解释.*图|看.*图|interpret|explain.*(plot|figure)/i.test(question.value)){
       try{const plot=await attachResultPlot(document.getElementById(context.tab)||document.querySelector('.page.active'));if(plot)currentPlot=[plot];}catch(error){status.textContent=error.message;return;}
     }
-    const current=revision, expectedQuestion=question.value.trim()||'请解读这些附件，并结合当前页面给出下一步建议。',sentAttachments=interpretationScope?.attachments||[...currentPlot,...composer.take()].slice(0,6),priorHistory=history.slice(-4),guidanceOnly=interpretationScope?.draftOnly===true, grant=(!interpretationScope||guidanceOnly)&&agentMode.checked, currentContext=interpretationScope||{workflow:context.workflow,tab:context.tab,plotSettings:context.plotSettings,pageContext:context.pageContext};
+    if(!isActive())return;
+    const current=revision,expectedQuestion=question.value.trim()||'请解读这些附件，并结合当前页面给出下一步建议。';
+    const sentAttachments=automaticRound?[]:(interpretationScope?(interpretationScope.attachments||[]):[...currentPlot,...composer.take()]).slice(0,6);
+    const priorHistory=history.slice(-4),guidanceOnly=interpretationScope?.draftOnly===true;
+    const grant=(!interpretationScope||guidanceOnly)&&agentEnabled();
+    const currentContext=interpretationScope||{workflow:context.workflow,tab:context.tab,plotSettings:context.plotSettings,pageContext:context.pageContext};
     currentContext.memory=agentMemory.snapshot(context.omics||context.workflow);
     currentContext.locale=getLocale();
+    currentContext.outputInstruction=composer.outputInstruction();
     const currentButton=currentAgentAction(context),currentNode=currentButton&&document.getElementById(currentButton);
-    currentContext.availableAction=currentNode?{action:'submit_current',button:currentButton,enabled:!currentNode.disabled,label:currentNode.textContent?.trim().slice(0,100)}:null;
+    currentContext.readOnly=!grant;
+    currentContext.availableAction=grant&&currentNode?{action:'submit_current',button:currentButton,enabled:!currentNode.disabled,label:currentNode.textContent?.trim().slice(0,100)}:null;
     if(!automaticRound){rootRequest=expectedQuestion;completedUi.clear();}
     currentContext.completedUi=[...completedUi.values()];
     let continueUi=false,submittedTask=false;
     busy=true;ask.disabled=true;status.textContent=tr('busy');
     const english=!['zh','zh-TW'].includes(getLocale());
+    if (!automaticRound) recordMessage('user', [expectedQuestion, ...sentAttachments.map(file => '[' + file.name + ']')].join('\n'));
     const userMessage=automaticRound?el('span',''):appendChatMessage(output,'user',expectedQuestion,{english});
     for(const attachment of sentAttachments){const chip=el('div',attachment.name,'agent-sent-attachment');if(attachment.kind==='image'){const img=el('img');img.src=attachment.preview_url;img.alt=attachment.name;chip.append(img);}userMessage.append(chip);}
     history.push({role:'user',text:expectedQuestion+(sentAttachments.length?' [附件：'+sentAttachments.map(x=>x.name).join(', ')+']':'')});
     welcome.hidden=true;
     question.value='';composer.resize();follower.latest();
     const activity=createActivity(output,{english});activity.note(english?'Reading current page settings and data summary.':'读取当前页面设置与数据检查摘要。');
+    const outputType=composer.outputType();
     const runId=globalThis.crypto?.randomUUID?.().replaceAll('-','');let tracking=true;
     const pollProgress=async()=>{if(!tracking||!runId)return;try{const response=await fetch('/api/public-data/agent/progress/'+runId,{credentials:'omit',redirect:'error'});if(response.ok){const progress=await response.json();if(tracking)activity.update(progress.events);}}catch{}if(tracking)setTimeout(pollProgress,900);};
     if(runId)setTimeout(pollProgress,500);
     try{
       const userPrompt=expectedQuestion,recent=priorHistory.map(row=>row.role+': '+row.text.slice(0,200)).join('\n'),historyRoom=Math.max(0,3000-userPrompt.length),combined=userPrompt+(historyRoom?'\nPrior conversation for reference only; the current request above takes precedence. Earlier task-specific restrictions do not apply to a new request:\n'+recent.slice(-Math.max(0,historyRoom-180)):'');
-      const response=await fetch('/api/public-data/agent/respond',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'omit',redirect:'error',body:JSON.stringify({run_id:runId,reasoning_effort:composer.reasoningEffort(),attachment_ids:sentAttachments.map(x=>x.id),question:modelQuestion(combined,currentContext)+(approvedPlan?'\nThe user already approved this plan: '+JSON.stringify(approvedPlan)+'. Continue it; do not propose another approval card.':planFirst&&!interpretationScope?'\nCall propose_agent_plan first and wait for confirmation.':'')+(grant?'\nLocal Agent mode is enabled across registered pages. Plan is optional; act directly unless requested. Dataset-guidance is draft-only.':'\nLocal task submission is not granted. You may refresh tasks or draft and inspect.'),consent:true,expected_provider:agent.provider,expected_config_revision:agent.config_revision,context_ids:{},context_consent:false})});
+      // Older backends choose the allowed tool set from the leading UI scope.
+      const legacyScope=!grant && agent.chat_contract_version!==2 ? 'UI scope: interpretation; read-only discussion.\n' : '';
+      const response=await fetch('/api/public-data/agent/respond',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'omit',redirect:'error',body:JSON.stringify({run_id:runId,...(agent.chat_contract_version===2?{chat_mode:grant?'agent':'chat',output_type:outputType}:{}),reasoning_effort:composer.reasoningEffort(),attachment_ids:sentAttachments.map(x=>x.id),question:legacyScope+modelQuestion(combined,currentContext)+(approvedPlan?'\nThe user already approved this plan: '+JSON.stringify(approvedPlan)+'. Continue it; do not propose another approval card.':planFirst&&grant&&!interpretationScope?'\nCall propose_agent_plan first and wait for confirmation.':'')+(grant?'\nLocal Agent mode is enabled across registered pages. Plan is optional; act directly unless requested. Dataset-guidance is draft-only.':'\nLocal task submission is not granted. Answer from supplied context and attachments.'),consent:true,expected_provider:agent.provider,expected_config_revision:agent.config_revision,context_ids:{},context_consent:false})});
       if(!response.ok)throw Error('request');const data=await response.json();
       if(['unconfigured','configuration_changed'].includes(data.status)){await refreshAgent();status.textContent=tr('configureFirst');if(!question.value){question.value=expectedQuestion;}activity.finish(false);return;}
-      if(current!==revision||contextKey(snapshot())!==fingerprint){const latest=snapshot(),sameInput=latest.workflow===context.workflow&&latest.experimentName===context.experimentName&&JSON.stringify(latest.pageContext?.files||[])===JSON.stringify(context.pageContext?.files||[])&&latest.pageContext?.workbench?.source_sha256===context.pageContext?.workbench?.source_sha256;activity.finish(false);if(sameInput&&automaticRound<2&&agentMode.checked&&!question.value.trim()){continueUi=true;activity.note(english?'Page context refreshed; checking the same input again.':'页面状态已更新，正在重新检查同一输入。');}else{activity.note(tr('changed'));status.textContent=tr('changed');}return;}
+      if(current!==revision||contextKey(snapshot())!==fingerprint){const latest=snapshot(),sameInput=latest.workflow===context.workflow&&latest.experimentName===context.experimentName&&JSON.stringify(latest.pageContext?.files||[])===JSON.stringify(context.pageContext?.files||[])&&latest.pageContext?.workbench?.source_sha256===context.pageContext?.workbench?.source_sha256;activity.finish(false);if(sameInput&&automaticRound<2&&agentEnabled()&&!question.value.trim()){continueUi=true;activity.note(english?'Page context refreshed; checking the same input again.':'页面状态已更新，正在重新检查同一输入。');}else{activity.note(tr('changed'));status.textContent=tr('changed');}return;}
       // Model text is inert; only typed actions are dispatched through registered controls.
       history.push({role:'assistant',text:String(data.answer||data.status)});
       tracking=false;activity.update([...(data.audit||[]).map(row=>({stage:'tool_finished',...row})),{stage:data.status==='ok'?'completed':data.status}]);activity.finish(data.status==='ok');
-      const handoff=(data.tool_results||[]).find(item=>['request_page_action','fill_page_fields','set_heatmap_size'].includes(item.tool));
-      const decision=(data.tool_results||[]).some(item=>['propose_agent_plan','ask_user_choice'].includes(item.tool));
+      const handoff=grant&&(data.tool_results||[]).find(item=>['request_page_action','fill_page_fields','set_heatmap_size'].includes(item.tool));
+      const decision=grant&&(data.tool_results||[]).some(item=>['propose_agent_plan','ask_user_choice'].includes(item.tool));
       const visibleAnswer=decision?(english?'Please review the options below to continue.':'请确认下方计划或选择，确认后会继续执行。'):handoff?(english?'I am applying the requested page action. Actual progress and any required choices appear below.':'正在衔接页面操作；实际进度与需要确认的选项会显示在下方。'):String(data.answer||data.status);
+      recordMessage('assistant', visibleAnswer, agent?.model);
       appendChatMessage(output,'assistant',visibleAnswer,{english});follower.changed();
       if(data.status!=='ok'&&!question.value){question.value=expectedQuestion;composer.resize();}
       answer={question:expectedQuestion,scope:currentContext,status:data.status,answer:data.answer,tool_results:data.tool_results||[],audit:data.audit||[],reasoning:data.reasoning,execution_performed:false};
-      const planNeedsApproval=planFirst&&!approvedPlan&&!interpretationScope;
-      const decisions=[...(data.tool_results||[])];
+      const planNeedsApproval=grant&&planFirst&&!approvedPlan&&!interpretationScope;
+      const decisions=grant?[...(data.tool_results||[])]:[];
       if(planNeedsApproval&&!decisions.some(item=>['propose_agent_plan','ask_user_choice'].includes(item.tool)))decisions.push({tool:'propose_agent_plan',result:{steps:[rootRequest||expectedQuestion]}});
       for(const item of decisions){if(!['propose_agent_plan','ask_user_choice'].includes(item.tool))continue;const card=el('section',undefined,'agent-workflow-card'),value=item.result;card.append(el('h4',item.tool==='propose_agent_plan'?'Plan · 待确认':value.question));if(value.steps){const ol=el('ol');for(const step of value.steps)ol.append(el('li',step));card.append(ol);}for(const label of item.tool==='propose_agent_plan'?['确认并执行计划','修改计划']:(value.options||[])){const button=el('button',label,'btn btn-outline');button.type='button';button.onclick=()=>{if(label==='修改计划'){question.value='请修改刚才的计划：';question.focus?.();return;}approvedPlan=value.steps||approvedPlan;automaticRound=1;question.value='用户已选择：'+label+'。继续原始请求：'+(rootRequest||expectedQuestion)+(value.steps?'。已确认计划：'+value.steps.join(' → '):'');for(const b of card.querySelectorAll?.('button')||[])b.disabled=true;setTimeout(()=>ask.onclick(),0);};card.append(button);}output.append(card);}
       proposal=(data.tool_results||[]).find(item=>item.tool==='propose_count_workflow'&&item.result?.status==='draft')?.result||null;
@@ -176,7 +236,7 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
       if(data.continuation_required&&grant)continueUi=true;
       const awaitingDecision=planNeedsApproval||(data.tool_results||[]).some(item=>['propose_agent_plan','ask_user_choice'].includes(item.tool));
       if(grant&&!guidanceOnly&&!awaitingDecision&&/下载|download/i.test(rootRequest))for(const item of data.tool_results||[]){if(!['discover_processed','discover_pride_files'].includes(item.tool)||!item.result?.accession)continue;try{const job=await window.empAgentPipeline.start(item.result.accession);history.push({role:'tool',text:'Automatic download: '+job.job_id});submittedTask=true;}catch(error){activity.note(error.message);}}
-      const requestedActions=(awaitingDecision?[]:(data.tool_results||[])).filter(item=>['fill_page_fields','set_heatmap_size','request_page_action'].includes(item.tool)).slice(0,6).map(item=>item.result);
+      const requestedActions=(!grant||!agentEnabled()||awaitingDecision?[]:(data.tool_results||[])).filter(item=>['fill_page_fields','set_heatmap_size','request_page_action'].includes(item.tool)).slice(0,6).map(item=>item.result);
       const turnAnswer=answer;
       for(const requested of requestedActions) {
         if(!requested||data.status!=='ok')continue;
@@ -195,7 +255,7 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
           }
           if(guidanceOnly&&!['fill_page_fields','build_workflow','refresh_tasks'].includes(requested.action))throw Error('新数据自动引导只准备流程，不自动启动分析。');
           if(requested.action==='fill_page_fields'){
-            if(!grant||!agentMode.checked)throw Error('请启用 Agent 模式后填写页面。');
+            if(!grant||!agentEnabled())throw Error('请启用 Agent 模式后填写页面。');
             if(requested.fields?.['scat-ordination']==='assay_pca'&&/保存.*坐标|已保存.*PCA|保存的.*PCA|saved.*(PCA|coordinate)|不.*重算PCA/i.test(rootRequest))throw Error('用户要求保存的 PCA 坐标，请使用 scat-ordination=emp；不能改为重新计算。');
             const changed=applyPageFields(context.workflow,requested.fields);
             refreshContext();answer=turnAnswer;audit.hidden=false;
@@ -204,12 +264,12 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
             if(!changed.length&&context.workflow==='workbench'&&context.pageContext?.workbench?.has_dataset&&context.pageContext.workbench.unassigned===0&&context.pageContext.workbench.needs_design_review&&/分析|运行|执行|run|analy/i.test(rootRequest)){window.dispatchEvent(new CustomEvent('emp:agent-review-samples'));}else continueUi=true;continue;
           }
           if(requested.action==='select_matrix_file'){
-            if(!grant||!agentMode.checked)throw Error('请启用 Agent 模式。');
+            if(!grant||!agentEnabled())throw Error('请启用 Agent 模式。');
             const button=[...document.querySelectorAll('#matrix-files [data-agent-file]')].find(node=>node.dataset.agentFile===requested.target);
             if(!button||button.disabled)throw Error('所选文件已不可用；请通过 download_matrix 按编号自动下载。');
             if(typeof button.onclick==='function')await button.onclick();else button.click();submittedTask=true;output.append(el('p','已打开所选文件的下载计划；下载状态以页面任务记录为准。'));continue;
           }
-          const action=requested.action==='resize_heatmap'?resolveHeatmapSize(context,requested,grant&&agentMode.checked):resolveAgentAction(context,requested.action,grant&&agentMode.checked);
+          const action=requested.action==='resize_heatmap'?resolveHeatmapSize(context,requested,grant&&agentEnabled()):resolveAgentAction(context,requested.action,grant&&agentEnabled());
           if(action.type==='refresh_tasks') {
             if(completedUi.has('refresh_tasks')){activity.note(english?'Task status already read; continuing the requested action.':'已读取任务状态，继续后续操作。');continueUi=true;continue;}
             window.dispatchEvent(new CustomEvent('emp:tasks-refresh'));
@@ -240,23 +300,50 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
     }catch{activity.finish(false);activity.note(tr('unavailable'));status.textContent=tr('unavailable');if(current===revision&&!question.value){question.value=expectedQuestion;composer.resize();}}
     finally{
       const continuationScope=interpretationScope;tracking=false;busy=false;interpretationScope=null;render();
-      if(continueUi&&!submittedTask&&agentMode.checked&&automaticRound<6&&!question.value.trim()&&rootRequest){
+      if(continueUi&&!submittedTask&&agentEnabled()&&automaticRound<6&&!question.value.trim()&&rootRequest){
         automaticRound++;refreshContext();if(guidanceOnly)interpretationScope=continuationScope;question.value=('继续完成原始请求：'+rootRequest+'\n上一轮页面动作已返回。请读取最新页面状态推进下一步；不要重复已完成的操作。缺少信息时直接提出具体问题。').slice(0,3500);
         setTimeout(()=>{if(!busy&&question.value.trim())ask.onclick();},0);
       }
     }
   };
-  clearChat.onclick=()=>{rootRequest='';automaticRound=0;completedUi.clear();revision++;history.length=0;taskReceipts.clear();output.replaceChildren(welcome);question.value='';composer.clear();composer.resize();proposal=null;answer=null;audit.hidden=true;render();};
+  function restoreConversation() {
+    const english = !['zh','zh-TW'].includes(getLocale());
+    history.length = 0;
+    output.replaceChildren(welcome);
+    for (const row of transcript.messages) {
+      appendChatMessage(output, row.role, row.text, {english});
+      history.push({role: row.role, text: row.text});
+    }
+    updateHistoryMenu();
+  }
+  function changeConversation(action) {
+    if (busy) return;
+    action();
+    rootRequest = ''; automaticRound = 0; approvedPlan = null; interpretationScope = null;
+    expectedSubmission = null; followJobs.clear(); completedUi.clear(); taskReceipts.clear();
+    revision++; question.value = ''; composer.clear(); composer.resize();
+    proposal = null; answer = null; audit.hidden = true; historyWarning.textContent = '';
+    restoreConversation(); render(); follower.latest();
+  }
+  newThread.onclick = () => changeConversation(() => transcript.start());
+  historySelect.onchange = () => changeConversation(() => transcript.open(historySelect.value));
+  exportThread.onclick = () => downloadMarkdown(conversationMarkdown(transcript.messages), 'emp-conversation.md');
+  clearChat.onclick = () => changeConversation(() => transcript.clear());
+  restoreConversation();
+
   question.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();ask.onclick();}});
   apply.onclick=()=>{if(proposal&&guidance.countWorkflowAvailable)openWorkbench({proposal,question:answer?.question||''});};
   audit.onclick=()=>{
     if(!answer)return;const url=URL.createObjectURL(new Blob([JSON.stringify(answer,null,2)],{type:'application/json'}));const link=el('a');link.href=url;link.download='emp-agent-guidance.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
+  function onActive(type, handler) {
+    window.addEventListener(type, event => { if (isActive()) handler(event); });
+  }
   const main=document.getElementById('main');
   main?.addEventListener('change',event=>{if(event.target.closest('.page.active'))refreshContext();});
-  window.addEventListener('emp:experiment-change',refreshContext);
-  window.addEventListener('emp:study-reset',refreshContext);
-  window.addEventListener('emp:interpret-result',event=>{
+  onActive('emp:experiment-change',refreshContext);
+  onActive('emp:study-reset',refreshContext);
+  onActive('emp:interpret-result',event=>{
     question.value=event.detail.question;
     question.oninput();
     const kind=String(event.detail.analysis_type||'');
@@ -274,35 +361,48 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
     interpretationScope={workflow:'workbench',tab:'dataset-guidance',pageContext:{...context.pageContext,...(profile?{profile}:{})},draftOnly:true};
     document.getElementById('code-lab-root')?.classList.add('code-lab--open');ask.onclick();
   };
-  window.addEventListener('emp:dataset-profile',startQuestion);
-  window.addEventListener('emp:agent-question',startQuestion);
-  window.addEventListener('emp:locale-change',render);
-  window.addEventListener('emp:job-submitted',event=>{
+  onActive('emp:attach-paper',async event=>{
+    const file=event.detail?.file;
+    if(!(file instanceof File))return;
+    const dock=document.getElementById('code-lab-root');
+    if(dock&&!dock.classList.contains('code-lab--open'))dock.querySelector('.code-lab-head')?.click();
+    if(busy){status.textContent=tr('busy');return;}
+    await composer.addFiles([file]);
+    question.focus();
+  });
+  onActive('emp:dataset-profile',startQuestion);
+  onActive('emp:agent-question',startQuestion);
+  onActive('emp:locale-change',render);
+  onActive('emp:model-profiles-change',()=>composer.refreshModels(agent||{}));
+  onActive('emp:job-submitted',event=>{
     const id=event.detail.job_id;taskLine.textContent=`最近后台任务：${id}（在任务列表中查看进度）`;
     if(expectedSubmission&&Date.now()<expectedSubmission.until&&expectedSubmission.root===rootRequest&&(!event.detail.experiment||event.detail.experiment===expectedSubmission.experiment)){
       followJobs.set(id,expectedSubmission);expectedSubmission=null;
     }
     if(!taskReceipts.has(id))taskReceipts.set(id,appendTaskReceipt(output,id,{english:!['zh','zh-TW'].includes(getLocale())}));
   });
-  window.addEventListener('emp:jobs-updated',event=>{for(const job of event.detail?.jobs||[]){
+  onActive('emp:jobs-updated',event=>{for(const job of event.detail?.jobs||[]){
     taskReceipts.get(job.id)?.update(job);const follow=followJobs.get(job.id);
     if(!follow||!['done','error','cancelled'].includes(job.status))continue;
     if(job.status!=='done'){followJobs.delete(job.id);continue;}
     if(busy)continue;
     followJobs.delete(job.id);
-    if(follow.root!==rootRequest||question.value.trim()||!agentMode.checked||snapshot().experimentName!==follow.experiment)continue;
+    if(follow.root!==rootRequest||question.value.trim()||!agentEnabled()||snapshot().experimentName!==follow.experiment)continue;
     completedUi.set('job:'+job.id,{action:'analysis',job_id:job.id,status:'done',experiment:follow.experiment});
     automaticRound++;refreshContext();question.value=('后台任务 '+job.id+' 已实际完成。不要重复提交该分析。继续原始请求：'+follow.root+'。若还需要出图，请使用保存的分析结果继续；否则报告实际完成状态。').slice(0,3500);setTimeout(()=>ask.onclick(),0);
   }});
-  window.addEventListener('emp:agent-flow',event=>{const flow=event.detail;if(!flow)return;const id=flow.job_id||flow.accession;let receipt=taskReceipts.get(id);if(!receipt){receipt=appendTaskReceipt(output,id,{english:false});taskReceipts.set(id,receipt);}receipt.update({status:flow.stage==='error'?'error':flow.status==='completed'?'done':flow.status||'running',progress:flow.total_bytes?100*(flow.bytes_downloaded||0)/flow.total_bytes:0,message:flow.message||flow.stage});history.push({role:'tool',text:'Pipeline '+flow.stage+': '+(flow.message||flow.status||'')});if(history.length>60)history.splice(0,20);follower.changed();});
-  window.addEventListener('emp:agent-flow',event=>{if(event.detail?.stage!=='ready'||!agentMode.checked)return;const button=el('button','核对本次设计并继续分析','btn btn-primary');button.onclick=()=>window.dispatchEvent(new CustomEvent('emp:agent-review-samples'));output.append(button);follower.changed();if(rootRequest&&/分析|流程|analy|workflow/i.test(rootRequest)&&event.detail.readiness?.has_dataset&&event.detail.readiness.unassigned===0){window.dispatchEvent(new CustomEvent('emp:agent-review-samples'));return;}if(!busy&&!question.value.trim()&&rootRequest&&/分析|流程|analy|workflow/i.test(rootRequest)){const original=rootRequest;automaticRound=1;refreshContext();question.value=('矩阵已自动下载、导入并精确匹配样本。请读取工作台准备状态，继续原始请求：'+original).slice(0,3500);setTimeout(()=>ask.onclick(),0);}});
-  window.addEventListener('emp:agent-config-change',()=>{revision++;refreshAgent().catch(()=>{});});
-  window.addEventListener('focus',()=>refreshAgent().catch(()=>{}));
-  window.addEventListener('storage',event=>{if(event.key===AGENT_MODE_KEY){agentMode.checked=event.newValue==='true';render();}if(event.key==='emp_agent_config_revision')refreshAgent().catch(()=>{});});
+  onActive('emp:agent-flow',event=>{const flow=event.detail;if(!flow)return;const id=flow.job_id||flow.accession;let receipt=taskReceipts.get(id);if(!receipt){receipt=appendTaskReceipt(output,id,{english:false});taskReceipts.set(id,receipt);}receipt.update({status:flow.stage==='error'?'error':flow.status==='completed'?'done':flow.status||'running',progress:flow.total_bytes?100*(flow.bytes_downloaded||0)/flow.total_bytes:0,message:flow.message||flow.stage});history.push({role:'tool',text:'Pipeline '+flow.stage+': '+(flow.message||flow.status||'')});if(history.length>60)history.splice(0,20);follower.changed();});
+  onActive('emp:agent-flow',event=>{if(event.detail?.stage!=='ready'||!agentEnabled())return;const button=el('button','核对本次设计并继续分析','btn btn-primary');button.onclick=()=>window.dispatchEvent(new CustomEvent('emp:agent-review-samples'));output.append(button);follower.changed();if(rootRequest&&/分析|流程|analy|workflow/i.test(rootRequest)&&event.detail.readiness?.has_dataset&&event.detail.readiness.unassigned===0){window.dispatchEvent(new CustomEvent('emp:agent-review-samples'));return;}if(!busy&&!question.value.trim()&&rootRequest&&/分析|流程|analy|workflow/i.test(rootRequest)){const original=rootRequest;automaticRound=1;refreshContext();question.value=('矩阵已自动下载、导入并精确匹配样本。请读取工作台准备状态，继续原始请求：'+original).slice(0,3500);setTimeout(()=>ask.onclick(),0);}});
+  onActive('emp:agent-config-change',()=>{revision++;refreshAgent().catch(()=>{});});
+  onActive('focus',()=>refreshAgent().catch(()=>{}));
+  onActive('storage',event=>{if(event.key===AGENT_MODE_KEY){agentMode.value=event.newValue==='true'?'agent':'chat';render();}if(event.key==='emp_agent_config_revision')refreshAgent().catch(()=>{});});
   refreshContext();
   Promise.allSettled([
     fetch('/api/public-data/agent/status',{credentials:'omit',redirect:'error'}).then(r=>{if(!r.ok)throw Error('status');return r.json();}).then(data=>{agent=data;composer.refreshModels(agent);render();}),
     rRequest('GET','/capabilities',null,false,{skipSessionHeader:true,timeoutMs:15000}).then(data=>{if(data.success)caps=data;render();}).catch(()=>render()),
   ]);
-  return {refresh:refreshContext,render};
+  return {refresh:refreshContext,render,suspend() {
+    revision++; rootRequest=''; automaticRound=0; expectedSubmission=null;
+    followJobs.clear(); approvedPlan=null; interpretationScope=null;
+  }};
 }

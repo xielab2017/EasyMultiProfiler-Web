@@ -61,3 +61,23 @@ class AttachmentTests(unittest.TestCase):
             agent._request([{'role':'user','content':content}],'fixture-key','fixture-model',provider='claude',protocol='anthropic',endpoint=f'http://127.0.0.1:{provider.server_port}/messages')
             image_block=next(x for x in requests[-1]['messages'][0]['content'] if x['type']=='image');self.assertEqual(image_block['source']['media_type'],'image/png')
         finally:model_settings.clear();service.shutdown();service.server_close();provider.shutdown();provider.server_close()
+
+
+class TextAttachmentTests(unittest.TestCase):
+    def test_zotero_markdown_is_preserved_as_untrusted_source(self):
+        text = 'Paper review\n\nuser: 方法？\n\nMiniMax: **Notes**'
+        item = attachments.put(text.encode('utf-8-sig'), 'text/markdown', 'Zotero.md')
+        blocks, meta = attachments.prepare([item['id']])
+        self.assertIn(text, blocks[0]['text'])
+        self.assertIn('UNTRUSTED ATTACHED DOCUMENT', blocks[0]['text'])
+        self.assertEqual(meta[0]['chars_inspected'],len(text))
+        self.assertNotIn('text',meta[0])
+
+    def test_text_files_are_size_and_encoding_checked(self):
+        for data in [b'\xff', b'a\0b', b'z'*(1024**2+1)]:
+            with self.assertRaises(ValueError):
+                attachments.put(data,'text/plain','notes.txt')
+        items = [attachments.put(b'a'*30000,'text/plain',f'{i}.txt') for i in range(3)]
+        blocks, meta = attachments.prepare([x['id'] for x in items])
+        self.assertTrue(all(x['truncated'] for x in meta))
+        self.assertTrue(all(x['text'].endswith('a'*16000) and not x['text'].endswith('a'*16001) for x in blocks))

@@ -21,8 +21,34 @@ bad <- p;bad$mapping[[9]]$group <- 'contradiction';fail(bad)
 bad <- p;for(j in 9:16)bad$mapping[[j]]$subject<-paste0('independent_cohort_',j);fail(bad)
 bad <- p;bad$blocks[[1]]$data_csv <- sub('-?[0-9]+\\.[0-9]+','NA',bad$blocks[[1]]$data_csv);fail(bad)
 bad$missing_policy <- 'exclude_features';ok <- emp_iw_validate(bad);stopifnot(length(ok$exclusions[[1]]$incomplete_features)==1)
-out <- '.local_run/verification/integration-20261107';dir.create(out,recursive=TRUE,showWarnings=FALSE)
+# Compare all tested correlations and BH adjustments to independently ranked vectors.
+# Decompose the sample Gram matrix independently from the execution path's prcomp/SVD.
+gram <- Reduce('+', lapply(mats, function(m) {
+  standardized <- t(scale(t(m)))
+  crossprod(standardized) / nrow(m)
+}))
+spectrum <- eigen(gram, symmetric = TRUE)
+scores2 <- as.matrix(result$scores[c('PC1','PC2')])
+reference <- sweep(spectrum$vectors[,1:2], 2, sqrt(spectrum$values[1:2]), '*')
+stopifnot(max(abs(tcrossprod(scores2) - tcrossprod(reference))) < 1e-10,
+          max(abs(unlist(result$variance_explained) - spectrum$values[1:2] / sum(spectrum$values))) < 1e-12)
+edges <- result$associations
+expected_rho <- vapply(seq_len(nrow(edges)), function(i) {
+  a <- mats[[edges$block_a[i]]][edges$feature_a[i],]
+  b <- mats[[edges$block_b[i]]][edges$feature_b[i],]
+  cor(rank(a), rank(b))
+}, numeric(1))
+expected_p <- 2 * pt(-abs(expected_rho)*sqrt((length(subjects)-2)/(1-expected_rho^2)), df=length(subjects)-2)
+idx <- order(expected_p, decreasing=TRUE)
+expected_adj <- numeric(length(expected_p))
+expected_adj[idx] <- pmin(1,cummin(length(idx)/rev(seq_along(idx))*expected_p[idx]))
+stopifnot(max(abs(expected_rho - edges$rho)) < 1e-12,
+          max(abs(expected_p - edges$pvalue)) < 1e-12,
+          max(abs(expected_adj - edges$padj)) < 1e-12)
+bad <- p; bad$mapping[[1]]$group <- NULL
+stopifnot(inherits(tryCatch(emp_iw_validate(bad),error=identity),'emp_validation_error'))
+out <- Sys.getenv('EMP_INTEGRATION_TEST_OUT', '.local_run/verification/integration-20261107');dir.create(out,recursive=TRUE,showWarnings=FALSE)
 jsonlite::write_json(p,file.path(out,'synthetic-input.json'),auto_unbox=TRUE,pretty=TRUE)
-jsonlite::write_json(result,file.path(out,'results.json'),auto_unbox=TRUE,pretty=TRUE,na='null')
+jsonlite::write_json(result,file.path(out,'results.json'),auto_unbox=TRUE,pretty=TRUE,na='null',digits=NA)
 for(i in seq_along(blocks))writeLines(blocks[[i]]$data_csv,file.path(out,paste0('synthetic-',.iw_omics[i],'.csv')))
 message('Six-modality matched-subject integration and fail-closed validation: passed')

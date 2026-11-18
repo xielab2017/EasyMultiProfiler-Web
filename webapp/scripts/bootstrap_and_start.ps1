@@ -50,7 +50,7 @@ if (-not $isWinPS) {
 }
 
 Write-Host "========================================================"
-Write-Host "  EasyMultiProfiler Web v7 — bootstrap (Windows)"
+Write-Host "  EasyMultiProfiler Web — bootstrap (Windows)"
 Write-Host "  Folder: $RepoRoot"
 Write-Host "========================================================"
 

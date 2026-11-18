@@ -1,17 +1,20 @@
 # Lightweight async job runner with disk-persistent state.
 #
-# We can't use a shared in-memory cache between plumber requests because each
-# request runs on the same R process but callr workers are spawned on demand.
+# A single Plumber process dispatches a bounded backlog to callr workers.
 # Jobs live as files under JOB_DIR:
 #   <id>.json      current status (queued / running / done / error) + metadata
 #   <id>.result    serialized RDS of the result (written on success)
 #   <id>.log       optional stderr log
 #
-# `submit_job()` launches a callr process, records pid/start, and returns the
-# job id.  `get_job_status()` reads the JSON and surfaces it to the client.
+# Requests awaiting a worker are kept in memory. JSON states and results
+# remain on disk so clients can inspect completed work after a restart.
 
 JOB_DIR <- emp_storage_dir("jobs")
 .JOB_PROCESSES <- new.env(parent = emptyenv())
+.JOB_QUEUE <- new.env(parent = emptyenv())
+.JOB_QUEUE$entries <- list()
+.JOB_QUEUE$armed <- FALSE
+.JOB_BACKLOG_LIMIT <- 16L
 
 .jobs_ensure_dir <- function() {
   dir.create(JOB_DIR, recursive = TRUE, showWarnings = FALSE)
@@ -30,6 +33,7 @@ validate_job_id <- function(id) {
 
 .job_state_path  <- function(id) file.path(JOB_DIR, paste0(validate_job_id(id), ".json"))
 .job_result_path <- function(id) file.path(JOB_DIR, paste0(validate_job_id(id), ".result"))
+.job_json_path   <- function(id) file.path(JOB_DIR, paste0(validate_job_id(id), ".response"))
 .job_log_path    <- function(id) file.path(JOB_DIR, paste0(validate_job_id(id), ".log"))
 
 .write_state <- function(id, state) {
@@ -37,7 +41,8 @@ validate_job_id <- function(id) {
   tmp <- tempfile(tmpdir = JOB_DIR)
   writeLines(jsonlite::toJSON(state, auto_unbox = TRUE, null = "null",
                                na = "null", pretty = FALSE), tmp)
-  file.rename(tmp, .job_state_path(id))
+  on.exit(unlink(tmp), add = TRUE)
+  if (!file.rename(tmp, .job_state_path(id))) stop("Cannot write analysis job state")
 }
 
 .read_state <- function(id) {
@@ -95,6 +100,11 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
   if (!requireNamespace("callr", quietly = TRUE)) {
     stop("R package 'callr' is required for async jobs.")
   }
+  .dispatch_jobs()
+  if (length(.JOB_QUEUE$entries) >= .JOB_BACKLOG_LIMIT) {
+    stop(errorCondition("Analysis queue is full. Wait for a job to finish or cancel a queued job.",
+                        class = "emp_capacity_error"))
+  }
   .jobs_ensure_dir()
   id <- .job_id()
   started <- as.integer(Sys.time())
@@ -126,6 +136,7 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
     endpoint_id = emp_endpoint_id(),
     owner_id = owner_id,
     project_id = project_id,
+    dispatcher_pid = Sys.getpid(),
     status     = "queued",
     cancellable = TRUE,
     progress   = 0L,
@@ -134,117 +145,151 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
     updated    = started
   ))
 
-  .BACKEND_DIR <- Sys.getenv("EMP_BACKEND_DIR",
-                              unset = normalizePath("webapp/backend", mustWork = FALSE))
+  .JOB_QUEUE$entries[[id]] <- list(fn = fn, args = args, session_id = session_id)
+  .dispatch_jobs()
+  id
+}
 
-  run_body <- function(id, fn, args, backend_dir, state_path, result_path, log_path) {
-    # Redirect stdout & messages to the log file via an open connection.
-    log_con <- file(log_path, open = "at")
-    sink(log_con, split = FALSE, type = "output")
-    sink(log_con, type = "message")
-    on.exit({ sink(type = "message"); sink(); try(close(log_con), silent = TRUE) },
-            add = TRUE)
+.job_worker_limit <- function() {
+  value <- suppressWarnings(as.integer(Sys.getenv("EMP_ANALYSIS_WORKERS", "4")))
+  if (is.na(value) || value < 1L) 4L else value
+}
 
-    # Waiting workers acquire the session lock before loading large R packages.
-    for (name in c("utils.R", "storage.R", "session.R", "jobs.R")) {
-      source(file.path(backend_dir, "helpers", name), local = FALSE)
-    }
-      initial <- .read_state(id)
-      if (!is.null(initial$session_id)) {
-        lock <- .job_session_lock(initial$session_id, function() {
-          st <- .read_state(id)
-          st$status <- "queued"
+.job_terminal <- c("done", "error", "cancelled")
+
+.fail_job <- function(id, message) {
+  st <- .read_state(id)
+  if (is.null(st) || st$status %in% .job_terminal) return(invisible(NULL))
+  st$status <- if (identical(st$status, "cancel_requested")) "cancelled" else "error"
+  if (st$status == "error") st$error <- message
+  st$message <- if (st$status == "cancelled") "Cancelled" else message
+  st$finished <- st$updated <- as.integer(Sys.time())
+  .write_state(id, st)
+}
+
+.run_job <- function(id, kind, fn, args, backend_dir, log_path) {
+  log_con <- file(log_path, open = "at")
+  sink(log_con, type = "output")
+  sink(log_con, type = "message")
+  on.exit({ sink(type = "message"); sink(); close(log_con) }, add = TRUE)
+
+  helpers <- file.path(backend_dir, "helpers")
+  for (name in c("utils.R", "storage.R", "jobs.R")) {
+    source(file.path(helpers, name), local = FALSE)
+  }
+  initial <- .read_state(id)
+  initial$pid <- Sys.getpid()
+  .write_state(id, initial)
+
+  tryCatch({
+    if (!is.null(initial$session_id)) {
+      source(file.path(helpers, "session.R"), local = FALSE)
+      lock <- .job_session_lock(initial$session_id, function() {
+        st <- .read_state(id)
+        if (!identical(st$message, "Waiting for another task in this session")) {
           st$message <- "Waiting for another task in this session"
           st$updated <- as.integer(Sys.time())
           .write_state(id, st)
-        })
-        on.exit(unlink(lock, recursive = TRUE), add = TRUE)
-      }
-    suppressPackageStartupMessages({
-      library(EasyMultiProfiler)
-      library(SummarizedExperiment)
-      library(MultiAssayExperiment)
-      library(jsonlite)
-      library(ggplot2)
-      library(base64enc)
-    })
-    helper_files <- list.files(file.path(backend_dir, "helpers"), pattern = "\\.R$", full.names = TRUE)
-    storage_file <- helper_files[basename(helper_files) == "storage.R"]
-    helper_files <- c(storage_file, helper_files[basename(helper_files) != "storage.R"])
-    for (f in helper_files) {
-      source(f, local = FALSE)
+        }
+      })
+      on.exit(unlink(lock, recursive = TRUE), add = TRUE)
+    }
+    # These two workbenches are self-contained and namespace their dependencies.
+    # Keep the full legacy environment for session analyses and registered routes.
+    standalone <- switch(kind, count_workbench = "omics_workbench.R",
+                         integration_exploration = "integration_workbench.R", NULL)
+    if (is.null(standalone)) {
+      suppressPackageStartupMessages({
+        library(EasyMultiProfiler)
+        library(SummarizedExperiment)
+        library(MultiAssayExperiment)
+        library(jsonlite)
+        library(ggplot2)
+        library(base64enc)
+      })
+      helper_files <- list.files(helpers, pattern = "\\.R$", full.names = TRUE)
+      helper_files <- helper_files[!basename(helper_files) %in% c("jobs.R", "storage.R")]
+      for (file in helper_files) source(file, local = FALSE)
+    } else {
+      source(file.path(helpers, standalone), local = FALSE)
     }
 
-    write_state <- function(s) {
-      tmp <- tempfile(tmpdir = dirname(state_path))
-      writeLines(toJSON(s, auto_unbox = TRUE, null = "null", na = "null",
-                        pretty = FALSE), tmp)
-      file.rename(tmp, state_path)
-    }
-    bump <- function(pct, msg = NULL) {
-      st <- tryCatch(fromJSON(readLines(state_path, warn = FALSE),
-                               simplifyVector = TRUE),
-                     error = function(e) list())
-      st$status   <- "running"
-      st$progress <- max(1L, min(99L, as.integer(pct)))
-      if (!is.null(msg)) st$message <- as.character(msg)
-      st$updated  <- as.integer(Sys.time())
-      write_state(st)
-    }
-
-    result <- tryCatch({
-      bump(1, "Starting")
-      args$on_progress <- bump
-      do.call(fn, args)
-    }, error = function(e) {
-      st <- tryCatch(fromJSON(readLines(state_path, warn = FALSE),
-                               simplifyVector = TRUE),
-                     error = function(e) list())
-      st$status  <- "error"
-      st$finished <- as.integer(Sys.time())
-      st$error   <- conditionMessage(e)
-      st$updated <- as.integer(Sys.time())
-      write_state(st)
-      stop(e)
-    })
-
-    st <- tryCatch(fromJSON(readLines(state_path, warn = FALSE),
-                             simplifyVector = TRUE),
-                   error = function(e) list())
+    bump <- .make_progress_callback(id)
+    bump(1, "Starting")
+    args$on_progress <- bump
+    result <- do.call(fn, args)
+    st <- .read_state(id)
     if (st$status %in% c("cancel_requested", "cancelled")) return(invisible(NULL))
-    saveRDS(result, result_path)
-    st$status   <- "done"
-    st$finished <- as.integer(Sys.time())
+    saveRDS(result, .job_result_path(id))
+    if (!is.null(standalone)) {
+      # Serialize large result tables in the worker, away from the API event loop.
+      temporary_cache <- tempfile(tmpdir = JOB_DIR)
+      on.exit(unlink(temporary_cache), add = TRUE)
+      tryCatch({
+        json <- jsonlite::toJSON(result, auto_unbox = TRUE, digits = NA, na = "null", null = "null")
+        payload <- charToRaw(enc2utf8(json))
+        writeBin(payload, temporary_cache)
+        if (!file.rename(temporary_cache, .job_json_path(id))) stop("Cannot publish response cache")
+        st$response_bytes <- length(payload)
+      }, error = function(e) {
+        message("Result JSON cache unavailable: ", conditionMessage(e))
+      })
+    }
+    st$status <- "done"
+    st$finished <- st$updated <- as.integer(Sys.time())
     st$progress <- 100L
-    st$message  <- "Done"
-    st$updated  <- as.integer(Sys.time())
-    write_state(st)
+    st$message <- "Done"
+    .write_state(id, st)
+  }, error = function(e) {
+    .fail_job(id, conditionMessage(e))
+    stop(e)
+  })
+}
+
+.reap_jobs <- function() {
+  for (id in ls(.JOB_PROCESSES)) {
+    process <- get(id, envir = .JOB_PROCESSES, inherits = FALSE)
+    if (isTRUE(process$is_alive())) next
+    rm(list = id, envir = .JOB_PROCESSES)
+    .fail_job(id, "Worker exited before producing a result; inspect the job log.")
   }
+}
 
-  process <- callr::r_bg(
-    func = run_body,
-    args = list(
-      id          = id,
-      fn          = fn,
-      args        = args,
-      backend_dir = .BACKEND_DIR,
-      state_path  = .job_state_path(id),
-      result_path = .job_result_path(id),
-      log_path    = .job_log_path(id)
-    ),
-    stdout = "|",
-    stderr = "2>&1",
-    supervise = FALSE
-  )
+.dispatch_jobs <- function() {
+  .reap_jobs()
+  if (!length(.JOB_QUEUE$entries)) return(invisible(NULL))
+  active <- ls(.JOB_PROCESSES)
+  busy_sessions <- vapply(active, function(id) .read_state(id)$session_id %||% "", character(1))
+  for (id in names(.JOB_QUEUE$entries)) {
+    if (length(active) >= .job_worker_limit()) break
+    entry <- .JOB_QUEUE$entries[[id]]
+    if (!is.null(entry$session_id) && entry$session_id %in% busy_sessions) next
 
-  state <- .read_state(id) %||% list(id = id)
-  state$pid <- process$get_pid()
-  state$cancellable <- TRUE
-  state$updated <- as.integer(Sys.time())
-  .write_state(id, state)
-  assign(id, process, envir = .JOB_PROCESSES)
-
-  id
+    .JOB_QUEUE$entries[[id]] <- NULL
+    st <- .read_state(id)
+    if (is.null(st) || st$status != "queued") next
+    backend_dir <- Sys.getenv("EMP_BACKEND_DIR", unset = normalizePath("webapp/backend", mustWork = FALSE))
+    process <- tryCatch(callr::r_bg(
+      func = .run_job, args = list(id = id, kind = st$kind, fn = entry$fn, args = entry$args,
+                                   backend_dir = backend_dir, log_path = .job_log_path(id)),
+      stdout = "|", stderr = "2>&1", supervise = FALSE
+    ), error = function(e) {
+      .fail_job(id, paste("Could not start analysis worker:", conditionMessage(e)))
+      NULL
+    })
+    if (is.null(process)) next
+    assign(id, process, envir = .JOB_PROCESSES)
+    active <- c(active, id)
+    busy_sessions <- c(busy_sessions, entry$session_id %||% "")
+  }
+  if (length(.JOB_QUEUE$entries) && !.JOB_QUEUE$armed) {
+    .JOB_QUEUE$armed <- TRUE
+    later::later(function() {
+      .JOB_QUEUE$armed <- FALSE
+      .dispatch_jobs()
+    }, delay = 0.25)
+  }
+  invisible(NULL)
 }
 
 .job_summary <- function(st) {
@@ -262,7 +307,8 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
     started  = st$started %||% NULL,
     finished = st$finished %||% NULL,
     pid = st$pid %||% NULL,
-    cancellable = isTRUE(st$cancellable) && exists(st$id, envir = .JOB_PROCESSES, inherits = FALSE),
+    cancellable = isTRUE(st$cancellable) && !st$status %in% c(.job_terminal, "cancel_requested") &&
+      (st$id %in% names(.JOB_QUEUE$entries) || exists(st$id, envir = .JOB_PROCESSES, inherits = FALSE)),
     session_id = st$session_id %||% NULL,
     elapsed_seconds = max(0L, (st$finished %||% (if (st$status %in% c("done", "error", "cancelled")) st$updated else as.integer(Sys.time()))) - (st$started %||% as.integer(Sys.time())))
   )
@@ -296,17 +342,18 @@ list_jobs <- function(limit = 20, owner_id = NULL, project_id = NULL) {
 }
 
 get_job_status <- function(id) {
+  .reap_jobs()
   st <- .read_state(id)
   if (is.null(st)) return(list(error = paste0("Job not found: ", id)))
-  if (st$status %in% c("queued", "running") && !is.null(st$pid) && !.job_pid_alive(st$pid)) {
-    st$status <- "error"
-    st$error <- "Worker exited before producing a result; inspect the job log."
-    st$message <- st$error
-    st$finished <- as.integer(Sys.time())
-    .write_state(id, st)
-  }
-  if (st$status %in% c("done", "error", "cancelled") && exists(id, envir = .JOB_PROCESSES, inherits = FALSE)) {
-    rm(list = id, envir = .JOB_PROCESSES)
+  if (!st$status %in% .job_terminal) {
+    lost_queue <- is.null(st$pid) && !is.null(st$dispatcher_pid) &&
+      st$dispatcher_pid != Sys.getpid() && !.job_pid_alive(st$dispatcher_pid)
+    dead_worker <- !is.null(st$pid) && !.job_pid_alive(st$pid)
+    if (lost_queue || dead_worker) {
+      .fail_job(id, if (lost_queue) "Analysis service restarted before this job could start."
+                else "Worker exited before producing a result; inspect the job log.")
+      st <- .read_state(id)
+    }
   }
   st
 }
@@ -342,14 +389,23 @@ list_jobs_for_session <- function(session_id, owner_id) {
       identical(st$endpoint_id %||% emp_endpoint_id(), emp_endpoint_id()) &&
       identical(st$owner_id %||% NULL, owner_id)
   }, jobs)
-  lapply(jobs, function(st) st[setdiff(names(st), "pid")])
+  lapply(jobs, function(st) st[setdiff(names(st), c("pid", "dispatcher_pid"))])
 }
 
 cancel_job <- function(id) {
+  .reap_jobs()
   st <- .read_state(id)
   if (is.null(st)) return(list(status = "not_found", job_id = id))
   if (st$status %in% c("done", "error", "cancelled")) {
     return(list(status = if (identical(st$status, "cancelled")) "cancelled" else "already_finished", job_id = id))
+  }
+  if (id %in% names(.JOB_QUEUE$entries)) {
+    st$status <- "cancelled"
+    st$finished <- st$updated <- as.integer(Sys.time())
+    st$message <- "Cancelled before starting"
+    .write_state(id, st)
+    .JOB_QUEUE$entries[[id]] <- NULL
+    return(list(status = "cancelled", job_id = id))
   }
   if (!exists(id, envir = .JOB_PROCESSES, inherits = FALSE)) {
     return(list(status = "not_cancellable", job_id = id))
@@ -357,6 +413,7 @@ cancel_job <- function(id) {
   process <- get(id, envir = .JOB_PROCESSES, inherits = FALSE)
   if (!isTRUE(tryCatch(process$is_alive(), error = function(e) FALSE))) {
     rm(list = id, envir = .JOB_PROCESSES)
+    .fail_job(id, "Worker exited before producing a result; inspect the job log.")
     latest <- .read_state(id) %||% st
     if (latest$status %in% c("done", "error")) return(list(status = "already_finished", job_id = id))
     return(list(status = "not_cancellable", job_id = id))
@@ -370,8 +427,7 @@ cancel_job <- function(id) {
   if (!signalled) {
     latest <- .read_state(id) %||% st
     if (latest$status %in% c("done", "error")) return(list(status = "already_finished", job_id = id))
-    latest$status <- "cancel_requested"
-    .write_state(id, latest)
+    if (identical(latest$status, "cancelled")) return(list(status = "cancelled", job_id = id))
     return(list(status = "cancel_requested", job_id = id))
   }
   st$status <- "cancelled"
@@ -380,8 +436,7 @@ cancel_job <- function(id) {
   st$progress <- as.integer(st$progress %||% 0L)
   st$updated <- as.integer(Sys.time())
   .write_state(id, st)
-  if (exists(id, envir = .JOB_PROCESSES, inherits = FALSE)) rm(list = id, envir = .JOB_PROCESSES)
-  unlink(.job_result_path(id), force = TRUE)
+  unlink(c(.job_result_path(id), .job_json_path(id)), force = TRUE)
   list(status = "cancelled", job_id = id)
 }
 

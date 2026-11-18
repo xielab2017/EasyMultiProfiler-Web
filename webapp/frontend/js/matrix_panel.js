@@ -12,7 +12,7 @@ export function initMatrixPanel(doc=document, transport=fetch, ask=confirm) {
   let paperContext=null,paperAccessions=[],pollTimer=null;const automaticJobs=new Set(),annotationAttempts=new Set();
   const remember=()=>{if(job?.job_id)studyContexts.set(job.job_id,{accession:jobAccession,paper:paperContext,annotations:job.status==='completed'?annotations:null});};
   const set=(id,value,vars={})=>{if(typeof value==='string')labelNode(get(id),value,vars);else{get(id).dataset??={};delete get(id).dataset.featureMessage;get(id).textContent=JSON.stringify(value,null,2);}};
-  const getAgentDownloadPermission=()=>doc.getElementById('analysis-agent-mode')?.checked===true;
+  const getAgentDownloadPermission=()=>doc.getElementById('analysis-agent-mode')?.value==='agent';
   const accession=()=>get('accession').value.trim().toUpperCase();
   const validGSE=x=>/^GSE[0-9]+$/.test(x);
   function reset(){revision++;manifest=null;download=null;annotations=null;get('files').replaceChildren();get('save').replaceChildren();get('samples').replaceChildren();set('receipt','');get('export-samples').disabled=true;get('export-provenance').disabled=true;get('export-provenance').removeAttribute('href');get('export-provenance').setAttribute('aria-disabled','true');get('export-receipt').disabled=true;}

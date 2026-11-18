@@ -1325,6 +1325,10 @@ chip_upload_peaks <- function(session_id, src_path, original_name = NULL,
                  if (identical(tolower(tools::file_ext(oname)), "broadpeak")) "broadPeak" else
                  "BED"
 
+  # Validate BED coordinates before replacing or registering a session file.
+  bed_input <- tolower(tools::file_ext(oname)) %in% c("bed", "narrowpeak", "broadpeak")
+  validated_rows <- if (bed_input) nrow(.chip_read_peak_table(src_path, file_ext = tools::file_ext(oname))) else NULL
+
   run_dir <- chip_run_dir(session_id,
                           paste0("preimported_", tools::file_path_sans_ext(oname)))
   dest <- file.path(run_dir, basename(oname))
@@ -1337,7 +1341,7 @@ chip_upload_peaks <- function(session_id, src_path, original_name = NULL,
 
   gcfg <- chip_genome_config(genome)
   assembly <- .chip_assembly_from_genome(genome)
-  n_peaks <- .chip_count_peak_lines(dest)
+  n_peaks <- validated_rows %||% .chip_count_peak_lines(dest)
   reg <- .chip_register_peak_file(
     session_id = session_id,
     peak_file = dest,
@@ -2626,13 +2630,13 @@ chip_cross_integrate <- function(session_id, peak_annotation_csv = NULL,
 }
 
 # Read BED / narrowPeak / broadPeak / simple TSV peak tables for QC (no ChIPseeker required).
-.chip_read_peak_table <- function(peak_file) {
+.chip_read_peak_table <- function(peak_file, file_ext = tools::file_ext(peak_file)) {
   peak_file <- chip_require_string(peak_file, "peak_file")
   if (!file.exists(peak_file)) stop("peak_file not found.")
 
-  # Prefer ChIPseeker when available (handles UCSC track lines / GFF cleanly).
-  # Fall through on empty results: MACS summits (start==end) can yield 0 ranges.
-  if (requireNamespace("ChIPseeker", quietly = TRUE)) {
+  # BED inputs must retain their zero-based half-open coordinates independently
+  # of package availability. Let ChIPseeker handle other supported formats.
+  if (!tolower(file_ext) %in% c("bed", "narrowpeak", "broadpeak") && requireNamespace("ChIPseeker", quietly = TRUE)) {
     gr <- tryCatch(ChIPseeker::readPeakFile(peak_file), error = function(e) NULL)
     if (!is.null(gr) && length(gr) > 0L) {
       df <- as.data.frame(gr)
@@ -2673,9 +2677,10 @@ chip_cross_integrate <- function(session_id, peak_annotation_csv = NULL,
   )
   if (!nrow(df) || ncol(df) < 3L) stop("Peak table must have at least chrom/start/end columns.")
 
-  # Detect header row (non-numeric start/end).
-  start_ok <- suppressWarnings(!anyNA(as.numeric(df[[2]][seq_len(min(5L, nrow(df)))])))
-  if (!start_ok && nrow(df) > 1L) {
+  # Only a coordinate header is a header; a malformed data row is an input error.
+  header <- tolower(as.character(unlist(df[1, 1:3, drop = FALSE])))
+  if (header[2] %in% c("start", "chromstart", "chrom_start", "txstart") &&
+      header[3] %in% c("end", "chromend", "chrom_end", "txend")) {
     hdr <- as.character(unlist(df[1, , drop = TRUE]))
     df <- df[-1, , drop = FALSE]
     names(df) <- make.unique(gsub("[^A-Za-z0-9._]+", "_", hdr))
@@ -2709,12 +2714,17 @@ chip_cross_integrate <- function(session_id, peak_annotation_csv = NULL,
   # Keep extra columns for preview (capped later).
   extra <- setdiff(names(df), c(names(df)[c(chrom_i, start_i, end_i)], "score"))
   for (nm in head(extra, 8L)) out[[nm]] <- df[[nm]]
-  # BED 0-based half-open. MACS summits often have start==end (0-width) or width 1.
-  # Expand zero-width to 1 bp so downstream GRanges / BED writers keep them.
-  eq <- is.finite(out$start) & is.finite(out$end) & out$end <= out$start
-  if (any(eq)) out$end[eq] <- out$start[eq] + 1
+  # Preserve zero-width summit points as one base. Reversed, negative and
+  # fractional coordinates cannot describe integer BED intervals.
+  invalid <- is.na(out$chrom) | !nzchar(trimws(out$chrom)) |
+    !is.finite(out$start) | !is.finite(out$end) | out$start < 0 |
+    out$start != floor(out$start) | out$end != floor(out$end) |
+    out$end < out$start | out$end > .Machine$integer.max |
+    out$start >= .Machine$integer.max
+  if (any(invalid)) stop("Invalid BED coordinates at data row ", which(invalid)[1])
+  eq <- out$end == out$start
+  out$end[eq] <- out$start[eq] + 1
   out$width <- out$end - out$start
-  out$width <- ifelse(is.finite(out$width) & out$width > 0, out$width, 1)
   out$coord_system <- "bed_0based"
   out <- out[!is.na(out$start) & !is.na(out$end) & nzchar(out$chrom), , drop = FALSE]
   if (!nrow(out)) stop("No valid peak intervals after parsing.")
@@ -4558,13 +4568,14 @@ chip_peaks_summit_window <- function(session_id, peak_file = NULL, genome = NULL
   gr <- .chip_path_to_gr(peak_path)
   # Prefer narrowPeak summit offset; else geometric center
   off <- S4Vectors::mcols(gr)$summit_offset
-  centers <- GenomicRanges::start(gr) + floor(GenomicRanges::width(gr) / 2) - 1L
+  centers <- GenomicRanges::start(gr) + floor((GenomicRanges::width(gr) - 1L) / 2)
   if (!is.null(off) && length(off) == length(gr)) {
     use <- is.finite(off) & off >= 0
     centers[use] <- GenomicRanges::start(gr)[use] + as.integer(off[use])
   }
   new_start <- pmax(1L, as.integer(centers - half))
-  new_end <- as.integer(centers + half)
+  # BED window [summit - half, summit + half), clipped at chromosome start.
+  new_end <- as.integer(centers + half - 1L)
   windows <- GenomicRanges::GRanges(
     seqnames = GenomicRanges::seqnames(gr),
     ranges = IRanges::IRanges(start = new_start, end = new_end),

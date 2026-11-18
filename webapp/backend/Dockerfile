@@ -38,7 +38,7 @@ RUN R -e "install.packages('BiocManager', ask = FALSE)" && \
 
 # ── Install CRAN packages ─────────────────────────────────────────────────────
 RUN R -e "install.packages(c( \
-    'plumber', 'jsonlite', 'base64enc', \
+    'plumber', 'jsonlite', 'base64enc', 'callr', 'digest', 'ps', 'svglite', 'pheatmap', \
     'aplot', 'bigstatsr', 'Boruta', 'bootnet', 'data.table', \
     'dynamicTreeCut', 'fastcluster', 'forcats', 'ggiraph', 'ggplot2', \
     'ggsignif', 'ggpubr', 'ggrepel', 'ggbreak', 'glue', 'gson', \

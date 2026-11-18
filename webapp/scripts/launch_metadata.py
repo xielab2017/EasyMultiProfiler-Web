@@ -13,12 +13,25 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 
 
-def dependency_report():
+def analysis_rscript(scripts):
+    if os.name == 'nt':
+        return shutil.which(os.environ.get('EMPI_RSCRIPT') or 'Rscript')
+    try:
+        result = subprocess.run(['bash', str(scripts / 'resolve_rscript.sh')],
+                                capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout.rstrip('\n') if result.returncode == 0 else None
+
+
+def dependency_report(*, check_r=True):
     scripts = Path(__file__).resolve().parent
     required = ['public_data', 'public_data_server', 'processed_data', 'paper_sources', 'workflow_plans', 'agent_adapter', 'agent_context', 'omics_workbench', 'workbench_api', 'matrix_api', 'matrix_downloads']
     missing = [name for name in required if not (scripts / (name + '.py')).is_file()]
+    rscript = analysis_rscript(scripts) if check_r else None
     return {
         'ready': not missing,
         'mode': 'metadata-only',
@@ -26,7 +39,7 @@ def dependency_report():
         'python': {'version': '.'.join(map(str, sys.version_info[:3])), 'minimum': '3.10'},
         'missing_modules': missing,
         'optional': {'pypdf': importlib.util.find_spec('pypdf') is not None},
-        'r': {'required_for_metadata': False, 'available': shutil.which('Rscript') is not None,
+        'r': {'required_for_metadata': False, 'available': rscript is not None, 'path': rscript,
               'note': 'Full R analysis requires a separate R >= 4.3.3 installation and EMP packages.'},
     }
 
@@ -38,7 +51,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:
         parser.error('--port must be between 1 and 65535')
-    report = dependency_report()
+    report = dependency_report(check_r=args.check)
     if args.check:
         print(json.dumps(report, sort_keys=True))
         return 0 if report['ready'] else 1

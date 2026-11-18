@@ -23,11 +23,13 @@ if (!exists("%||%", mode = "function")) {
   } else {
     ggplot2::theme_bw()
   }
-  fam <- "sans"
-  if (exists("emp_plot_font_family", mode = "function")) {
-    fam <- tryCatch(emp_plot_font_family(locale), error = function(e) "sans")
-  }
-  base + ggplot2::theme(text = ggplot2::element_text(family = fam))
+  base + ggplot2::theme(text = ggplot2::element_text(family = .qc_font_family(locale)))
+}
+
+.qc_font_family <- function(locale) {
+  # Quartz's generic sans font provides native fallback for CJK and Arabic.
+  if (capabilities("aqua") || !exists("emp_plot_font_family", mode = "function")) return("sans")
+  tryCatch(emp_plot_font_family(locale), error = function(e) "sans")
 }
 
 #' QC dashboard for an emp_qc_rigor() result.
@@ -228,7 +230,7 @@ emp_plot_crossomics_network <- function(edges, locale = "en") {
 #'
 #' Supports .pdf, .svg and .png (any other extension is left to
 #' ggsave's extension-based default device). The locale font family is
-#' passed to the device for PDF/PNG output. Returns the file path.
+#' applied to plot text. Returns the file path.
 emp_save_plot_i18n <- function(plot, file, locale = "en", width = 10,
                                height = 8, dpi = 300) {
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
@@ -237,7 +239,11 @@ emp_save_plot_i18n <- function(plot, file, locale = "en", width = 10,
   if (is.null(plot)) stop("emp_save_plot_i18n: `plot` is NULL.")
   ext <- tolower(tools::file_ext(file))
   device <- switch(ext,
-    pdf = grDevices::cairo_pdf,
+    pdf = if (capabilities("aqua")) {
+      function(filename, width, height, bg, ...) {
+        grDevices::quartz(type = "pdf", file = filename, width = width, height = height, bg = bg)
+      }
+    } else grDevices::cairo_pdf,
     png = "png",
     NULL
   )
@@ -247,12 +253,8 @@ emp_save_plot_i18n <- function(plot, file, locale = "en", width = 10,
   args <- list(filename = file, plot = plot, width = width,
                height = height, dpi = dpi)
   if (!is.null(device)) args$device <- device
-  # The graphics `family` argument is honoured by the PDF/PNG devices;
-  # SVG output carries the family through the plot theme instead.
-  if (ext %in% c("pdf", "png") &&
-      exists("emp_plot_font_family", mode = "function")) {
-    args$family <- tryCatch(emp_plot_font_family(locale),
-                            error = function(e) "sans")
+  if (ext %in% c("pdf", "png")) {
+    args$plot <- plot + ggplot2::theme(text = ggplot2::element_text(family = .qc_font_family(locale)))
   }
   do.call(ggplot2::ggsave, args)
   file

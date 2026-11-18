@@ -1,5 +1,7 @@
 """Owner-selected model configuration, held in memory without logging credentials."""
+import model_plugins
 import ipaddress
+import math
 import re
 import threading
 import time
@@ -40,11 +42,16 @@ def endpoint(base):
     return urlunsplit((url.scheme, url.netloc, path, '', ''))
 
 
+class GenerationOptionError(ValueError):
+    pass
+
+
 def validate_configuration(value):
-    if not isinstance(value, dict) or set(value) - {'provider', 'model', 'api_key', 'base_url', 'enabled', 'region', 'protocol'}:
+    if not isinstance(value, dict) or set(value) - {'provider', 'model', 'api_key', 'base_url', 'enabled', 'region', 'protocol', 'profile_id', 'temperature', 'max_tokens_output'}:
         raise ValueError('Unsupported model settings')
     provider = value.get('provider')
-    if provider not in {*FIXED, 'custom', 'campus', 'minimax'}: raise ValueError('Select a single supported chat provider, or a custom OpenAI-compatible API')
+    plugin = model_plugins.providers().get(provider) if isinstance(provider, str) and provider.startswith('plugin-') else None
+    if not plugin and provider not in {*FIXED, 'custom', 'campus', 'minimax'}: raise ValueError('Select a single supported chat provider, or a custom OpenAI-compatible API')
     model = value.get('model', '')
     if not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}', model) or model in {'auto', 'fusion', 'mixed'}:
         raise ValueError('Select one explicit chat model for the research agent')
@@ -67,11 +74,39 @@ def validate_configuration(value):
         if protocol!='openai' or base and base.rstrip('/') not in {'https://generativelanguage.googleapis.com/v1beta','https://generativelanguage.googleapis.com/v1beta/openai'}:raise ValueError('Use the official Gemini endpoint')
         target=FIXED[provider]
     elif protocol != 'openai':raise ValueError('This provider uses the OpenAI-compatible transport')
+    elif plugin:
+        target = endpoint(plugin['base_url'])
+        if not base or endpoint(base) != target:
+            raise ValueError('Plugin endpoint changed; reload its configuration')
     elif provider in {'custom', 'campus'}: target = endpoint(base)
     else:
         target = FIXED[provider]
         if base and endpoint(base) != target: raise ValueError('Use the custom provider for a custom Base URL')
-    return dict(provider=provider,model=model,key=key,endpoint=target,enabled=value['enabled'],protocol=protocol,region=region if provider=='minimax' else None)
+    options = {}
+    if 'profile_id' in value:
+        profile_id = value['profile_id']
+        if not isinstance(profile_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', profile_id):
+            raise ValueError('Invalid model profile identifier')
+        options['profile_id'] = profile_id
+    if 'temperature' in value:
+        temperature = value['temperature']
+        if type(temperature) not in (int, float) or not 0 <= temperature <= 2 or not math.isfinite(temperature):
+            raise GenerationOptionError('Temperature must be between 0 and 2')
+        if provider == 'minimax':
+            raise GenerationOptionError('MiniMax uses its fixed sampling temperature. Leave Temperature empty.')
+        if provider == 'openai' and re.match(r'(gpt-[56]|o[134](?:-|$))', model.lower()):
+            raise GenerationOptionError('Leave Temperature empty for this OpenAI reasoning model in EMP.')
+        if provider == 'claude' and re.search(r'claude-(?:opus-4[.-][7-9]|(?:opus|sonnet|haiku)-[5-9]|mythos|fable)', model.lower()):
+            raise GenerationOptionError('Leave Temperature empty for this Claude model.')
+        if protocol == 'anthropic' and temperature > 1:
+            raise GenerationOptionError('Anthropic-compatible temperature must be between 0 and 1')
+        options['temperature'] = temperature
+    if 'max_tokens_output' in value:
+        limit = value['max_tokens_output']
+        if type(limit) is not int or not 1 <= limit <= 65536:
+            raise GenerationOptionError('Maximum output must be an integer between 1 and 65536 tokens')
+        options['max_tokens_output'] = limit
+    return dict(provider=provider,model=model,key=key,endpoint=target,enabled=value['enabled'],protocol=protocol,region=region if provider=='minimax' else None, **options)
 
 
 def configure(value):
@@ -81,32 +116,44 @@ def configure(value):
         _revision += 1
         _active = dict(selected,revision=_revision)
         _verified = None
-    return public_status()
+        return public_status()
 
 
 def active():
     with _lock: return dict(_active) if _active else None
 
 
-def clear():
+def runtime_snapshot():
+    """Bind consent to a revision even when environment configuration is active."""
+    with _lock:
+        return active(), _revision
+
+
+def clear(provider=None):
     global _active, _revision, _verified
-    with _lock: _active = None; _revision += 1; _verified = None
-    return public_status()
+    with _lock:
+        if provider is not None and (not _active or _active["provider"] != provider): return public_status()
+        _active = None; _revision += 1; _verified = None
+        return public_status()
 
 
 def mark_verified(config,tool=False):
     global _verified
     with _lock:
-        if _active and all(config.get(k)==_active.get(k) for k in ('provider','model','key','endpoint')):
-            _verified={'live_chat_verified':True,'live_tools_verified':bool(tool),'verified_at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())}
+        if _active and config.get('revision') == _active['revision'] and all(config.get(k)==_active.get(k) for k in ('provider','model','key','endpoint','enabled','protocol','temperature','max_tokens_output','profile_id')):
+            _verified={'live_chat_verified':True,'live_tools_verified':bool(tool or (_verified and _verified['live_tools_verified'])),'verified_at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())}
 
 
 def public_status():
-    value = active()
-    if not value: return {'source': 'environment', 'runtime_configured': False, 'config_revision': _revision}
+    with _lock:
+        value = active()
+        verified = dict(_verified or {'live_chat_verified': False, 'live_tools_verified': False})
+        revision = _revision
+    if not value: return {'source': 'environment', 'runtime_configured': False, 'config_revision': revision}
     target = urlsplit(value['endpoint'])
     return {'source': 'runtime_memory', 'runtime_configured': True, 'provider': value['provider'],
             'model': value['model'], 'enabled': value['enabled'], 'credential_present': bool(value['key']),
             'endpoint_origin': urlunsplit((target.scheme, target.netloc, '', '', '')),
             'protocol':value['protocol'],'region':value['region'],
-            'config_revision': value['revision'], 'live_verified': bool(_verified and _verified['live_chat_verified'] and _verified['live_tools_verified']), **(_verified or {'live_chat_verified':False,'live_tools_verified':False})}
+            **{key: value[key] for key in ('profile_id', 'temperature', 'max_tokens_output') if key in value},
+            'config_revision': value['revision'], 'live_verified': verified['live_chat_verified'] and verified['live_tools_verified'], **verified}

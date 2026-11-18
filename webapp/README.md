@@ -1,10 +1,12 @@
-# EasyMultiProfiler Webapp — v9.0.4 (Windows)
+# EasyMultiProfiler Webapp
 
 Browser UI + Plumber API for EasyMultiProfiler. Includes course weekly sync to GitHub.
 
 ## Run locally
 
-### One-line install (main)
+For EasyMultiProfiler Web on `main`, use the launcher in its root directory, such as `Run-EMP-Web-Mac.command` on macOS. See the [current version and release notes](../README.md).
+
+### One-line install from the upstream main branch
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/xielab2017/EasyMultiProfiler-Web/main/webapp/scripts/install_from_github.sh)"
@@ -35,4 +37,4 @@ Stop (same ports/PIDs as start):
 - Bind personal GitHub repo + PAT
 - Sync weekly / final project runs from the **Export** page
 
-See the root [README.md](../README.md) and [docs/RELEASE_NOTES_v9.0.4.md](../docs/RELEASE_NOTES_v9.0.4.md).
+The original Windows education release is documented in the [v9.0.4 release notes](../docs/RELEASE_NOTES_v9.0.4.md).

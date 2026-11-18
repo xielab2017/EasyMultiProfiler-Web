@@ -63,8 +63,11 @@ Sys.setenv(R_LIBS_USER = runtime_lib)
 set_default_repos <- function() {
   repos <- getOption("repos")
   if (is.null(repos) || !length(repos)) repos <- c(CRAN = "@CRAN@")
-  if (identical(unname(repos["CRAN"]), "@CRAN@") || is.na(repos["CRAN"]) || !nzchar(repos["CRAN"])) {
-    repos["CRAN"] <- Sys.getenv("EMP_CRAN_MIRROR", unset = "https://cloud.r-project.org")
+  mirror <- Sys.getenv("EMP_CRAN_MIRROR")
+  if (nzchar(mirror)) {
+    repos["CRAN"] <- mirror
+  } else if (identical(unname(repos["CRAN"]), "@CRAN@") || is.na(repos["CRAN"]) || !nzchar(repos["CRAN"])) {
+    repos["CRAN"] <- "https://cloud.r-project.org"
   }
   options(repos = repos)
   if (!nzchar(Sys.getenv("BIOCONDUCTOR_CONFIG_FILE", ""))) {
@@ -125,45 +128,31 @@ parse_deps <- function(path) {
   out
 }
 
-# ── Which packages belong to Bioconductor? ──────────────────────────────
-# We classify each package by name. EMP's deps are stable so a curated
-# list is faster + more reliable than a network round-trip to
-# BiocManager::available() (which can stall on first run).
-bioc_names <- c(
-  "Biobase", "BiocGenerics", "BiocManager", "BiocParallel", "BiocVersion",
-  "S4Vectors", "IRanges", "GenomicRanges", "SummarizedExperiment",
-  "MultiAssayExperiment", "DESeq2", "edgeR", "limma", "DOSE",
-  "clusterProfiler", "enrichplot", "ggtree", "impute", "qvalue",
-  "tidybulk", "WGCNA", "biomformat", "phyloseq", "ReactomePA",
-  "AnnotationDbi", "org.Hs.eg.db", "org.Mm.eg.db", "gson", "sva",
-  "ropls", "ComplexHeatmap", "SingleCellExperiment", "TreeSummarizedExperiment",
-  "microbiome", "Maaslin2", "ALDEx2", "ANCOMBC", "GenomeInfoDb",
-  "GenomicFeatures", "GOSemSim", "meshes", "pathview",
-  "topGO", "gage", "fgsea", "GSEABase", "TxDb", "GenomicAlignments",
-  "Rsamtools", "ShortRead", "ChIPseeker", "HDF5Array", "rhdf5",
-  "BioCircos", "MEAL", "LOLA", "RegioneR", "bumphunter", "minfi",
-  "missMethyl", "methylKit"
-)
-
-is_bioc_package <- function(pkg) {
-  pkg %in% bioc_names
-}
-
-install_cran <- function(pkgs) {
-  pkgs <- unique(pkgs[!vapply(pkgs, requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))])
-  if (!length(pkgs)) return(invisible(TRUE))
-  msg("[CRAN] Installing %d: %s", length(pkgs), paste(pkgs, collapse = ", "))
-  install.packages(pkgs, dependencies = TRUE, Ncpus = max(1L, parallel::detectCores() - 1L))
-}
-
-install_bioc <- function(pkgs) {
-  pkgs <- unique(pkgs[!vapply(pkgs, requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))])
+# BiocManager resolves both CRAN and Bioconductor dependencies against
+# repositories compatible with the selected R version.
+install_deps <- function(pkgs) {
   if (!length(pkgs)) return(invisible(TRUE))
   if (!requireNamespace("BiocManager", quietly = TRUE)) {
-    install.packages("BiocManager")
+    install.packages("BiocManager", lib = runtime_lib)
   }
-  msg("[BIOC] Installing %d: %s", length(pkgs), paste(pkgs, collapse = ", "))
-  BiocManager::install(pkgs, ask = FALSE, update = FALSE, Ncpus = max(1L, parallel::detectCores() - 1L))
+  version <- Sys.getenv("EMP_BIOC_VERSION")
+  args <- list(pkgs = pkgs, lib = runtime_lib, ask = FALSE, update = FALSE,
+               dependencies = NA, Ncpus = max(1L, parallel::detectCores() - 1L))
+  if (nzchar(version)) args$version <- version
+  do.call(BiocManager::install, args)
+}
+
+meets_requirement <- function(package, constraint) {
+  # Avoid loading packages while deciding which ones must be replaced.
+  # Windows keeps a loaded package DLL locked until the R process exits.
+  installed <- tryCatch(as.character(packageVersion(package)), error = function(e) NULL)
+  if (is.null(installed)) return(FALSE)
+  if (constraint == "*") return(TRUE)
+  match <- regmatches(constraint, regexec("^(>=|<=|==|>|<)\\s*(.+)$", constraint))[[1L]]
+  if (length(match) != 3L) stop("Unrecognized version constraint: ", constraint)
+  observed <- utils::compareVersion(installed, match[3L])
+  switch(match[2L], ">=" = observed >= 0L, "<=" = observed <= 0L,
+         "==" = observed == 0L, ">" = observed > 0L, "<" = observed < 0L)
 }
 
 # ── Begin ───────────────────────────────────────────────────────────────
@@ -182,86 +171,39 @@ if (!nrow(deps)) {
 }
 msg("[REPO] Parsed %d dependencies from DESCRIPTION", nrow(deps))
 
-# Optional Bioc-version pin (useful for CI).
-if (nzchar(Sys.getenv("EMP_BIOC_VERSION"))) {
-  options(BiocManager.suggests = FALSE)
-  # BiocManager::install(version=...) will set the version for this session
-  if (requireNamespace("BiocManager", quietly = TRUE)) {
-    BiocManager::install(version = Sys.getenv("EMP_BIOC_VERSION"), ask = FALSE)
+fields <- c("Imports", "LinkingTo", if (with_suggests) "Suggests")
+requested <- deps[deps$type %in% fields, , drop = FALSE]
+cran_always <- c("plumber", "jsonlite", "base64enc", "callr", "digest", "ps")
+plot_packages <- c("svglite", "pheatmap")
+requested <- rbind(requested, data.frame(package = c(cran_always, plot_packages), version = "*", type = "Web"))
+satisfied <- function() mapply(meets_requirement, requested$package, requested$version)
+missing <- unique(requested$package[!satisfied()])
+if (length(missing)) {
+  msg("[PLAN] Installing %d dependencies: %s", length(missing), paste(missing, collapse = ", "))
+  safe(install_deps(missing), "Runtime dependencies")
+  missing <- unique(requested$package[!satisfied()])
+  if (length(missing)) {
+    msg("[ERROR] Missing or incompatible packages: %s", paste(missing, collapse = ", "))
+    quit(status = 2)
   }
 }
 
-# Install CRAN first, then Bioconductor (Bioc packages depend on CRAN).
-imports <- deps[deps$type %in% c("Imports", "LinkingTo"), , drop = FALSE]
-suggests <- deps[deps$type == "Suggests", , drop = FALSE]
-
-msg("[STEP] Classifying %d packages into CRAN vs Bioconductor…", nrow(imports))
-imports$is_bioc <- vapply(imports$package, is_bioc_package, logical(1))
-
-cran_list <- imports$package[!imports$is_bioc]
-bioc_list <- imports$package[imports$is_bioc]
-# Force some always-Bioc packages that might be misclassified by
-# BiocManager::available() during the very first install (before
-# Bioconductor data is cached).
-always_bioc <- c("BiocManager")
-bioc_list <- unique(c(bioc_list, always_bioc))
-cran_list <- setdiff(cran_list, bioc_list)
-
-# CRAN glue packages that are universally useful and that we always
-# want in EMP web runtime, even if DESCRIPTION doesn't strictly require
-# them as Imports.
-cran_always <- c("remotes", "plumber", "jsonlite", "base64enc")
-cran_list <- unique(c(cran_list, cran_always))
-
-msg("[PLAN] CRAN: %d   Bioconductor: %d", length(cran_list), length(bioc_list))
-
-safe(install_cran(cran_list), "CRAN dependency install")
-safe(install_bioc(bioc_list), "Bioconductor dependency install")
-
-# patchwork 1.2.x is required by some EMP plots (see tutorial_related/Installation.md)
-safe({
-  if (requireNamespace("patchwork", quietly = TRUE)) {
-    pv <- as.character(packageVersion("patchwork"))
-    if (package_version(pv) > "1.2.0") {
-      msg("[CRAN] Downgrading patchwork to 1.2.0 (EMP compatibility)")
-      remotes::install_version("patchwork", version = "1.2.0", upgrade = "never")
-    }
-  }
-}, "patchwork pin")
-
-# Optional: install Suggests (--with-suggests). Heavy but useful for
-# docs / vignettes.
-if (with_suggests && nrow(suggests)) {
-  suggests$is_bioc <- vapply(suggests$package, is_bioc_package, logical(1))
-  cran_sugg <- suggests$package[!suggests$is_bioc]
-  bioc_sugg <- suggests$package[suggests$is_bioc]
-  msg("[STEP] Suggests — CRAN: %d   Bioconductor: %d", length(cran_sugg), length(bioc_sugg))
-  safe(install_cran(cran_sugg), "CRAN suggests install")
-  safe(install_bioc(bioc_sugg), "Bioconductor suggests install")
-}
-
-# EMP itself
 if (!no_emp) {
-  if (!requireNamespace("remotes", quietly = TRUE)) {
-    safe(install.packages("remotes"), "Install remotes")
-  }
-  if (file.exists(desc_path)) {
-    msg("[LOCAL] Installing EasyMultiProfiler from repo: %s", emp_root)
-    safe(
-      remotes::install_local(emp_root, upgrade = "never", dependencies = TRUE, force = TRUE),
-      "Install EasyMultiProfiler (local)"
-    )
-  } else {
-    msg("[GITHUB] Installing EasyMultiProfiler from liubingdong/EasyMultiProfiler")
-    safe(
-      remotes::install_github("liubingdong/EasyMultiProfiler", upgrade = "never", dependencies = TRUE),
-      "Install EasyMultiProfiler (GitHub)"
-    )
-  }
+  msg("[LOCAL] Installing EasyMultiProfiler from repo: %s", emp_root)
+  # Install this checkout directly, without copying its project library into
+  # a temporary source tree or installing every suggested package.
+  # R CMD INSTALL returns a nonzero exit status on failure even if the
+  # package manager restored an older copy into the destination library.
+  r <- file.path(R.home("bin"), if (.Platform$OS.type == "windows") "R.exe" else "R")
+  status <- system2(r, c("CMD", "INSTALL", shQuote(paste0("--library=", runtime_lib)), shQuote(emp_root)))
+  if (status != 0L) stop("Local EasyMultiProfiler installation failed (exit ", status, ")")
+  expected <- read.dcf(desc_path, fields = "Version")[[1L]]
+  found <- packageDescription("EasyMultiProfiler", lib.loc = runtime_lib, fields = "Version")
+  if (!identical(found, expected)) stop("Expected EasyMultiProfiler ", expected, " in ", runtime_lib)
 }
 
 # Final smoke check
-needed <- c(if (!no_emp) "EasyMultiProfiler", "plumber", "jsonlite", "base64enc", "clusterProfiler")
+needed <- c(if (!no_emp) "EasyMultiProfiler", cran_always, "clusterProfiler")
 missing_final <- needed[!vapply(needed, requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))]
 if (length(missing_final)) {
   msg("[WARN] Missing after install: %s", paste(missing_final, collapse = ", "))

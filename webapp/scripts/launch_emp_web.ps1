@@ -36,7 +36,7 @@ if (-not $isWinPS) {
 }
 
 Write-Host "========================================================"
-Write-Host "  EasyMultiProfiler Web v7 (Windows)"
+Write-Host "  EasyMultiProfiler Web (Windows)"
 Write-Host "  Folder: $Root"
 Write-Host "========================================================"
 Write-Host ""
@@ -69,12 +69,11 @@ try {
     # into NativeCommandError when ErrorActionPreference is Stop.
     $savedErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $RscriptExe --vanilla -e "quit(status=if (requireNamespace('EasyMultiProfiler', quietly=TRUE)) 0 else 1)" 2>$null
+    & $RscriptExe --vanilla (Join-Path $PSScriptRoot "check_runtime.R") $Root
     $packageCheckExit = $LASTEXITCODE
     $ErrorActionPreference = $savedErrorActionPreference
     if ($packageCheckExit -ne 0) {
       $needInstall = $true
-      Write-Host "[launch] EasyMultiProfiler not found — first-time install (15–40 min)."
     }
   }
 

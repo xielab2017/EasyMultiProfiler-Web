@@ -24,6 +24,7 @@ import agent_progress
 import repository_files
 import agent_context
 import tutorial_assets
+from version_source import app_version
 
 ROOT = Path(__file__).resolve().parents[2]
 PREFIX = '/api/public-data/'
@@ -146,7 +147,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == PREFIX + 'papers/capabilities': return self.reply(200, pdf_limits.capabilities())
         if path == PREFIX + 'workflows/templates': return self.reply(200, workflow_plans.templates())
         if path == PREFIX + 'health':
-            return self.reply(200, {'status': 'metadata_only', 'download_enabled': False, 'analysis_enabled': False})
+            return self.reply(200, {'status': 'metadata_only', 'version': self.server.release_version, 'download_enabled': False, 'analysis_enabled': False})
         files = {'/': 'public_data.html', '/public_data.html': 'public_data.html', '/js/public_data_ui.js': 'js/public_data_ui.js'}
         if path not in files: return self.reply(404, {'error': 'Not found'})
         data = (ROOT / 'webapp/frontend' / files[path]).read_bytes()
@@ -176,7 +177,7 @@ class Handler(BaseHTTPRequestHandler):
                 if set(request) - {'context_ids'}: raise metadata.MetadataError('Only context IDs are accepted')
                 return self.reply(200, agent_context.prepare(selected_context(self.server, request.get('context_ids'))))
             if path == PREFIX + 'agent/respond':
-                if set(request) - {'question', 'consent', 'expected_provider', 'expected_config_revision', 'context_ids', 'context_consent', 'context_sha256', 'run_id', 'attachment_ids', 'reasoning_effort'}:
+                if set(request) - {'question', 'consent', 'expected_provider', 'expected_config_revision', 'context_ids', 'context_consent', 'context_sha256', 'run_id', 'attachment_ids', 'reasoning_effort', 'chat_mode', 'output_type'}:
                     raise metadata.MetadataError('Unsupported agent request fields')
                 if request.get('consent') is True and request.get('expected_provider') != agent_adapter.status()['provider']:
                     return self.reply(409, {'error': 'Provider changed or not confirmed; reload status and consent again'})
@@ -186,7 +187,10 @@ class Handler(BaseHTTPRequestHandler):
                     if request.get('context_sha256') != preview['snapshot_sha256']:
                         return self.reply(409, {'error': 'Selected context changed; preview and consent again'})
                 return self.reply(200, agent_adapter.respond(request.get('question', ''), request.get('consent', False),
-                    context=context, context_consent=request.get('context_consent', False),expected_config_revision=request.get('expected_config_revision'),run_id=request.get('run_id'),attachment_ids=request.get('attachment_ids',[]),reasoning_effort=request.get('reasoning_effort','auto')))
+                    context=context, context_consent=request.get('context_consent', False),
+                    expected_config_revision=request.get('expected_config_revision'), run_id=request.get('run_id'),
+                    attachment_ids=request.get('attachment_ids', []), reasoning_effort=request.get('reasoning_effort', 'auto'),
+                    chat_mode=request.get('chat_mode', 'agent'), output_type=request.get('output_type', 'answer')))
             if path == PREFIX + 'workflows/validate':
                 result = workflow_plans.validate_plan(request.get('plan'))
                 if result.get('record'):
@@ -242,7 +246,9 @@ import agent_attachments
 agent_attachments.install(Handler)
 
 def make_server(port=8081):
+    release_version = app_version()
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+    server.release_version = release_version
     server.store = Store(); server.pdf_slots = threading.BoundedSemaphore(2); server.client_factory = metadata.Client
     server.allowed_hosts = {f'127.0.0.1:{server.server_port}', f'localhost:{server.server_port}'}
     gateway_port = int(os.environ.get('GATEWAY_PORT', '8090'))

@@ -16,7 +16,7 @@ library(EasyMultiProfiler)`;
 
 const COPY = {
   zh: {
-    heroTitle: "EasyMultiProfiler Web v9.3.0 使用指南",
+    heroTitle: "EasyMultiProfiler Web v10.5.1 使用指南",
     heroHint: "本页汇总<strong>安装路径</strong>（Mac / Windows / 仅 R 包）与<strong>网页内分析流程</strong>。零基础：先完成对应系统安装，再从「数据」导入或加载示例数据开始。",
     pathsTitle: "三条安装路径（请只选与你电脑匹配的一条）",
     macCard: "🍎 macOS · Web 版",
@@ -48,7 +48,7 @@ const COPY = {
     rP: "Web 版 AI、一键运行 <strong>仅在浏览器版</strong>提供。",
     rCopy: "复制 R 代码",
     flowTitle: "网页内分析流程（v5 推荐）",
-    featTitle: "v9.3.0 新功能速览",
+    featTitle: "v10.5.1 新功能速览",
     navTitle: "左侧导航说明",
     faqTitle: "常见问题",
     clinDemoTitle: "Demo 操作指南：临床 × 16S（三线表 + 全流程关联）",
@@ -69,7 +69,7 @@ const COPY = {
     chipDemoTitle: "Demo 操作指南：ChIP-seq / CUT&RUN（Step1 + Step2）",
   },
   en: {
-    heroTitle: "EasyMultiProfiler Web v9.3.0 User Guide",
+    heroTitle: "EasyMultiProfiler Web v10.5.1 User Guide",
     heroHint: "Install paths (Mac / Windows / R-only) and the in-app workflow. Complete install first, then import data or load a demo from <strong>Data</strong>.",
     pathsTitle: "Three install paths (pick one for your computer)",
     macCard: "🍎 macOS · Web",
@@ -101,7 +101,7 @@ const COPY = {
     rP: "AI interpret, Data, Run All are <strong>web-only</strong> features.",
     rCopy: "Copy R code",
     flowTitle: "In-app workflow (v5)",
-    featTitle: "v9.3.0 highlights",
+    featTitle: "v10.5.1 highlights",
     navTitle: "Sidebar pages",
     faqTitle: "FAQ",
     clinDemoTitle: "Demo walkthrough: Clinical × 16S (three-line table + association)",
@@ -128,15 +128,37 @@ function L(key) {
   return UI_LOCALES_FULL[COPY.en[key]]?.[loc] ?? COPY[loc]?.[key] ?? COPY[["zh","zh-TW"].includes(loc)?"zh":"en"][key] ?? key;
 }
 
+// Ordered labels: heading, demo action, upload action, public-data action, data type.
+const startLabels = {
+  zh: ["从哪里开始？", "试用示例数据", "导入自己的数据", "查找公开数据", "数据类型"],
+  "zh-TW": ["從哪裡開始？", "試用範例資料", "匯入自己的資料", "尋找公開資料", "資料類型"],
+  en: ["Start an analysis", "Try example data", "Import my data", "Find public data", "Data type"],
+  ja: ["解析を開始", "サンプルデータを試す", "自分のデータを読み込む", "公開データを探す", "データの種類"],
+  ko: ["분석 시작", "예제 데이터 사용", "내 데이터 가져오기", "공개 데이터 찾기", "데이터 유형"],
+  ar: ["بدء التحليل", "تجربة بيانات نموذجية", "استيراد بياناتي", "البحث عن بيانات عامة", "نوع البيانات"],
+  es: ["Iniciar un análisis", "Probar datos de ejemplo", "Importar mis datos", "Buscar datos públicos", "Tipo de datos"],
+  fr: ["Commencer une analyse", "Essayer des données d’exemple", "Importer mes données", "Trouver des données publiques", "Type de données"],
+  de: ["Analyse starten", "Beispieldaten ausprobieren", "Eigene Daten importieren", "Öffentliche Daten suchen", "Datentyp"],
+  pt: ["Iniciar uma análise", "Experimentar dados de exemplo", "Importar meus dados", "Buscar dados públicos", "Tipo de dados"],
+  ru: ["Начать анализ", "Попробовать пример", "Импортировать свои данные", "Найти открытые данные", "Тип данных"],
+};
+
 function renderGuideHtml() {
+  const [heading, demo, upload, discover, type] = startLabels[getLocale()] || startLabels.en;
   return `
     <div class="card guide-hero">
-      <div class="guide-hero-head">
-        <h2>${L("heroTitle")}</h2>
-        <span class="version-badge version-badge-lg">v9.3.0</span>
+      <div class="guide-hero-head"><h2>${heading}</h2></div>
+      <div class="guide-start-routes">
+        <button type="button" class="btn btn-primary" data-start="demo"><i data-lucide="flask-conical"></i>${demo}</button>
+        <div class="guide-start-upload">
+          <label for="guide-start-type">${type}</label><select id="guide-start-type"></select>
+          <button type="button" class="btn btn-outline" data-start="upload"><i data-lucide="upload"></i>${upload}</button>
+        </div>
+        <button type="button" class="btn btn-outline" data-start="discover"><i data-lucide="search"></i>${discover}</button>
       </div>
-      <p class="hint">${L("heroHint")}</p>
     </div>
+    ${renderClinicalDemoSection()}${renderM16sDemoSection()}${renderRnaseqDemoSection()}${renderChipDemoSection()}
+    <details class="guide-install-group card"><summary>${L("installTitle")}</summary>
     <div class="card">
       <h3>${L("pathsTitle")}</h3>
       <div class="guide-path-grid">
@@ -192,7 +214,8 @@ function renderGuideHtml() {
         </div>
       </div>
     </div>
-    ${renderFlowSection()}${renderClinicalDemoSection()}${renderM16sDemoSection()}${renderRnaseqDemoSection()}${renderChipDemoSection()}${renderFaqSection()}
+    </details>
+    ${renderFlowSection()}${renderFaqSection()}
   `;
 }
 
@@ -738,6 +761,28 @@ export function renderGuidePage() {
   if (!root) return;
   root.dataset.guidePlatform = detectPlatform();
   root.innerHTML = renderGuideHtml();
+  // Read the available upload forms so the launcher follows changes to the import page.
+  const typeSelect = root.querySelector("#guide-start-type");
+  const uploadForms = Array.from(document.querySelectorAll("#page-import .upload-card[data-upload-type]"));
+  for (const card of uploadForms) {
+    typeSelect.add(new Option(card.querySelector("h3").textContent, card.dataset.uploadType));
+  }
+  const activeType = document.getElementById("omics-pipeline")?.value;
+  if (uploadForms.some(card => card.dataset.uploadType === activeType)) typeSelect.value = activeType;
+  root.querySelector(".guide-start-routes").addEventListener("click", event => {
+    const action = event.target.closest("button[data-start]")?.dataset.start;
+    if (!action) return;
+    const page = action === "discover" ? "matrix" : "import";
+    window.dispatchEvent(new CustomEvent("emp:navigate", { detail: { page } }));
+    const target = action === "upload"
+      ? uploadForms.find(card => card.dataset.uploadType === typeSelect.value)?.querySelector("h3")
+      : document.querySelector(action === "demo" ? ".demo-datasets-card h2" : "#discovery-input");
+    if (target) {
+      if (target.matches("h2, h3")) target.tabIndex = -1;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ block: "center" });
+    }
+  });
   bindGuideTabs(root);
   bindCopyButtons(root);
   root.querySelectorAll(".guide-goto-tab").forEach((btn) => {
@@ -753,11 +798,15 @@ export function initGuide() {
 export function openGuideInstallTab(tab) {
   const page = document.getElementById("page-guide");
   if (page && !page.classList.contains("active")) return;
-  renderGuidePage();
   const root = document.getElementById("guide-root");
-  const btn = root?.querySelector(`.guide-install-tab[data-guide-tab="${tab}"]`);
+  const group = root?.querySelector(".guide-install-group");
+  if (group) group.open = true;
+  const btn = tab
+    ? root?.querySelector(`.guide-install-tab[data-guide-tab="${tab}"]`)
+    : root?.querySelector(".guide-install-tab.active");
   btn?.click();
-  root?.scrollIntoView({ behavior: "smooth", block: "start" });
+  btn?.focus();
+  btn?.scrollIntoView({ block: "center" });
 }
 
 window.addEventListener("emp:locale-change", () => {

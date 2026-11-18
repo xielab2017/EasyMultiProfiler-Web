@@ -6,6 +6,6 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${ROOT_DIR}"
 
-echo "Stopping EasyMultiProfiler Web v9.1.0 (Linux)..."
+echo "Stopping EasyMultiProfiler Web (Linux)..."
 bash "${ROOT_DIR}/webapp/scripts/stop_local.sh" "$@"
 exit $?

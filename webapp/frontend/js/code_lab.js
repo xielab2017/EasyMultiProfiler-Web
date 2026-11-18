@@ -10,13 +10,16 @@ import { featureText } from "./feature_i18n.mjs?v=2";
 import {pageAgentContext} from './page_agent.mjs';
 import { mountAnalysisGuide } from "./analysis_guide.js?v=1";
 import { mountModelSettings } from './model_settings.js';
+import {namedProfiles,profileChoices} from './model_profiles.mjs';
 import {bindPanelResize} from './chat_layout.mjs';
 import {savedChatModels} from './chat_composer.mjs';
 import {agentMemory,mountAgentMemory} from './agent_memory.mjs';
+import {watchChatPanel} from './chat_panel_plugins.mjs';
 import {installAgentPipeline} from './agent_pipeline.mjs';
 
 const guideText = source => featureText(source, getLocale());
 let guideController = null;
+let chatPanelActive = false;
 
 function setPanelMode() {
   if (!rootEl) return;
@@ -490,10 +493,10 @@ const DEFAULT_LLM_PRESET = {
   task_type: "code_optimize",
   campus_models: CAMPUS_LLM_PRESET.campus_models,
 };
-const PAGES = new Set(['guide','course','models','prompts','import','summary','inspector','chipseq','chipseq_downstream','export','preparation','analysis','clinical','runall','visualization','matrix','integration','workbench']);
+const PAGES = new Set(['guide','course','models','plugins','prompts','import','summary','inspector','chipseq','chipseq_downstream','export','preparation','analysis','clinical','runall','visualization','matrix','integration','workbench']);
 
 const DEFAULT_TAB = {
-  guide:'main',course:'main',models:'main',prompts:'main',import:'main',summary:'main',inspector:'main',chipseq:'main',chipseq_downstream:'main',export:'main',
+  guide:'main',course:'main',models:'main',plugins:'main',prompts:'main',import:'main',summary:'main',inspector:'main',chipseq:'main',chipseq_downstream:'main',export:'main',
   matrix: "matrix-main", integration:"integration-main", workbench:"workbench-main",
   preparation: "prep-filter",
   analysis: "ana-alpha",
@@ -734,9 +737,42 @@ function migrateLlmConfig(cfg) {
   return cfg;
 }
 
+async function discoverModelPlugins() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetch('/api/public-data/agent/plugins', {
+      credentials: 'omit', redirect: 'error', signal: controller.signal,
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.api_version === 1 && Array.isArray(data.plugins) ? data.plugins : [];
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function addModelPlugins(plugins, select) {
+  for (const plugin of plugins) {
+    const {provider, name, base_url, default_model} = plugin;
+    if (!/^plugin-[a-z][a-z0-9-]*$/.test(provider)) continue;
+    LLM_PROVIDER_CATALOG[provider] = {
+      plugin: true, defaultModel: default_model, baseUrl: base_url, keyRequired: true,
+      models: [{id: default_model, label: default_model}, {id: '__custom__', label: 'Custom model'}],
+    };
+    if ([...select.options].some(option => option.value === provider)) continue;
+    select.add(new Option(name + ' · Plugin', provider));
+  }
+}
+
 function providerProfile(provider) {
   const cfg = loadLlmConfig();
-  return cfg.profiles?.[provider] || {};
+  const profile = cfg.profiles?.[provider] || {};
+  const entry = LLM_PROVIDER_CATALOG[provider];
+  if (entry?.plugin && profile.base_url !== entry.baseUrl) return {};
+  return profile;
 }
 
 function providerHasPresetUrl(provider) {
@@ -757,6 +793,7 @@ function inferBaseUrlMode(provider, profile = {}) {
 
 function isBaseUrlCustomMode(provider) {
   const cat = LLM_PROVIDER_CATALOG[provider] || {};
+  if (cat.plugin) return false;
   if (cat.baseUrlEditable && provider === "custom") return true;
   if (!providerHasPresetUrl(provider)) return cat.baseUrlEditable;
   return llmConfigEls.base_url_mode?.value === "custom";
@@ -770,7 +807,7 @@ function resolveBaseUrl(provider) {
   const cat = LLM_PROVIDER_CATALOG[provider] || {};
   const saved = (providerProfile(provider).base_url || "").trim();
   if (provider === "custom") {
-    return llmConfigEls.base_url?.value?.trim() || saved || "";
+    return llmConfigEls.base_url ? llmConfigEls.base_url.value.trim() : saved;
   }
   if (isBaseUrlCustomMode(provider)) {
     return llmConfigEls.base_url?.value?.trim() || saved || cat.baseUrl || "";
@@ -828,6 +865,15 @@ function updateBaseUrlField(provider, { preferUiMode = false } = {}) {
   const profile = providerProfile(provider);
   const saved = (profile.base_url || "").trim();
 
+  if (cat.plugin) {
+    modeSel?.classList.add("hidden");
+    el.readOnly = true;
+    el.classList.add("code-lab-llm-readonly");
+    el.value = cat.baseUrl;
+    wrap?.classList.remove("hidden");
+    return;
+  }
+
   if (provider === "custom" && cat.baseUrlEditable) {
     modeSel?.classList.add("hidden");
     el.readOnly = false;
@@ -884,12 +930,52 @@ function applyProviderToForm(provider) {
   updateLlmFormHints(provider);
 }
 
+function modelGenerationFields() {
+  const options = {};
+  const profileId = document.getElementById('models-profile-id')?.value;
+  if (profileId) options.profile_id = profileId;
+  for (const [key, id] of [['temperature','models-temperature'],['max_tokens_output','models-max-tokens']]) {
+    const el = document.getElementById(id);
+    if (el && el.value !== '') options[key] = el.valueAsNumber;
+  }
+  return options;
+}
+
+function canSelectProfile(profile) {
+  const provider = LLM_PROVIDER_CATALOG[profile.provider];
+  return Boolean(provider && (!provider.plugin || provider.baseUrl === profile.base_url));
+}
+
+function applyNamedProfile(profile) {
+  if (!canSelectProfile(profile)) throw Error('Model provider is unavailable');
+  const {provider} = profile;
+  llmConfigEls.provider.value = provider;
+  applyProviderToForm(provider);
+  llmConfigEls.provider.dispatchEvent(new Event('emp:profile-draft'));
+  if (provider === 'minimax') {
+    for (const [field, id] of [['region','models-minimax-region'],['protocol','models-minimax-protocol']]) {
+      const el = document.getElementById(id);
+      el.value = profile[field];
+      el.dispatchEvent(new Event('change'));
+    }
+  } else if (providerHasPresetUrl(provider) && !LLM_PROVIDER_CATALOG[provider].plugin) {
+    llmConfigEls.base_url_mode.value = profile.base_url === LLM_PROVIDER_CATALOG[provider].baseUrl ? 'preset' : 'custom';
+    updateBaseUrlField(provider, {preferUiMode:true});
+  }
+  llmConfigEls.base_url.value = profile.base_url || '';
+  llmConfigEls.api_key.value = profile.api_key || '';
+  populateModelSelect(provider, profile.model);
+  llmConfigEls.model.dispatchEvent(new Event('change'));
+  document.getElementById('models-temperature').value = profile.temperature ?? '';
+  document.getElementById('models-max-tokens').value = profile.max_tokens_output ?? '';
+}
+
 function saveCurrentProviderProfile() {
   const provider = llmConfigEls.provider?.value;
   if (!provider) return;
   const cat = LLM_PROVIDER_CATALOG[provider] || {};
   const mode = llmConfigEls.base_url_mode?.value || inferBaseUrlMode(provider, providerProfile(provider));
-  let baseUrl = "";
+  let baseUrl = cat.plugin ? cat.baseUrl : "";
   if (provider === "custom" && cat.baseUrlEditable) {
     baseUrl = llmConfigEls.base_url?.value?.trim() || "";
   } else if (isBaseUrlCustomMode(provider)) {
@@ -898,6 +984,7 @@ function saveCurrentProviderProfile() {
   const cfg = loadLlmConfig();
   cfg.profiles = cfg.profiles || {};
   cfg.profiles[provider] = {
+    ...modelGenerationFields(),
     api_key: llmConfigEls.api_key?.value || "",
     model: getSelectedModel(),
     base_url: baseUrl,
@@ -951,10 +1038,19 @@ function detectActiveTabInPage(page) {
 
 function syncDockLayout() {
   if (!rootEl) return;
+  const narrow=window.matchMedia('(max-width: 900px)').matches;
+  const topbar=document.getElementById('topbar');
+  if(narrow&&topbar&&rootEl.parentElement!==topbar.parentElement)topbar.after(rootEl);
+  if(!narrow&&rootEl.parentElement!==document.body)document.body.appendChild(rootEl);
   const open = rootEl.classList.contains("code-lab--open");
   const visible = !rootEl.classList.contains("code-lab--hidden");
   const docked = visible && open;
   document.body.classList.toggle("code-lab-docked", docked);
+  const button=rootEl.querySelector('#code-lab-guide-collapse');
+  if(button){
+    button.setAttribute('aria-expanded',String(open));
+    button.textContent=open?guideText('收起助手'):guideText('打开助手');
+  }
   consoleEl?.classList.toggle("hidden", !docked || rootEl.dataset.mode !== 'code');
   if (docked) repositionConsolePanel();
 }
@@ -986,7 +1082,7 @@ function hideDock() {
 }
 
 function showDock() {
-  rootEl?.classList.remove("code-lab--hidden");
+  rootEl?.classList.toggle("code-lab--hidden", !chatPanelActive);
   syncDockLayout();
 }
 
@@ -1210,10 +1306,10 @@ function isOpenRouterFusionMode(provider = llmConfigEls.provider?.value || "auto
 }
 
 function resolveApiKey(provider, cfg = loadLlmConfig(), profile = providerProfile(provider)) {
-  return llmConfigEls.api_key?.value?.trim()
-    || profile.api_key?.trim()
+  if (llmConfigEls.api_key) return llmConfigEls.api_key.value.trim();
+  if (LLM_PROVIDER_CATALOG[provider]?.plugin) return "";
+  return profile.api_key?.trim()
     || cfg.profiles?.[provider]?.api_key?.trim()
-    || cfg.api_key?.trim()
     || "";
 }
 
@@ -1221,8 +1317,10 @@ function collectLlmConfig({ persistGlobal = false } = {}) {
   const provider = llmConfigEls.provider?.value || "auto";
   const profile = providerProfile(provider);
   const cfg = loadLlmConfig();
+  for (const key of ['temperature','max_tokens_output','profile_id']) delete cfg[key];
   const merged = {
     ...cfg,
+    ...modelGenerationFields(),
     provider,
     mode: "api",
     api_key: resolveApiKey(provider, cfg, profile),
@@ -1488,7 +1586,7 @@ export function applyCodeLabI18n() {
   setText(".code-lab-head h4", "codelab.headTitle");
   const badge = q(".code-lab-badge");
   if (badge) badge.textContent = guideText('引导 · 计划 · 审核');
-  const collapse=q('#code-lab-guide-collapse');if(collapse)collapse.textContent=guideText('收起助手');
+  const collapse=q('#code-lab-guide-collapse');if(collapse)collapse.textContent=rootEl.classList.contains('code-lab--open')?guideText('收起助手'):guideText('打开助手');
   for(const button of rootEl.querySelectorAll('[data-panel-mode]'))button.textContent=guideText(button.dataset.panelMode==='guide'?'分析引导':'AI 对话与代码');
   const hint = q(".code-lab-hint");
   if (hint) hint.textContent = guideText('实现参考可能含请求变量与路由包装，不代表可独立运行。自定义脚本需审核输入、设计和执行环境。');
@@ -1591,8 +1689,18 @@ export function applyCopilotAction({ page, tab, instruction, autoOptimize = fals
   rootEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
+function showChatInstallPrompt() {
+  document.querySelector('.nav-item[data-page="plugins"]')?.click();
+  window.dispatchEvent(new CustomEvent('emp:toast',{detail:{msg:['zh','zh-TW'].includes(getLocale()) ?
+    '请先安装并启用 Zotero 风格研究助手。' : 'Install and enable Research Chat first.'}}));
+}
+
 export function openCodeLabPanel(page) {
   if (!rootEl || !PAGES.has(page)) return;
+  if (!chatPanelActive) {
+    showChatInstallPrompt();
+    return;
+  }
   notifyCodeLabNavigate(page);
   showDock();
   rootEl.classList.add("code-lab--open");
@@ -1638,7 +1746,7 @@ export function refreshCodeLabContext() {
 }
 
 export async function initCodeLab() {
-  await prefetchSnippets();
+  const [plugins] = await Promise.all([discoverModelPlugins(), prefetchSnippets()]);
   ensureConsolePanel();
 
   document.getElementById("code-lab-root")?.remove();
@@ -1646,7 +1754,9 @@ export async function initCodeLab() {
   rootEl = document.createElement("div");
   rootEl.id = "code-lab-root";
   rootEl.dataset.empLayout = "v3";
-  rootEl.className = "code-lab--hidden code-lab--open";
+  const narrowScreen=window.matchMedia('(max-width: 900px)');
+  rootEl.className = narrowScreen.matches?"code-lab--hidden":"code-lab--hidden code-lab--open";
+  narrowScreen.addEventListener('change',syncDockLayout);
   rootEl.dataset.mode = 'guide';
   rootEl.innerHTML = `
     <div class="agent-panel-resizer" role="separator" aria-label="左右调整 AI 窗口宽度" title="拖动调整宽度；双击还原" aria-orientation="vertical" tabindex="0"></div>
@@ -1807,9 +1917,21 @@ export async function initCodeLab() {
     fusion_model: rootEl.querySelector("#code-lab-llm-fusion-model"),
     probe_btn: rootEl.querySelector("#code-lab-llm-probe-openrouter"),
   };
+  addModelPlugins(plugins, llmConfigEls.provider);
+  window.addEventListener('emp:model-store-removed', event => {
+    const key = event.detail.provider, select = llmConfigEls.provider;
+    const selected = select.value === key;
+    delete LLM_PROVIDER_CATALOG[key];
+    [...select.options].find(option => option.value === key)?.remove();
+    if (selected) select.dispatchEvent(new Event('change',{bubbles:true}));
+    window.dispatchEvent(new CustomEvent('emp:agent-config-change'));
+  });
+  window.addEventListener('emp:model-store-installed', async () => {
+    addModelPlugins(await discoverModelPlugins(), llmConfigEls.provider);
+  });
   applyLlmConfigToForm();
   refreshOpenRouterVerifiedModels({ repopulate: false }).then((applied) => {
-    if (applied && llmConfigEls.provider?.value === "openrouter") {
+    if (applied && llmConfigEls.provider?.value === "openrouter" && !document.getElementById('models-profile-id')?.value) {
       applyProviderToForm("openrouter");
     }
   });
@@ -1866,19 +1988,32 @@ export async function initCodeLab() {
 
   rootEl.querySelector('.code-lab-body').insertBefore(clinicalRow,rootEl.querySelector('.code-lab-mode-tabs'));
   for(const button of rootEl.querySelectorAll('[data-panel-mode]'))button.addEventListener('click',()=>setPanelMode(button.dataset.panelMode));
-  guideController=mountAnalysisGuide(rootEl.querySelector('#code-lab-guide-panel'),{
+  let profileEditor;
+  for (const type of ['emp:attach-paper','emp:agent-question']) {
+    window.addEventListener(type, () => { if (!chatPanelActive) showChatInstallPrompt(); });
+  }
+  const mountChat = () => mountAnalysisGuide(rootEl.querySelector('#code-lab-guide-panel'),{
+    isActive: () => chatPanelActive,
     modelBridge:{
-      list:active=>{let catalogs={};try{catalogs=JSON.parse(localStorage.getItem('emp_model_catalogs_v1')||'{}');}catch{}return savedChatModels(loadLlmConfig(),catalogs,active);},
-      select:async([provider,model])=>{
-        const saved=loadLlmConfig();if(provider==='openai'&&!saved.profiles?.openai&&saved.profiles?.chatgpt)provider='chatgpt';
-        const providerSelect=document.getElementById('code-lab-llm-provider');providerSelect.value=provider;providerSelect.dispatchEvent(new Event('change',{bubbles:true}));
-        const select=document.getElementById('code-lab-llm-model');
-        if([...select.options].some(option=>option.value===model))select.value=model;
-        else{select.value='__custom__';document.getElementById('code-lab-llm-model-custom').value=model;}
-        select.dispatchEvent(new Event('change',{bubbles:true}));
-        await document.getElementById('models-load').onclick();
+      list:active=>{
+        let catalogs={};try{catalogs=JSON.parse(localStorage.getItem('emp_model_catalogs_v1')||'{}');}catch{}
+        const regular=savedChatModels(loadLlmConfig(),catalogs,active).filter(row=>!row.provider.startsWith('plugin-')||Boolean(LLM_PROVIDER_CATALOG[row.provider]));
+        return profileChoices(regular,namedProfiles(),active,canSelectProfile);
+      },
+      select:async([provider,model,profileId])=>{
+        if(profileId){
+          if(!profileEditor?.select(profileId))throw Error('Model profile unavailable');
+        }else{
+          const saved=loadLlmConfig();if(provider==='openai'&&!saved.profiles?.openai&&saved.profiles?.chatgpt)provider='chatgpt';
+          const providerSelect=document.getElementById('code-lab-llm-provider');providerSelect.value=provider;providerSelect.dispatchEvent(new Event('change',{bubbles:true}));
+          const select=document.getElementById('code-lab-llm-model');
+          if([...select.options].some(option=>option.value===model))select.value=model;
+          else{select.value='__custom__';document.getElementById('code-lab-llm-model-custom').value=model;}
+          select.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+        if(await document.getElementById('models-load').onclick()!==true)throw Error('Model not loaded');
         const result=await fetch('/api/public-data/agent/status',{credentials:'omit'}).then(r=>r.json());
-        if(result.status!=='ready'||result.model!==model)throw Error('Model not loaded');
+        if(result.status!=='ready'||result.model!==model||result.provider!==(provider==='chatgpt'?'openai':provider)||profileId&&result.profile_id!==profileId)throw Error('Model not loaded');
         window.dispatchEvent(new CustomEvent('emp:agent-config-change'));
       },
     },
@@ -1893,13 +2028,26 @@ export async function initCodeLab() {
       if(detail)window.dispatchEvent(new CustomEvent('emp:workbench-proposal',{detail}));
     },
   });
+  watchChatPanel(panel => {
+    chatPanelActive = Boolean(panel);
+    if (!panel) {
+      guideController?.suspend();
+      rootEl.classList.add('code-lab--hidden');
+      syncDockLayout();
+      return;
+    }
+    if (!guideController) guideController = mountChat();
+    rootEl.classList.toggle('code-lab--open', panel.startup === 'expanded' ||
+      (panel.startup === 'adaptive' && !narrowScreen.matches));
+    notifyCodeLabNavigate(document.querySelector('.page.active')?.id.replace('page-', ''));
+  });
   setPanelMode('guide');
 
   rootEl.querySelector(".code-lab-head").addEventListener("click", () => {
     rootEl.classList.toggle("code-lab--open");
     syncDockLayout();
   });
-  rootEl.querySelector('#code-lab-guide-collapse').addEventListener('click',event=>{event.stopPropagation();rootEl.classList.remove('code-lab--open');syncDockLayout();});
+  rootEl.querySelector('#code-lab-guide-collapse').addEventListener('click',event=>{event.stopPropagation();rootEl.classList.toggle('code-lab--open');syncDockLayout();});
 
   rootEl.querySelector("#code-lab-toggle-collapse").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1958,6 +2106,13 @@ function externalCodeForOptimize() {
   return opt;
 }
 
+function codeOptimizationProvider({provider, config}) {
+  const plugin = LLM_PROVIDER_CATALOG[provider];
+  if (!plugin?.plugin) return {provider, config};
+  // The R Code Lab already accepts OpenAI-compatible services as "custom".
+  return {provider: "custom", config: {model: config.model, api_key: config.api_key, base_url: plugin.baseUrl}};
+}
+
 async function runLlmOptimize({ forceExternal = false } = {}) {
   if (!state.workflow || !state.tab) return;
   const { provider, config } = collectLlmConfig();
@@ -1977,8 +2132,7 @@ async function runLlmOptimize({ forceExternal = false } = {}) {
   );
   try {
     const res = await optimizeRCode({
-      provider,
-      config,
+      ...codeOptimizationProvider({provider, config}),
       workflow: state.workflow,
       tab: state.tab,
       source_code: sourceCode,
@@ -2098,8 +2252,7 @@ async function runLlmOptimize({ forceExternal = false } = {}) {
     setLlmStatus("脚本运行报错，AI 正在尝试自动修复并重跑…", "wait");
     try {
       const res = await optimizeRCode({
-        provider: cfg.provider,
-        config: cfg.config,
+        ...codeOptimizationProvider(cfg),
         workflow: state.workflow,
         tab: state.tab,
         source_code: taEl.value,
@@ -2129,7 +2282,7 @@ async function runLlmOptimize({ forceExternal = false } = {}) {
   });
 
   const llmWrap=rootEl.querySelector('#code-lab-llm-wrap');
-  mountModelSettings(document.getElementById('model-settings-root'),{legacyWrap:llmWrap,readConfiguration:(persist=false)=>{if(persist)saveCurrentProviderProfile();return collectLlmConfig({persistGlobal:persist});}});
+  profileEditor=mountModelSettings(document.getElementById('model-settings-root'),{legacyWrap:llmWrap,availableProfile:canSelectProfile,applyProfile:applyNamedProfile,readConfiguration:(persist=false)=>{if(persist)saveCurrentProviderProfile();return collectLlmConfig({persistGlobal:persist});}});
   mountAgentMemory(document.getElementById('model-settings-root'));
   document.getElementById('main')?.addEventListener('change',event=>{if(!event.isTrusted)return;const key={'heat-width':'plot_width','heat-height':'plot_height','heat-topn':'plot_top_n','wb-scope':'workflow_scope'}[event.target.id];if(key)agentMemory.remember(key,event.target.id==='wb-scope'?event.target.value:Number(event.target.value));});
   const modelSettingsLink=document.createElement('button');modelSettingsLink.type='button';modelSettingsLink.className='btn btn-outline';modelSettingsLink.dataset.featureText='模型与 API';modelSettingsLink.textContent=guideText('模型与 API');modelSettingsLink.onclick=()=>document.querySelector('.nav-item[data-page="models"]')?.click();llmWrap.prepend(modelSettingsLink);

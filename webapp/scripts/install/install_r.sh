@@ -27,10 +27,11 @@ os="$(emp_detect_os)"
 arch="$(emp_detect_arch)"
 want_ver="${EMP_R_VERSION:-$DEFAULT_R_VERSION}"
 
-if ! emp_need_r_install; then
-  emp_ok "R $(emp_detect_r_version) already installed and >= $(emp_min_r_version)"
+if rscript="$(bash "${SCRIPT_DIR}/../resolve_rscript.sh")"; then
+  emp_ok "Using $rscript (R >= $(emp_min_r_version))"
   exit 0
 fi
+[[ -z "${EMPI_RSCRIPT:-}" ]] || exit 1
 
 emp_log "R installation needed (target >= $(emp_min_r_version), want ${want_ver}, OS=${os}, arch=${arch})"
 
@@ -130,8 +131,8 @@ esac
 
 # Final verification — re-PATH because brew may have added bin dirs in this shell.
 hash -r
-if ! emp_need_r_install; then
-  emp_ok "R $(emp_detect_r_version) verified."
+if rscript="$(bash "${SCRIPT_DIR}/../resolve_rscript.sh")"; then
+  emp_ok "Verified Rscript: $rscript"
   emp_mark_installed r
   exit 0
 fi
