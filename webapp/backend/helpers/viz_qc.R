@@ -233,29 +233,11 @@ emp_plot_crossomics_network <- function(edges, locale = "en") {
 #' applied to plot text. Returns the file path.
 emp_save_plot_i18n <- function(plot, file, locale = "en", width = 10,
                                height = 8, dpi = 300) {
+  old_style<-emp_publication_use_type(basename(file));on.exit(options(emp.viz_style=old_style),add=TRUE)
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     stop("emp_save_plot_i18n: ggplot2 is required to save plots.")
   }
   if (is.null(plot)) stop("emp_save_plot_i18n: `plot` is NULL.")
-  ext <- tolower(tools::file_ext(file))
-  device <- switch(ext,
-    pdf = if (capabilities("aqua")) {
-      function(filename, width, height, bg, ...) {
-        grDevices::quartz(type = "pdf", file = filename, width = width, height = height, bg = bg)
-      }
-    } else grDevices::cairo_pdf,
-    png = "png",
-    NULL
-  )
-  if (identical(ext, "svg") && requireNamespace("svglite", quietly = TRUE)) {
-    device <- function(...) svglite::svglite(...)
-  }
-  args <- list(filename = file, plot = plot, width = width,
-               height = height, dpi = dpi)
-  if (!is.null(device)) args$device <- device
-  if (ext %in% c("pdf", "png")) {
-    args$plot <- plot + ggplot2::theme(text = ggplot2::element_text(family = .qc_font_family(locale)))
-  }
-  do.call(ggplot2::ggsave, args)
-  file
+  if (inherits(plot, "ggplot")) plot <- plot+ggplot2::theme(text=ggplot2::element_text(family=.qc_font_family(locale)))
+  emp_publication_export(plot, file, width, height, dpi)
 }

@@ -165,8 +165,23 @@ function chart(title) {
 function addChart(svg, filename) {
   $('results').append(svg);
   const button = document.createElement('button'); button.className = 'btn btn-outline wb-svg-export'; button.textContent = ft('下载此图 SVG');
-  button.onclick = () => { svg.setAttribute('xmlns', NS); save(new XMLSerializer().serializeToString(svg), filename, 'image/svg+xml'); };
+  const sourceJob=$('analysis-job').value.trim();
+  const exportFigure=async(format)=>{
+    const kind=filename==='pca.svg'?'pca':'heatmap';
+    const job=sourceJob;
+    if(!job)throw Error('Select a completed analysis job first / 请先选择已完成任务');
+    const value=await rRequest('POST','/workbench/figure',{job_id:job,kind},false,{skipSessionHeader:true,timeoutMs:120000});
+    const bytes=Uint8Array.from(atob(value[format+'_base64']),c=>c.charCodeAt(0));
+    const url=URL.createObjectURL(new Blob([bytes],{type:format==='pdf'?'application/pdf':'image/svg+xml'}));
+    const link=document.createElement('a');link.href=url;link.download=kind+'.'+format;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    if(value.figure_layout?.notes?.length)say(value.figure_layout.notes.join(' '));
+  };
+  button.onclick=async()=>{button.disabled=true;try{await exportFigure('svg');}catch(error){say(error.message);}finally{button.disabled=false;}};
   $('results').append(button);
+  const pdf=document.createElement('button');pdf.className='btn btn-primary wb-pdf-export';pdf.textContent='PDF · Illustrator';
+  pdf.onclick=async()=>{pdf.disabled=true;try{await exportFigure('pdf');}catch(error){say(error.message);}finally{pdf.disabled=false;}};
+  $('results').append(pdf);
+  const settings=document.createElement('button');settings.className='btn btn-outline';settings.dataset.publicationSettings='';settings.textContent='A4 · pt';$('results').append(settings);
 }
 function pcaChart(pca) {
   if (!Array.isArray(pca.scores) || !pca.scores.length || !('PC2' in pca.scores[0])) return;

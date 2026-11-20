@@ -23,10 +23,15 @@ export function methodLibraryDownloadUrl(path, apiBase, pageUrl) {
  return url.href;
 }
 export function applicableFigureMethods(omics){return ITEMS.filter(item=>item.omics.includes(omics)||!omics||omics==='all');}
+export function methodLibraryOmics(selected,experiments=[],experiment){
+ if(selected&&!['all','multiomics','customize'].includes(selected))return selected;
+ const registered=experiments.find(row=>row.name===experiment)?.omics;
+ return ALL_MATRIX.includes(registered)||['chipseq','clinical'].includes(registered)?registered:(selected||'all');
+}
 export function methodLibraryPayload(method,values,{session_id,experiment,omics}){
  if(!session_id||!experiment)throw Error('请先导入并选择实验 / Import and select an experiment first.');
  const item=ITEMS.find(row=>row.id===method);
- if(!item||!item.omics.includes(omics))throw Error('此图型不适用于当前组学 / This method is not available for the selected omics.');
+ if(!item||!item.omics.includes(omics))throw Error('请先选择此图型对应的组学类型 / Select the appropriate omics type for this method.');
  const body={session_id,experiment,omics,method,width:Number(values.width),height:Number(values.height),base_size:Number(values.base_size),title:values.title||''};
  const terms=text=>String(text||'').split(/[,\n]/).map(x=>x.trim()).filter(Boolean);
  if(method==='ternary'){
@@ -39,7 +44,7 @@ export function methodLibraryPayload(method,values,{session_id,experiment,omics}
 export function initMethodLibraryVisualization({API,showPlot,navigateTo,currentColorOptions}){
  const el=id=>document.getElementById(id);if(!el('viz-method-directory'))return;
  const val=id=>el(id)?.value||'';
- const omics=()=>val('omics-pipeline');let available=false,groupVersion=0;const generating=new Set();
+ const omics=()=>methodLibraryOmics(val('omics-pipeline'),window._emp?.experiments||[],window._emp?.currentExp);let available=false,groupVersion=0;const generating=new Set();
  const say=(prefix,text)=>{el(prefix+'-status').textContent=text;};
  function directory(){
   const locale=window._empLocale?.getLocale?.()||document.documentElement?.dataset?.empLocale||'zh',en=!['zh','zh-TW'].includes(locale);
@@ -108,14 +113,14 @@ export function initMethodLibraryVisualization({API,showPlot,navigateTo,currentC
   const objectUrl=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=objectUrl;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);
  }
  function render(prefix,result){
-  if(!result.plot)throw Error('服务器未返回图形 / Server did not return a plot.');showPlot(prefix+'-output',result.plot.replace(/^data:image\/png;base64,/,''),{downloadStem:prefix});
+  if(!result.plot)throw Error('服务器未返回图形 / Server did not return a plot.');showPlot(prefix+'-output',result.plot.replace(/^data:image\/png;base64,/,''),{downloadStem:prefix,figureLayout:result.figure_layout,figureSize:result.parameters?{width_mm:result.parameters.width*25.4,height_mm:result.parameters.height*25.4}:undefined});
   const toolbar=el(prefix+'-output').querySelector('.plot-toolbar');
   for(const format of ['pdf','svg','png','manifest','data']){const path=result.download_urls?.[format];if(!path)continue;if(format==='png')toolbar?.querySelector('a')?.remove();const button=document.createElement('button');button.className='btn btn-outline';button.type='button';button.textContent=format.toUpperCase();button.onclick=async()=>{try{await download(path,`${prefix}.${format==='manifest'?'json':format==='data'?'csv':format}`);}catch(error){say(prefix,error.message);}};toolbar?.append(button);}
  }
  async function generate(method,prefix){
   const button=el(prefix+'-generate');generating.add(prefix);button.disabled=true;say(prefix,'R 正在读取真实结果并绘图… / Rendering in R…');
   try{
-   if(!available)throw Error('自建方法库未连接；请检查 EMP_FIGURE_METHODS_ROOT。');
+   if(!available)throw Error('绘图方法库尚未连接；请点击“重新检查连接”。 / Recheck the figure method connection.');
    const values={width:val(prefix+'-width'),height:val(prefix+'-height'),base_size:val(prefix+'-font'),title:val(prefix+'-title')};
    if(method==='ternary')Object.assign(values,{group_var:val(prefix+'-group'),groups:['a','b','c'].map(x=>val(prefix+'-'+x)),top_n:val(prefix+'-top'),label_features:val(prefix+'-labels'),max_point_size:val(prefix+'-size'),point_alpha:val(prefix+'-alpha'),group_colors:['a','b','c'].map(x=>val(prefix+'-color-'+x))});
    else Object.assign(values,{exclude_unavailable_p:el('de-significance-exclude-na')?.checked===true,x_transform:val(prefix+'-transform'),padj_threshold:val(prefix+'-p'),lfc_threshold:val(prefix+'-fc'),label_genes:val(prefix+'-labels'),n_labels:val(prefix+'-nlabels'),point_size:val(prefix+'-size'),up_color:val(prefix+'-color-up'),down_color:val(prefix+'-color-down'),ns_color:val(prefix+'-color-ns')});

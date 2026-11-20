@@ -86,15 +86,13 @@ run_all_m16s <- function(session_id, experiment, group_var=NULL, taxonomy_level=
  invisible(path)
 }
 .runall_plot <- function(p,b,name,width=9,height=6) {
+ old_style<-emp_publication_use_type(name);on.exit(options(emp.viz_style=old_style),add=TRUE)
  if(is.null(p))stop('No plot object was produced')
  for(ext in c('png','pdf','svg')){
   path<-file.path(b$plots,paste0(name,'.',ext))
   if(file.exists(path))stop('Refusing to overwrite a figure')
   if(ext=='svg'&&!requireNamespace('svglite',quietly=TRUE))stop('SVG export requires svglite')
-  device<-switch(ext,png=if(requireNamespace('ragg',quietly=TRUE))ragg::agg_png else 'png',pdf=grDevices::pdf,svg=svglite::svglite)
-  args<-list(filename=path,plot=p,width=width,height=height,units='in',dpi=300,device=device,bg='white')
-  if(ext=='pdf')args$useDingbats<-FALSE
-  do.call(ggplot2::ggsave,args)
+  emp_publication_export(p,path,width,height)
   if(!file.exists(path)||file.info(path)$size==0)stop('Figure export failed: ',ext)
  }
  invisible(TRUE)
@@ -194,7 +192,7 @@ run_all_m16s <- function(session_id, experiment, group_var=NULL, taxonomy_level=
  }
  if(is_rna)stage('pca',function().ordination('PCA')) else for(m in c('PCA','PCOA','NMDS'))stage(paste0('beta_',tolower(m)),local({method<-m;function().ordination(method)}))
  stage('sample_correlation',function(){need();m<-suppressWarnings(stats::cor(working,method='spearman'));if(any(!is.finite(m)))stop('Undefined sample correlation; inspect constant sample profiles');.runall_table(data.frame(sample=rownames(m),m,check.names=FALSE),b,'sample_spearman');d<-as.data.frame(as.table(m));names(d)<-c('Sample1','Sample2','rho');.runall_plot(ggplot2::ggplot(d,ggplot2::aes(Sample1,Sample2,fill=rho))+ggplot2::geom_tile()+ggplot2::scale_fill_gradient2(low='#2166ac',mid='white',high='#b2182b',limits=c(-1,1))+emp_pub_theme()+ggplot2::theme(axis.text.x=ggplot2::element_text(angle=60,hjust=1))+ggplot2::labs(title='Sample Spearman correlation'),b,'sample_correlation')},parameters$do_correlation)
- stage('sample_clustering',function(){need();if(ncol(working)<3).runall_skip('Clustering requires at least three samples');vars<-apply(working,1,stats::var);idx<-head(order(-vars),top);idx<-idx[vars[idx]>0];if(length(idx)<2).runall_skip('Fewer than two varying features');hc<-stats::hclust(stats::dist(t(working[idx,,drop=FALSE])),method='ward.D2');saveRDS(hc,file.path(b$tables,'sample_hclust.rds'));.runall_table(data.frame(sample=names(stats::cutree(hc,k=2)),cluster=stats::cutree(hc,k=2)),b,'sample_clusters');for(ext in c('pdf','png','svg')){path<-file.path(b$plots,paste0('sample_dendrogram.',ext));if(ext=='pdf')grDevices::pdf(path,width=9,height=6)else if(ext=='svg'){if(!requireNamespace('svglite',quietly=TRUE))stop('svglite unavailable');svglite::svglite(path,width=9,height=6)}else if(requireNamespace('ragg',quietly=TRUE))ragg::agg_png(path,width=9,height=6,units='in',res=300)else grDevices::png(path,width=2700,height=1800);tryCatch(plot(hc,main=paste0('Sample clustering; Top ',length(idx),' varying features'),xlab='',sub='Ward D2 / Euclidean; descriptive clustering'),finally=grDevices::dev.off())}},parameters$do_cluster)
+ stage('sample_clustering',function(){need();if(ncol(working)<3).runall_skip('Clustering requires at least three samples');vars<-apply(working,1,stats::var);idx<-head(order(-vars),top);idx<-idx[vars[idx]>0];if(length(idx)<2).runall_skip('Fewer than two varying features');hc<-stats::hclust(stats::dist(t(working[idx,,drop=FALSE])),method='ward.D2');saveRDS(hc,file.path(b$tables,'sample_hclust.rds'));.runall_table(data.frame(sample=names(stats::cutree(hc,k=2)),cluster=stats::cutree(hc,k=2)),b,'sample_clusters');for(ext in c('pdf','png','svg'))emp_publication_export(function()plot(hc,main=paste0('Sample clustering; Top ',length(idx),' varying features'),xlab='',sub='Ward D2 / Euclidean; descriptive clustering'),file.path(b$plots,paste0('sample_dendrogram.',ext)),9,6)},parameters$do_cluster)
  stage('feature_correlation_network',function(){need();.runall_corr(working,b,top,cutoff)},parameters$do_correlation)
  stage('top_variance_heatmap',function(){need();.runall_heatmap(working,b,'top_variance_heatmap',min(top,50),'Top variable features; transformed display data')})
  if(!is_rna){

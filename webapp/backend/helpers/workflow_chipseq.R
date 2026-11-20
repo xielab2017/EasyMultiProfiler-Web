@@ -2427,7 +2427,7 @@ chip_rnaseq_coanalysis <- function(session_id,
     mat <- log10(as.matrix(expr_sub) + 1)
     if (requireNamespace("pheatmap", quietly = TRUE)) {
       hp <- tryCatch({
-        pheatmap::pheatmap(
+        emp_publication_pheatmap(
           mat, scale = "row", cluster_rows = TRUE, cluster_cols = FALSE,
           show_rownames = nrow(mat) <= 60, border_color = NA,
           silent = TRUE
@@ -3831,9 +3831,9 @@ chip_diffbind <- function(session_id,
   # MA plot
   ma_png <- file.path(out_dir, "diffbind_ma.png")
   tryCatch({
-    grDevices::png(ma_png, width = 900, height = 700, res = 120)
-    DiffBind::dba.plotMA(dba, th = fdr)
-    grDevices::dev.off()
+    draw_ma <- function() DiffBind::dba.plotMA(dba, th = fdr)
+    emp_publication_export(draw_ma, ma_png, 7.5, 5.8333, 120)
+    emp_publication_export(draw_ma, sub("[.]png$", ".pdf", ma_png), 7.5, 5.8333)
     b64 <- .chip_file_to_base64(ma_png)
     if (!is.null(b64)) plots$ma <- b64
   }, error = function(e) {
@@ -3858,7 +3858,8 @@ chip_diffbind <- function(session_id,
           ggplot2::scale_color_manual(values = c(`FALSE` = "#94a3b8", `TRUE` = "#dc2626")) +
           ggplot2::labs(title = "DiffBind volcano", x = fold_col, y = "-log10(FDR)", color = "DB") +
           ggplot2::theme_bw(base_size = 12)
-        ggplot2::ggsave(vol_png, p, width = 7, height = 5.5, dpi = 140)
+        emp_publication_export(p, vol_png, 7, 5.5, 140)
+        emp_publication_export(p, sub("[.]png$", ".pdf", vol_png), 7, 5.5)
         b64 <- .chip_file_to_base64(vol_png)
         if (!is.null(b64)) plots$volcano <- b64
       }

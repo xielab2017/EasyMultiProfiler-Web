@@ -33,6 +33,8 @@ source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s.R"))
 source(file.path(.BACKEND_DIR, "helpers/workflow_microbiome_16s_api.R"))
 source(file.path(.BACKEND_DIR, "helpers/clinical.R"))
 source(file.path(.BACKEND_DIR, "helpers/jobs.R"))
+source(file.path(.BACKEND_DIR, "helpers/analysis_figures.R"))
+source(file.path(.BACKEND_DIR, "helpers/ordination_figures.R"))
 source(file.path(.BACKEND_DIR, "helpers/background_tasks.R"))
 source(file.path(.BACKEND_DIR, "helpers/i18n_locale.R"))
 source(file.path(.BACKEND_DIR, "helpers/platform_info.R"))
@@ -184,6 +186,16 @@ function(req,res) safe_api({emp_ext_present(emp_request_principal(req),emp_ext_p
 #* @serializer unboxedJSON
 function(res) {
   safe_api({ emp_wb_capabilities() }, res)
+}
+
+#* Export a frozen count-workbench chart at the publication size
+#* @post /api/workbench/figure
+#* @serializer unboxedJSON
+function(req, res) {
+  safe_api({
+    b <- jsonlite::fromJSON(req$postBody)
+    emp_publication_workbench(b, emp_request_principal(req))
+  }, res)
 }
 
 #* Submit a confirmed registered count workflow (never arbitrary R)
@@ -2530,7 +2542,7 @@ function(req, res) {
     result    <- run_dimension(session_id, experiment, method)
     result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
-    list(success = TRUE,
+    list(success = TRUE,analysis_result_id=emp_save_analysis_result(session_id,experiment,"dimension",result,b[intersect(names(b),c("method","use","k","group_var","ref_group","test_group"))]),
          n_rows  = nrow(result_df),
          columns = names(result_df),
          data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
@@ -2550,7 +2562,7 @@ function(req, res) {
     result    <- run_correlation(session_id, experiment, use)
     result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
-    list(success = TRUE,
+    list(success = TRUE,analysis_result_id=emp_save_analysis_result(session_id,experiment,"correlation",result,b[intersect(names(b),c("method","use","k","group_var","ref_group","test_group"))]),
          n_rows  = nrow(result_df),
          columns = names(result_df),
          data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
@@ -2571,7 +2583,7 @@ function(req, res) {
     result    <- run_cluster(session_id, experiment, method, k)
     result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
-    list(success = TRUE,
+    list(success = TRUE,analysis_result_id=emp_save_analysis_result(session_id,experiment,"cluster",result,b[intersect(names(b),c("method","use","k","group_var","ref_group","test_group"))]),
          n_rows  = nrow(result_df),
          columns = names(result_df),
          data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
@@ -2594,7 +2606,7 @@ function(req, res) {
     result    <- run_marker(session_id, experiment, method, group_var, ref_group = ref_group, test_group = test_group)
     result_df <- tryCatch(as.data.frame(result), error = function(e) data.frame())
 
-    list(success = TRUE,
+    list(success = TRUE,analysis_result_id=emp_save_analysis_result(session_id,experiment,"marker",result,b[intersect(names(b),c("method","use","k","group_var","ref_group","test_group"))]),
          n_rows  = nrow(result_df),
          columns = names(result_df),
          data    = jsonlite::toJSON(result_df, na = "null", auto_unbox = TRUE, digits = NA))
@@ -3152,9 +3164,7 @@ function(req, res) {
                              font_size = font_size,
                              color_panel = color_panel,
                              custom_colors = custom_colors)
-    list(success = TRUE, plot = out$png, n_genes = out$n_genes,
-         pdf_available = !is.null(out$pdf),
-         pdf_name = basename(out$pdf %||% ""))
+    c(list(success = TRUE, plot = out$png, n_genes = out$n_genes), viz_pdf_meta(out$pdf))
   }, res)
 }
 
@@ -4048,6 +4058,31 @@ function(req) {
   accept_language <- req$HTTP_ACCEPT_LANGUAGE
   locale <- emp_negotiate_locale(country, accept_language)
   list(locale = locale, dir = emp_locale_dir(locale))
+}
+
+#* Frozen outputs available for integrated analysis figures
+#* @get /api/visualize/analysis-result/sources/<session_id>
+#* @serializer unboxedJSON
+function(session_id,req,res,experiment=''){safe_api(emp_analysis_figure_sources(session_id,experiment,emp_request_principal(req)),res)}
+
+#* Describe columns retained by one analysis output
+#* @post /api/visualize/analysis-result/describe
+#* @serializer unboxedJSON
+function(req,res){safe_api({b<-jsonlite::fromJSON(req$postBody);emp_analysis_figure_describe(b,emp_request_principal(req))},res)}
+
+#* Render an immutable analysis result without rerunning analysis
+#* @post /api/visualize/analysis-result
+#* @serializer unboxedJSON list(digits=NA, na="null", null="null")
+function(req,res){safe_api({b<-jsonlite::fromJSON(req$postBody);emp_plot_analysis_result(b,emp_request_principal(req))},res)}
+
+#* Download analysis figures and plotted data
+#* @get /api/visualize/analysis-result/file/<session_id>/<filename>
+#* @serializer octet
+function(session_id,filename,req,res){
+ emp_assert_session_owner(session_id,emp_request_principal(req))
+ if(length(filename)!=1L||!grepl('^analysis_plot_[A-Za-z0-9]+[.](png|pdf|svg|data[.]csv|stats[.]csv|pairwise[.]csv|manifest[.]json)$',filename)){res$status<-400;return(charToRaw('Invalid figure filename'))}
+ path<-file.path(session_path(session_id),'plots',filename);if(!file.exists(path)){res$status<-404;return(charToRaw('Figure not found'))}
+ res$setHeader('Content-Type',switch(tools::file_ext(filename),png='image/png',pdf='application/pdf',svg='image/svg+xml',csv='text/csv','application/json'));res$setHeader('Content-Disposition',sprintf('attachment; filename="%s"',filename));res$setHeader('Cache-Control','no-store');readBin(path,'raw',n=file.info(path)$size)
 }
 
 #* List saved enrichment analyses for figure sources

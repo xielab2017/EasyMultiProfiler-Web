@@ -70,7 +70,7 @@ emp_wb_capabilities <- function() {
 }
 
 emp_wb_validate <- function(payload) {
-  .wb_fields(payload, c("plan_json", "plan_sha256", "matrix_csv", "confirmed"))
+  .wb_fields(payload, c("plan_json", "plan_sha256", "matrix_csv", "confirmed", "publication", "export_size", "figure_profiles"))
   if (!is.character(payload$plan_json) || length(payload$plan_json) != 1L || nchar(payload$plan_json, type = "bytes") > 512 * 1024 ||
       !is.character(payload$matrix_csv) || length(payload$matrix_csv) != 1L || nchar(payload$matrix_csv, type = "bytes") > 16 * 1024^2) stop("Bounded prepared plan and matrix required")
   if (!identical(digest::digest(enc2utf8(payload$plan_json), algo = "sha256", serialize = FALSE), payload$plan_sha256)) stop("Plan changed after preparation")

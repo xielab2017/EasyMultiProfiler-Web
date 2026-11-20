@@ -145,7 +145,7 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
     updated    = started
   ))
 
-  .JOB_QUEUE$entries[[id]] <- list(fn = fn, args = args, session_id = session_id)
+  .JOB_QUEUE$entries[[id]] <- list(fn = fn, args = args, session_id = session_id, figure_style = getOption("emp.viz_style", NULL))
   .dispatch_jobs()
   id
 }
@@ -167,7 +167,8 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
   .write_state(id, st)
 }
 
-.run_job <- function(id, kind, fn, args, backend_dir, log_path) {
+.run_job <- function(id, kind, fn, args, backend_dir, log_path, figure_style = NULL) {
+  options(emp.viz_style = figure_style, emp.publication_notes = character(),emp.analysis_job_id=id)
   log_con <- file(log_path, open = "at")
   sink(log_con, type = "output")
   sink(log_con, type = "message")
@@ -218,6 +219,9 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
     bump(1, "Starting")
     args$on_progress <- bump
     result <- do.call(fn, args)
+    if (is.list(result) && !is.null(emp_publication_profile()) && is.null(result$figure_layout)) result$figure_layout <- list(
+      font_pt=emp_publication_profile()$font_pt,min_font_pt=emp_publication_profile()$min_font_pt,
+      notes=as.list(getOption("emp.publication_notes",character())),canvas=getOption("emp.viz_style",list())$export_size)
     st <- .read_state(id)
     if (st$status %in% c("cancel_requested", "cancelled")) return(invisible(NULL))
     saveRDS(result, .job_result_path(id))
@@ -271,7 +275,7 @@ submit_job <- function(kind, fn, args = list(), session_id = NULL, owner_id = NU
     backend_dir <- Sys.getenv("EMP_BACKEND_DIR", unset = normalizePath("webapp/backend", mustWork = FALSE))
     process <- tryCatch(callr::r_bg(
       func = .run_job, args = list(id = id, kind = st$kind, fn = entry$fn, args = entry$args,
-                                   backend_dir = backend_dir, log_path = .job_log_path(id)),
+                                   backend_dir = backend_dir, log_path = .job_log_path(id), figure_style = entry$figure_style),
       stdout = "|", stderr = "2>&1", supervise = FALSE
     ), error = function(e) {
       .fail_job(id, paste("Could not start analysis worker:", conditionMessage(e)))

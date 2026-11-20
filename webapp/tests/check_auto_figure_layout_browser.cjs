@@ -1,0 +1,51 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
+(async()=>{const [api,site,sid,output]=process.argv.slice(2),browser=await chromium.launch({executablePath:process.env.EMP_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1440,height:1100}}),errors=[],posts=[];
+ page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/visualize/'))posts.push(r.postDataJSON());});
+ const origins=new Set([new URL(api).origin,new URL(site).origin]);await page.route('**/*',r=>origins.has(new URL(r.request().url()).origin)?r.continue():r.abort());
+ await page.addInitScript(({api,sid})=>{window.API_BASE=api;localStorage.setItem('emp_session_id',sid);localStorage.setItem('emp_ui_locale_mode','zh');localStorage.setItem('emp_last_page','visualization')},{api,sid});
+ await page.goto(site);await page.locator('.nav-item[data-page="visualization"]').click();await page.waitForFunction(()=>window._emp?.currentExp);await page.locator('[data-tab="viz-volcano"]').click();
+ const field=(kind,key)=>page.locator('#figure-'+kind+'-'+key);
+ async function set(kind,key,value){const el=field(kind,key);await el.fill(String(value));await el.dispatchEvent('change');}
+ async function response(kind,action){const pending=page.waitForResponse(r=>r.url().endsWith('/visualize/'+kind));await action();const res=await pending,data=await res.json();assert.equal(res.status(),200,JSON.stringify(data));return data;}
+ async function save(kind,out,name,data){await page.locator(out+' a[download$=".pdf"]').waitFor();const pdf=await page.request.get(await page.locator(out+' a[download$=".pdf"]').getAttribute('href'));assert.equal(pdf.status(),200);fs.writeFileSync(output+'/'+name+'.pdf',await pdf.body());fs.writeFileSync(output+'/'+name+'.png',Buffer.from(data.plot,'base64'));}
+ assert.equal(await field('volcano','auto_params').isChecked(),false);
+ await page.locator('#figure-standard-volcano details').evaluate(e=>e.open=true);
+ for(const [key,value]of Object.entries({width:120,height:100,font:9,point_size:.8,grid_line:1}))await set('volcano',key,value);
+ const threshold=await page.locator('#vol-p').inputValue();
+ let data=await response('volcano',()=>field('volcano','auto_params').check());
+ assert.equal(data.figure_layout.font_pt,7.75);assert.equal(posts.at(-1).publication.auto_params,true);assert.equal(posts.at(-1).publication.appearance.point_size,undefined);assert.notEqual(data.figure_layout.effective.grid_line,1);
+ for(const key of ['font','title_font','axis_line','grid_line','point_size','palette','dpi'])assert.equal(await field('volcano',key).isDisabled(),true);
+ assert.equal(await page.locator('#vol-label-top').isDisabled(),true);
+ for(const key of ['width','height','unit'])assert.equal(await field('volcano',key).isEnabled(),true);
+ const before=posts.length;
+ data=await response('volcano',async()=>{await set('volcano','width',60);await set('volcano','height',60);});
+ assert.equal(posts.length,before+1);assert.deepEqual(data.figure_layout.canvas,{width_mm:60,height_mm:60,dpi:300});assert.equal(data.figure_layout.font_pt,6);
+ assert.ok(data.figure_layout.effective.point_size<.8);assert.equal(data.figure_layout.effective.axis_line,.35);
+ await page.waitForFunction(expected=>Number(document.getElementById('figure-volcano-point_size').value)===Number(expected.toFixed(4)),data.figure_layout.effective.point_size);
+ await save('volcano','#volcano-out','browser-auto-60',data);fs.writeFileSync(output+'/browser-auto-60.json',JSON.stringify(data.figure_layout,null,2));await page.locator('#volcano-out').screenshot({path:output+'/browser-auto-result.png'});
+ await page.locator('#figure-standard-volcano').screenshot({path:output+'/browser-visible-defaults.png'});
+ await page.locator('#locale-select').selectOption('en');assert.equal(await page.getByRole('checkbox',{name:'Automatic parameter configuration',exact:true}).count()>0,true);await page.locator('#locale-select').selectOption('zh');
+ const count=posts.length;await field('volcano','auto_params').uncheck();
+ assert.equal(await field('volcano','font').inputValue(),'9');assert.equal(await field('volcano','point_size').inputValue(),'0.8');assert.equal(await field('volcano','grid_line').inputValue(),'1');
+ for(const key of ['font','point_size','grid_line','palette'])assert.equal(await field('volcano',key).isEnabled(),true);
+ await set('volcano','font',5.5);await set('volcano','grid_line',.7);await page.waitForTimeout(800);assert.equal(posts.length,count);
+ const manual=await response('volcano',()=>page.locator('#btn-volcano').click());assert.equal(manual.figure_layout.font_pt,5.5);assert.equal(manual.figure_layout.effective.point_size,.8);assert.ok(Math.abs(manual.figure_layout.effective.grid_line-.7)<1e-8);
+ assert.equal(posts.at(-1).publication.auto_params,undefined);assert.equal(posts.at(-1).publication.label_mode,'manual');
+ await response('volcano',async()=>{await set('volcano','width',87);await set('volcano','height',87);await field('volcano','auto_params').check();});
+ assert.equal(await field('volcano','font').inputValue(),'7.25');assert.equal(await field('boxplot','auto_params').isChecked(),false);
+ await page.reload();await page.locator('.nav-item[data-page="visualization"]').click();await page.locator('[data-tab="viz-volcano"]').click();
+ assert.equal(await field('volcano','auto_params').isChecked(),true);assert.equal(await field('volcano','font').inputValue(),'7.25');await field('volcano','auto_params').uncheck();assert.equal(await field('volcano','font').inputValue(),'5.5');assert.equal(await field('volcano','grid_line').inputValue(),'0.7');assert.equal(await field('volcano','point_size').inputValue(),'0.8');assert.equal(await page.locator('#vol-p').inputValue(),threshold);
+ await page.locator('[data-tab="viz-heatmap"]').click();await set('deg_heatmap','width',60);await set('deg_heatmap','height',60);
+ const heat=await response('deg_heatmap',()=>field('deg_heatmap','auto_params').check());assert.equal(heat.figure_layout.font_pt,6);assert.equal(heat.figure_layout.effective.cell_line,0);assert.ok(heat.n_genes>0);await save('deg_heatmap','#deg-heatmap-out','browser-auto-heatmap-60',heat);
+ await field('deg_heatmap','auto_params').uncheck();await page.locator('#figure-standard-deg_heatmap details').evaluate(e=>e.open=true);
+ await set('deg_heatmap','width',120);await set('deg_heatmap','height',140);await set('deg_heatmap','font',8);
+ await field('deg_heatmap','scale_position').selectOption('right');await field('deg_heatmap','annotation_position').selectOption('bottom');
+ const mixed=await response('deg_heatmap',()=>page.locator('#btn-deg-heatmap').click());assert.equal(mixed.figure_layout.effective.scale_position,'right');assert.equal(mixed.figure_layout.effective.annotation_position,'bottom');
+ await save('deg_heatmap','#deg-heatmap-out','browser-heatmap-mixed',mixed);
+ await page.locator('#locale-select').selectOption('en');assert.equal(await field('deg_heatmap','scale_position').locator('option[value="right"]').textContent(),'Right');await page.locator('#locale-select').selectOption('zh');
+ await page.reload();await page.locator('.nav-item[data-page="visualization"]').click();await page.locator('[data-tab="viz-heatmap"]').click();
+ assert.equal(await field('deg_heatmap','scale_position').inputValue(),'right');assert.equal(await field('deg_heatmap','annotation_position').inputValue(),'bottom');
+ await page.setViewportSize({width:768,height:1100});await page.locator('#figure-deg_heatmap-auto_params').scrollIntoViewIfNeeded();assert.ok(await page.locator('#figure-deg_heatmap-auto_params').evaluate(e=>e.getBoundingClientRect().right<=innerWidth));assert.deepEqual(errors,[]);
+ console.log('PASS checkbox auto mode: automatic generation, resize debounce, all appearance locked / recomputed, preserved manual values, manual edits, refresh, per-type independence, heatmap, bilingual and responsive UI');
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

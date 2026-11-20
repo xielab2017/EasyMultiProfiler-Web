@@ -728,3 +728,5 @@ dialog button{margin:8px 8px 0 0}
 .agent-reading-settings{font-size:.76rem;color:#475569;margin-top:4px}
 .agent-reading-settings summary{cursor:pointer}
 .agent-composer-toolbar{flex-wrap:wrap}
+
+.agent-purpose{display:flex;align-items:center;gap:6px;font-size:12px;margin:6px 0;color:#475569}.agent-purpose select{font-size:12px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;max-width:65%}.agent-task-actions{display:flex;gap:5px;flex-wrap:wrap;margin:5px 0}.agent-task-actions button{font:inherit;font-size:12px;color:#1e40af;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:5px 8px;cursor:pointer}.agent-task-actions button:disabled{opacity:.55}.agent-task-context,.agent-mode-explanation{font-size:11px;line-height:1.45;color:#64748b;margin:6px 0}.agent-task-context{font-weight:600}[hidden].agent-reading-actions,[hidden].agent-task-actions{display:none}

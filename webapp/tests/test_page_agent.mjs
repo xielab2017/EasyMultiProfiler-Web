@@ -27,3 +27,28 @@ test('a stale active class on a hidden panel never exposes or mutates its contro
  assert(!pageAgentContext('visualization',f.doc).fields.some(x=>x.id==='heat-height'));
  assert.throws(()=>applyPageFields('visualization',{'heat-height':6},f.doc),/当前步骤/);assert.equal(f.nodes['heat-height'].value,'9');
 });
+
+test('publication controls expose checked state; enabling and filling uses typed change events',()=>{
+ const f=fixture();
+ for(const [id,type,value,checked,disabled]of [['viz-export-enabled','checkbox','on',false,false],['viz-export-width','number','180',false,true],['viz-export-height','number','120',false,true],['deg-width','number','11',false,false],['vol-label-top','number','15',false,false]])
+ f.nodes[id]={id,tagName:'INPUT',type,value,checked,disabled,min:type==='number'?'1':'',max:type==='number'?'500':'',closest:()=>({}),dispatchEvent:e=>f.changed.push([id,e.type])};
+ const context=pageAgentContext('visualization',f.doc);
+ assert.equal(context.fields.find(field=>field.id==='viz-export-enabled').value,false);
+ assert.ok(context.fields.some(field=>field.id==='deg-width'));
+ assert.ok(context.fields.some(field=>field.id==='vol-label-top'));
+ assert.throws(()=>applyPageFields('visualization',{'viz-export-enabled':'true'},f.doc),/boolean/);
+ applyPageFields('visualization',{'viz-export-width':87,'viz-export-height':87,'viz-export-enabled':true},f.doc);
+ assert.equal(f.nodes['viz-export-enabled'].checked,true);assert.equal(f.nodes['viz-export-width'].value,'87');assert.equal(f.changed[0][0],'viz-export-enabled');
+});
+
+test('one typed update changes figure units before applying dimensions in the requested unit',()=>{
+ const f=fixture();
+ f.nodes['figure-deg_heatmap-unit']={id:'figure-deg_heatmap-unit',tagName:'SELECT',type:'select',value:'mm',options:['mm','cm','in','pt'].map(value=>({value,textContent:value})),closest:()=>({}),dispatchEvent:e=>f.changed.push(['unit',e.type])};
+ for(const axis of ['width','height'])f.nodes['figure-deg_heatmap-'+axis]={id:'figure-deg_heatmap-'+axis,tagName:'INPUT',type:'number',value:'180',min:'40',max:'297',closest:()=>({}),dispatchEvent:e=>f.changed.push([axis,e.type])};
+ applyPageFields('visualization',{'figure-deg_heatmap-width':7,'figure-deg_heatmap-unit':'in','figure-deg_heatmap-height':8},f.doc);
+ assert.equal(f.changed[0][0],'unit');assert.equal(f.nodes['figure-deg_heatmap-width'].value,'7');
+ f.nodes['figure-deg_heatmap-width'].value='180';f.nodes['figure-deg_heatmap-unit'].value='mm';
+ const applied=applyPageFields('visualization',{'figure-deg_heatmap-width':180,'figure-deg_heatmap-unit':'pt'},f.doc);
+ assert.ok(applied.includes('figure-deg_heatmap-width')); // Same displayed number, different unit: still apply after converting the unit.
+ assert.throws(()=>applyPageFields('visualization',{'figure-deg_heatmap-unit':'pt','figure-deg_heatmap-width':-1},f.doc));
+});

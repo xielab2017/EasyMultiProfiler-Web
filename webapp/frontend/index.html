@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EasyMultiProfiler Web v10.5.1</title>
+  <title>EasyMultiProfiler Web v10.17.0</title>
     <link rel="stylesheet" href="css/style.css?v=nav-language-20261108">
     <link rel="stylesheet" href="css/code_lab.css?v=2026-07-16-multi-demo-v2">
     <link rel="stylesheet" href="css/teaching.css?v=2026-07-22-gh-week-first">
@@ -175,7 +175,7 @@
       <div id="perf-last" class="perf-last">—</div>
     </div>
     <div id="locale-note" class="locale-note">
-      <span class="version-badge">v10.5.1</span>
+      <span class="version-badge">v10.17.0</span>
       <button type="button" class="btn-link" id="btn-help-guide" data-i18n="footer.guide">安装与使用指南</button>
       · <a href="https://github.com/xielab2017/EasyMultiProfiler-Web/blob/main/docs/USER_GUIDE_V5.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
     </div>
@@ -324,10 +324,10 @@
 
   <!-- ── PAGE: IMPORT ─────────────────────────────────── -->
   <section id="page-course" class="page" hidden data-retired-page>
-    <div class="card"><h2><span data-feature-text="v10.5.1 · 新功能在这里 / New features">v10.5.1 · 新功能在这里 / New features</span></h2><p><span data-feature-text="完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。">完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。</span></p><button type="button" data-open-matrix><span data-feature-text="在主页面下载矩阵 / Matrix download">在主页面下载矩阵 / Matrix download</span></button> · <a href="metadata_entry.html"><span data-feature-text="启动说明 / Startup help">启动说明 / Startup help</span></a></div>
+    <div class="card"><h2><span data-feature-text="v10.17.0 · 新功能在这里 / New features">v10.17.0 · 新功能在这里 / New features</span></h2><p><span data-feature-text="完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。">完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。</span></p><button type="button" data-open-matrix><span data-feature-text="在主页面下载矩阵 / Matrix download">在主页面下载矩阵 / Matrix download</span></button> · <a href="metadata_entry.html"><span data-feature-text="启动说明 / Startup help">启动说明 / Startup help</span></a></div>
     <div class="card guide-course-banner">
       <p class="hint" style="margin:0">
-        <strong>v10.5.1</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
+        <strong>v10.17.0</strong> · 零基础请先看左侧 <button type="button" class="btn-link" id="btn-course-to-guide">Guide 安装指南</button>
         （Mac 与 Windows 安装方式不同）· 每课可「一键加载示例数据」+「套用推荐参数」
       </p>
     </div>
@@ -353,14 +353,14 @@
     <div id="teaching-prompt-root"></div>
   </section>
 
-  <!-- ── PAGE: USER GUIDE (v10.5.1) ─────────────────────── -->
+  <!-- ── PAGE: USER GUIDE (v10.17.0) ─────────────────────── -->
   <section id="page-guide" class="page active">
     <div id="guide-root"></div>
   </section>
 
   <section id="page-import" class="page">
     <div class="card welcome-card" id="welcome-card">
-      <h2>👋 欢迎使用 EasyMultiProfiler v10.5.1</h2>
+      <h2>👋 欢迎使用 EasyMultiProfiler v10.17.0</h2>
       <p class="hint">
         <strong>还没安装？</strong> 左侧点 <strong>Guide</strong> 查看 Mac / Windows 分平台安装步骤（两条路径不同，请勿混用）。
         <strong>已装好？</strong> 从 <strong>Course</strong> 学，或下方一键加载 16S / RNA-seq / Clinical 示例数据。
@@ -2787,70 +2787,6 @@
       <button class="tab" data-tab="viz-enrichment-dotplot" data-omics="transcriptomics proteomics metagenomics">富集气泡图</button>
       <button class="tab" data-tab="viz-gsea" data-omics="transcriptomics proteomics metagenomics">GSEA 曲线</button>
     </div>
-    <div class="card" style="margin-top:10px">
-      <div class="form-grid">
-        <div class="form-group">
-          <label for="viz-figure-method">绘图样式 / Figure style</label>
-          <select id="viz-figure-method"><option value="original">原有 R 样式 / Original</option><option value="self_built">自建方法 / Self-built methods</option></select>
-          <small class="hint">自建样式用于 ggplot 图：实时读取方法库的字体、刻度、留白和图例规则。热图保留原 R 渲染；统计结果不因样式改变。</small>
-        </div>
-        <div class="form-group">
-          <label>Color panel (all plots)</label>
-          <select id="viz-color-panel">
-            <option value="npg" selected>Nature (NPG)</option>
-            <option value="lancet">Lancet</option>
-            <option value="nejm">NEJM</option>
-            <option value="jama">JAMA</option>
-            <option value="aaas">AAAS</option>
-            <option value="tableau">Tableau</option>
-            <option value="set2">Set2</option>
-            <option value="dark3">Dark3</option>
-            <option value="viridis">Viridis</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Custom group colors (optional)</label>
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-            <input type="checkbox" id="viz-use-custom-colors">
-            <label for="viz-use-custom-colors">Enable custom colors</label>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <input type="color" id="viz-color-1" value="#1f77b4">
-            <input type="color" id="viz-color-2" value="#ff7f0e">
-            <input type="color" id="viz-color-3" value="#2ca02c">
-            <input type="color" id="viz-color-4" value="#d62728">
-            <input type="color" id="viz-color-5" value="#9467bd">
-            <input type="color" id="viz-color-6" value="#8c564b">
-          </div>
-          <small class="hint">Color picker values override panel for group colors.</small>
-        </div>
-        <div class="form-group">
-          <label>Figure scale (all plots, proportional)</label>
-          <input type="number" id="viz-figure-scale" value="1" min="0.25" max="2" step="0.05">
-          <small class="hint">1 = default; 0.75 shrinks width, height &amp; heatmap font together.</small>
-        </div>
-        <div class="form-group">
-          <label class="checkbox-label"><input type="checkbox" id="viz-lock-aspect" checked> Lock width/height ratio</label>
-        </div>
-        <div class="form-group">
-          <label>X-axis tick font (pt)</label>
-          <input type="number" id="viz-axis-text-x" value="11" min="5" max="28" step="1">
-        </div>
-        <div class="form-group">
-          <label>Y-axis tick font (pt)</label>
-          <input type="number" id="viz-axis-text-y" value="11" min="5" max="28" step="1">
-        </div>
-        <div class="form-group">
-          <label>X-axis label font (pt)</label>
-          <input type="number" id="viz-axis-title-x" value="12" min="6" max="32" step="1">
-        </div>
-        <div class="form-group">
-          <label>Y-axis label font (pt)</label>
-          <input type="number" id="viz-axis-title-y" value="12" min="6" max="32" step="1">
-        </div>
-      </div>
-    </div>
-
     <div id="viz-enrichment-dotplot" class="tab-panel card hidden">
       <h3>富集气泡图 / Enrichment dotplot</h3>
       <p class="hint">读取当前会话 GO / KEGG 富集结果；使用真实 GeneRatio、Count 和校正 P 值。只绘图，不重新进行富集检验。</p>
@@ -2865,8 +2801,8 @@
         <div class="form-group"><label for="enrich-viz-width">宽 / Width (in)</label><input id="enrich-viz-width" type="number" value="10" min="3" max="24" step="0.5"></div>
         <div class="form-group"><label for="enrich-viz-height">高 / Height (in)</label><input id="enrich-viz-height" type="number" value="8" min="3" max="24" step="0.5"></div>
         <div class="form-group"><label for="enrich-viz-font">基础字号 / Font (pt)</label><input id="enrich-viz-font" type="number" value="12" min="6" max="30"></div>
-        <div class="form-group"><label for="enrich-viz-wrap">条目名称换行 / Label wrap</label><input id="enrich-viz-wrap" type="number" value="45" min="10" max="120"></div>
-        <div class="form-group"><label for="enrich-viz-size">最大气泡 / Max point size</label><input id="enrich-viz-size" type="number" value="8" min="1" max="20" step="0.5"></div>
+        <div class="form-group"><label for="enrich-viz-wrap">条目名称换行 / Label wrap</label><input id="enrich-viz-wrap" type="number" value="45" min="1" max="10000" step="1"></div>
+        <div class="form-group"><label for="enrich-viz-size">最大气泡 / Max point size</label><input id="enrich-viz-size" type="number" value="8" min="0" step="any"></div>
         <div class="form-group"><label for="enrich-viz-low">低 P 颜色 / Low P color</label><input id="enrich-viz-low" type="color" value="#C9283E"></div>
         <div class="form-group"><label for="enrich-viz-high">高 P 颜色 / High P color</label><input id="enrich-viz-high" type="color" value="#3B6FB6"></div>
         <div class="form-group"><label for="enrich-viz-title">标题 / Title</label><input id="enrich-viz-title" value=""></div>
@@ -3057,6 +2993,14 @@
           <label>Font size</label>
           <input type="number" id="deg-font-size" value="10" min="6" max="24" step="1">
         </div>
+        <div class="form-group">
+          <label for="deg-width" data-i18n="viz.degWidth">Figure width (inch)</label>
+          <input type="number" id="deg-width" value="11" min="4" max="30" step="0.5" required>
+        </div>
+        <div class="form-group">
+          <label for="deg-height" data-i18n="viz.degHeight">Figure height (inch)</label>
+          <input type="number" id="deg-height" value="8" min="4" max="36" step="0.5" required>
+        </div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <button class="btn btn-primary" id="btn-deg-heatmap"><i data-lucide="layers"></i> DEG heatmap</button>
@@ -3092,6 +3036,8 @@
           <label>Top-N labels</label>
           <input type="number" id="vol-label-top" value="15" min="0" max="60" step="1">
         </div>
+        <div class="form-group"><label for="vol-width" data-i18n="viz.degWidth">Figure width (inch)</label><input type="number" id="vol-width" value="8" min="1" max="30" step="any" required></div>
+        <div class="form-group"><label for="vol-height" data-i18n="viz.degHeight">Figure height (inch)</label><input type="number" id="vol-height" value="7" min="1" max="36" step="any" required></div>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-primary" id="btn-volcano"><i data-lucide="image"></i> Generate</button>
@@ -3667,7 +3613,7 @@
 <div id="toast-container"></div>
 
 <!-- API base is resolved by api.js from runtime_ports.local.js; do not override it here. -->
-<script type="module" src="js/app.js?v=nav-language-20261108"></script>
+<script type="module" src="js/app.js?v=ordination-pairwise-10170"></script>
 <script type="module" src="js/research_project.js?v=1"></script>
 <script type="module" src="js/matrix_panel.js?v=matrix-local-v1"></script>
 <script type="module" src="js/dataset_discovery.js?v=1"></script>

@@ -1,8 +1,16 @@
 # Live adapters to the administrator-configured Figure_Methods_Lab.
 # Request data cannot select R sources/config files. Frozen input CSVs and code
 # hashes are retained for each iteration; existing input/results are untouched.
+if(!exists('emp_figure_methods_location',mode='function'))source(file.path(Sys.getenv('BACKEND_DIR',Sys.getenv('EMP_BACKEND_DIR','webapp/backend')),'helpers/figure_method_rules.R'))
+.method_library_required <- function(root)file.path(root,c('AGENTS.md','METHODS.md','skills/figure-reproduction/SKILL.md','skills/omics-ternary-bubbles/SKILL.md','skills/omics-de-significance-scatter/SKILL.md','library/common.R','library/plot_methods.R'))
 emp_viz_method_catalog <- function() {
-  list(schema='emp-figure-method-catalog-v1',available=nzchar(Sys.getenv('EMP_FIGURE_METHODS_ROOT',''))&&file.exists(file.path(Sys.getenv('EMP_FIGURE_METHODS_ROOT',''),'library/plot_methods.R')),status=if(nzchar(Sys.getenv('EMP_FIGURE_METHODS_ROOT',''))) 'configured' else 'not_configured',methods=list(
+  location<-emp_figure_methods_location();root<-location$root;configured<-nzchar(root)
+  if(configured)root<-normalizePath(path.expand(root),winslash='/',mustWork=FALSE)
+  missing<-if(configured).method_library_required(root)[!file.exists(.method_library_required(root))|dir.exists(.method_library_required(root))] else character()
+  available<-configured&&!length(missing)&&is.null(location$error)
+  list(schema='emp-figure-method-catalog-v1',available=available,status=if(!is.null(location$error))'invalid_config' else if(!configured)'not_configured' else if(length(missing))'incomplete' else 'available',configuration_source=location$source,
+    message=location$error %||% if(length(missing))paste('Methods library files missing:',paste(basename(missing),collapse=', ')) else if(!configured)'请连接本机绘图方法库；服务重启后会读取已保存配置。 / Configure the local figure methods library.' else '绘图方法库已连接 / Figure methods library ready',
+    methods=list(
     list(id='ternary',omics=c('microbiome_16s','metagenomics'),label='Three-group composition bubbles',required_input='Nonnegative abundance assay with finite values and exactly three selected metadata groups',statistics='Descriptive composition; no differential or significance test'),
     list(id='de_scatter',omics=c('transcriptomics','proteomics','metabolomics'),label='Differential significance scatter',required_input='Existing reviewed differential result with unique feature IDs, finite log2FC and 0 < adjusted P <= 1',statistics='Frozen external statistics; no model refit or multiple-testing recomputation')))
 }
@@ -20,7 +28,7 @@ emp_viz_method_catalog <- function() {
   stats::setNames(vals,names(defaults))
 }
 .method_library_load <- function(method) {
-  root<-trimws(Sys.getenv('EMP_FIGURE_METHODS_ROOT',''));if(!nzchar(root))stop('Configure EMP_FIGURE_METHODS_ROOT to use the live methods library')
+  location<-emp_figure_methods_location();root<-location$root;if(!is.null(location$error))stop(location$error);if(!nzchar(root))stop('Configure the local figure methods library before drawing')
   root<-normalizePath(path.expand(root),winslash='/',mustWork=TRUE)
   skill<-switch(method,ternary='omics-ternary-bubbles',de_scatter='omics-de-significance-scatter',stop('Unsupported method'))
   paths<-file.path(root,c('AGENTS.md','METHODS.md','skills/figure-reproduction/SKILL.md',paste0('skills/',skill,'/SKILL.md'),'library/common.R','library/plot_methods.R'))
@@ -95,7 +103,10 @@ emp_viz_method_library <- function(b,owner_id) {
     specific<-list(padj_threshold=.method_library_num(b$p_cutoff %||% b$padj_threshold,.05,1e-12,1,'p_cutoff'),lfc_threshold=.method_library_num(b$fc_cutoff %||% b$lfc_threshold,1,1e-12,1000,'fc_cutoff'),x_transform=transform,point_size=.method_library_num(b$point_size,1.2,.1,8,'point_size'),n_labels=.method_library_num(b$n_labels,8,0,100,'n_labels',TRUE),label_genes=if(length(labels))labels else NULL)
     filename<-'de_results.csv';default_title<-'Differential significance scatter';input_name<-'de_scatter'
   }else stop('Unsupported live method')
-  config<-list(method=input_name,seed=1,data_kind='user_supplied',title=.method_library_text(b$title,default_title),subtitle=.method_library_text(b$subtitle),width=.method_library_num(b$width,9,3,20,'width'),height=.method_library_num(b$height,7,3,20,'height'),dpi=300,base_size=.method_library_num(b$base_size,12,6,30,'base_size'),palette=colors,labels=list(),specific=specific)
+  config<-list(method=input_name,seed=1,data_kind='user_supplied',title=.method_library_text(b$title,default_title),subtitle=.method_library_text(b$subtitle),width=.method_library_num(b$width,9,.Machine$double.eps,Inf,'width'),height=.method_library_num(b$height,7,.Machine$double.eps,Inf,'height'),dpi=300,base_size=.method_library_num(b$base_size,12,.Machine$double.eps,Inf,'base_size'),palette=colors,labels=list(),specific=specific)
+  if(!nzchar(trimws(config$title)))config$title<-default_title
+  size <- emp_figure_size(config$width, config$height, config$dpi)
+  config$width <- size$width; config$height <- size$height; config$dpi <- size$dpi
   dir<-file.path(session_path(b$session_id),'plots');dir.create(dir,recursive=TRUE,showWarnings=FALSE)
   prefix<-basename(tempfile('method_plot_',tmpdir=dir));case<-file.path(dir,paste0(prefix,'_case'));dir.create(file.path(case,'data'),recursive=TRUE);output<-file.path(case,'output');dir.create(output)
   utils::write.csv(source$data,file.path(case,'data',filename),row.names=FALSE)
@@ -109,12 +120,20 @@ emp_viz_method_library <- function(b,owner_id) {
   p<-p+ggplot2::labs(title=paste(strwrap(config$title,width=48),collapse='\n'))+ggplot2::theme(plot.margin=ggplot2::margin(12,18,12,18),plot.caption=ggplot2::element_text(hjust=0,size=9))
   if(method=='de_scatter'&&source$source$excluded_unavailable_p>0)p<-p+ggplot2::labs(subtitle=sprintf('%d / %d features plotted; %d unavailable adjusted P values excluded (audited).',nrow(source$data),source$source$input_rows,source$source$excluded_unavailable_p))
   if(method=='ternary')p<-p+ggplot2::labs(color='Dominant group',caption='Color: highest group mean; not a taxonomic class.\nTied group means: Unclassified.')+ggplot2::theme(legend.position='bottom',legend.box='vertical',legend.title=ggplot2::element_text(size=config$base_size-1),legend.text=ggplot2::element_text(size=config$base_size-2))
+  # The special adapters must wrap provenance text even in manual-size mode.
+  # This changes line breaks, never the user's typography or physical canvas.
+  profile<-emp_publication_profile();font<-profile$font_pt %||% config$base_size
+  for(key in c('title','subtitle','caption'))if(is.character(p$labels[[key]]))p$labels[[key]]<-emp_publication_wrap(p$labels[[key]],config$width*25.4-12,if(key=='title')profile$appearance$title_font %||% font else font)
+  p <- emp_publication_plot(p, config$width, config$height)
+  config$publication <- emp_publication_profile()
   library$environment$export_figure(p,output,config)
+  save_plot_pdf(p, file.path(output, "figure.pdf"), config$width, config$height, archive = FALSE)
   files<-stats::setNames(paste0(prefix,c('.png','.pdf','.svg','.manifest.json','.derived.csv')),c('png','pdf','svg','manifest','data'))
   paths<-file.path(dir,files);names(paths)<-names(files)
   expected<-file.path(output,paste0('figure.',c('png','pdf','svg')))
   if(!all(file.exists(expected))||any(file.info(expected)$size<=0))stop('The live method library did not produce all nonempty figure exports')
   for(ext in c('png','pdf','svg'))if(!file.copy(file.path(output,paste0('figure.',ext)),paths[ext],overwrite=FALSE))stop('Could not preserve exported ',ext)
+  emp_png_set_dpi(paths['png'], config$dpi)
   derived<-file.path(output,if(method=='ternary')'derived_ternary_coordinates.csv' else 'derived_de_classification.csv')
   if(!file.exists(derived)||!file.copy(derived,paths['data'],overwrite=FALSE))stop('Live library did not produce the expected derived table')
   audit<-c(list(session_id=b$session_id,experiment=b$experiment,omics=b$omics,method=method),source$source)

@@ -26,3 +26,12 @@ test('agent actions require a reviewed current experiment and cannot supply sele
   assert.ok(html.includes(`id="${currentAgentAction({workflow:'preparation',tab})}"`));
  }
 });
+
+test('DEG heatmap handoff requires its exact current page and explicit intent',()=>{
+ const ctx={workflow:'visualization',tab:'viz-heatmap',hasExperiment:true};
+ assert.equal(resolveAgentAction(ctx,'submit_current',true,'btn-deg-heatmap').button,'btn-deg-heatmap');
+ assert.doesNotThrow(()=>assertAgentSubmission(ctx,'请画 DEG 热图','btn-deg-heatmap'));
+ assert.throws(()=>assertAgentSubmission(ctx,'请画普通热图','btn-deg-heatmap'),/DEG/);
+ assert.throws(()=>assertAgentSubmission({...ctx,tab:'viz-volcano'},'请画 DEG 热图','btn-deg-heatmap'));
+ assert.throws(()=>resolveAgentAction(ctx,'submit_current',false,'btn-deg-heatmap'));
+});

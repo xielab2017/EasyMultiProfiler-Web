@@ -1000,11 +1000,36 @@ run_dimension <- function(session_id, experiment, method = "PCA") {
     "pcoa" = "pcoa",
     "pls" = "pls",
     "opls" = "opls",
-    "tsne" = "umap",
-    "t-sne" = "umap"
+    "tsne" = "tsne",
+    "t-sne" = "tsne"
   )
   method_use <- method_map[[method_raw]]
   if (is.null(method_use) || !nzchar(method_use)) method_use <- "pca"
+
+  if(method_use%in%c('tsne','umap')){
+    x<-t(as.matrix(SummarizedExperiment::assays(empt)[[1]]))
+    if(nrow(x)<4||any(!is.finite(x)))stop('UMAP / t-SNE require at least four samples and finite input; preprocess explicitly first')
+    seed<-42L;withr::local_seed(seed)
+    if(method_use=='tsne'){
+      if(!requireNamespace('Rtsne',quietly=TRUE))stop("Package Rtsne is required for genuine t-SNE; UMAP is not substituted")
+      perplexity<-min(30,(nrow(x)-1)/3-.01)
+      fit<-Rtsne::Rtsne(x,dims=2,initial_dims=min(50,nrow(x)-1,ncol(x)),perplexity=perplexity,check_duplicates=FALSE,num_threads=1)
+      coords<-fit$Y;axis_names<-c('tSNE1','tSNE2');parameters<-list(seed=seed,perplexity=perplexity,implementation='Rtsne')
+    }else{
+      if(!requireNamespace('umap',quietly=TRUE))stop("Package umap is required; no package installation is attempted by the analysis request")
+      config<-umap::umap.defaults;config$n_neighbors<-min(15,nrow(x)-1);config$n_components<-2;config$random_state<-seed;config$init<-'random'
+      coords<-umap::umap(x,config=config,method='naive')$layout;axis_names<-c('UMAP1','UMAP2');parameters<-list(seed=seed,n_neighbors=config$n_neighbors,implementation='umap naive')
+    }
+    result<-data.frame(primary=rownames(x),coords,check.names=FALSE);names(result)[-1]<-axis_names
+    store<-function(obj,name,value,attribute,type){
+      if(name%in%names(obj@deposit)){obj@deposit[name]<-list(value);return(obj)}
+      EasyMultiProfiler::`EMP_result<-`(obj,value_name=name,affect_when_sample_changed=1,affect_when_feature_changed=1,attribute=attribute,attribute2=type,source='EMP_dimension_analysis',value=value)
+    }
+    empt<-store(empt,'dimension_coordinate',result,'primary','normal');empt<-store(empt,'dimension_axis',numeric(),'all','none')
+    empt@method<-method_use;class(empt)<-'EMP_dimension_analysis';save_empt(session_id,experiment,empt)
+    attr(result,'emp.figure_metadata')<-list(actual_method=if(method_use=='tsne')'t-SNE' else 'UMAP',algorithm_parameters=parameters)
+    return(result)
+  }
 
   ## PCoA in EMP_dimension_analysis requires a `distance =` argument.
   ## Default to Bray-Curtis which is the convention for compositional
@@ -1099,6 +1124,9 @@ run_cluster <- function(session_id, experiment, method = "hclust", k = 3) {
   }
   cluster_col <- factor(paste0("C", as.integer(lab)))
   cd$cluster <- cluster_col
+  projection<-tryCatch(stats::prcomp(x,center=TRUE,scale.=FALSE,rank.=2),error=function(e)NULL)
+  projection_data<-if(!is.null(projection)&&ncol(projection$x)>=2)data.frame(sample=rownames(projection$x),PC1=projection$x[,1],PC2=projection$x[,2],row.names=NULL) else NULL
+  attr(cd,"emp.figure_metadata")<-list(projection=projection_data,projection_variance=if(!is.null(projection))head(projection$sdev^2/sum(projection$sdev^2)*100,2) else NULL,tree=if(exists("hc",inherits=FALSE))hc else NULL,actual_method=if(meth%in%c("km","kmeans"))"K-means" else if(meth%in%c("pam","kmedoids")&&requireNamespace("cluster",quietly=TRUE))"PAM" else "Hierarchical",distance="Euclidean",linkage=if(exists("hc",inherits=FALSE))hc$method else NULL)
   SummarizedExperiment::colData(empt)$cluster <- cluster_col
   save_empt(session_id, experiment, empt)
   cd
@@ -1173,11 +1201,13 @@ run_marker <- function(session_id, experiment, method = "randomForest", group_va
       cf <- as.matrix(stats::coef(fit, s = "lambda.min"))
       tbl <- data.frame(
         feature = rownames(cf),
+        coefficient = as.numeric(cf[,1]),
         importance = as.numeric(abs(cf[, 1])),
         stringsAsFactors = FALSE
       )
       tbl <- tbl[tbl$feature != "(Intercept)" & tbl$importance > 0, , drop = FALSE]
       tbl <- tbl[order(-tbl$importance), , drop = FALSE]
+      attr(tbl,"emp.figure_metadata")<-list(actual_method="LASSO",coefficient_direction=paste(levels(y)[2],"vs",levels(y)[1]),lambda=fit$lambda.min)
       return(tbl)
     } else {
       if (!requireNamespace("xgboost", quietly = TRUE)) stop("Package 'xgboost' is required for XGBoost markers.")
@@ -1196,7 +1226,7 @@ run_marker <- function(session_id, experiment, method = "randomForest", group_va
       )
       imp <- xgboost::xgb.importance(model = fit, feature_names = colnames(X))
       if (is.null(imp) || !nrow(imp)) return(data.frame())
-      return(data.frame(feature = imp$Feature, importance = imp$Gain, stringsAsFactors = FALSE))
+      result<-data.frame(feature=imp$Feature,Gain=imp$Gain,importance=imp$Gain,stringsAsFactors=FALSE);attr(result,"emp.figure_metadata")<-list(actual_method="XGBoost",score_metric="Gain");return(result)
     }
   }
 

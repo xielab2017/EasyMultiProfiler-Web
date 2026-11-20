@@ -1681,8 +1681,8 @@ run_clinical_cor <- function(session_id, experiment, traits,
     auto_w <- max(6, min(18, body_w_in + 4.5))
     auto_h <- max(5, min(32, body_h_in + 2.8))
 
-    ph <- pheatmap::pheatmap(
-      r_top,
+    ph <- emp_publication_pheatmap(
+      r_top, publication_width = auto_w, publication_height = auto_h,
       scale           = "none",
       color           = grDevices::colorRampPalette(c("#2166ac", "white", "#b2182b"))(256),
       breaks          = seq(-1, 1, length.out = 257),
@@ -1905,7 +1905,7 @@ run_clinical_wgcna <- function(session_id, experiment, traits = NULL,
   cell_w <- 28
   auto_w <- max(7,  min(22, ncol(R) * cell_w / 72 + 3.5))
   auto_h <- max(4.5, min(18, nrow(R) * cell_h / 72 + 2.5))
-  ph <- pheatmap::pheatmap(
+  ph <- emp_publication_pheatmap(
     R,
     scale           = "none",
     color           = grDevices::colorRampPalette(c("#2166ac", "white", "#b2182b"))(256),

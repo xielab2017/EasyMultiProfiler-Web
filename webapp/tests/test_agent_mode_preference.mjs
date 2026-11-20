@@ -90,3 +90,10 @@ test('legacy services keep working with their original request fields',async()=>
  assert.equal(Object.hasOwn(older.sent[0],'output_type'),false);
  assert.match(older.sent[0].question,/^UI scope: interpretation;/);
 });
+
+test('how-to questions stay read-only for the turn even when Agent is selected',async()=>{
+ const f=fixture({'emp_agent_mode_enabled_v1':'true'});await tick();
+ f.setContext({workflow:'visualization',tab:'viz-heatmap',hasExperiment:true});
+ f.nodes.get('analysis-guide-question').value='当前页面如何出图';await f.nodes.get('analysis-guide-ask').onclick();
+ assert.equal(f.sent[0].chat_mode,'chat');assert.equal(f.nodes.get('analysis-agent-mode').value,'agent');
+});

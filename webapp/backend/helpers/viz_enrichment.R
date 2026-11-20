@@ -120,8 +120,8 @@ enrich_viz_source <- function(b,owner_id) {
   d$gene_ratio <- unname(ratio);d$Count<-count;d[['p.adjust']]<-padj;d
 }
 .enrich_viz_style <- function(b) {
-  list(width=.enrich_viz_num(b$width,9,3,24,'width'),height=.enrich_viz_num(b$height,7,3,24,'height'),
-       base_size=.enrich_viz_num(b$base_size,12,6,30,'base_size'),
+  list(width=.enrich_viz_num(b$width,9,.Machine$double.eps,Inf,'width'),height=.enrich_viz_num(b$height,7,.Machine$double.eps,Inf,'height'),
+       base_size=.enrich_viz_num(b$base_size,12,.Machine$double.eps,Inf,'base_size'),
        title=.enrich_viz_text(b$title),font_family=.enrich_viz_text(b$font_family,'',100))
 }
 .enrich_viz_theme <- function(style) {
@@ -136,9 +136,11 @@ enrich_viz_dotplot <- function(b,owner_id) {
   top_n<-.enrich_viz_num(b$top_n,20,1,100,'top_n');if(top_n!=floor(top_n))stop('top_n must be an integer')
   cutoff<-.enrich_viz_num(b$p_cutoff,1,0,1,'p_cutoff')
   sort_by<-.enrich_viz_text(b$sort_by,'p.adjust');if(!sort_by%in%c('p.adjust','GeneRatio','Count'))stop('Unsupported sort_by')
-  wrap<-.enrich_viz_num(b$label_wrap,45,10,150,'label_wrap')
-  size<-.enrich_viz_num(b$max_point_size,10,1,25,'max_point_size')
-  low<-.enrich_viz_color(b$low_color,'#554A9A');high<-.enrich_viz_color(b$high_color,'#E52449')
+  automatic<-isTRUE(emp_publication_profile()$auto_params)
+  wrap<-if(automatic)45 else .enrich_viz_num(b$label_wrap,45,1,10000,'label_wrap')
+  if(wrap!=floor(wrap))stop('条目换行字符数必须为正整数 / Label wrap must be a positive integer')
+  size<-if(automatic)8 else .enrich_viz_num(b$max_point_size,10,.Machine$double.eps,Inf,'max_point_size')
+  low<-.enrich_viz_color(if(automatic)NULL else b$low_color,'#554A9A');high<-.enrich_viz_color(if(automatic)NULL else b$high_color,'#E52449')
   selected<-as.character(unlist(b$selected_terms %||% character()));highlights<-as.character(unlist(b$highlight_terms %||% character()))
   if(length(setdiff(c(selected,highlights),d$ID)))stop('Selected/highlighted term IDs are absent from the saved source')
   if(length(selected))d<-d[d$ID%in%selected,,drop=FALSE]
@@ -154,9 +156,12 @@ enrich_viz_dotplot <- function(b,owner_id) {
   note<-paste0('Area: gene count; color: adjusted P. ',nrow(d),' of ',total,' saved terms. ',if(any(d[['p.adjust']]==0))'Zero adjusted P displayed at 1e-300. ' else '', 'No enrichment test was rerun.')
   p<-ggplot2::ggplot(d,ggplot2::aes(x=gene_ratio,y=term,size=Count,color=neg_log10_padj))+
     ggplot2::geom_point(alpha=.95)+ggplot2::scale_size_area(max_size=size)+
-    ggplot2::scale_color_gradient(low=low,high=high)+ggplot2::scale_y_discrete(labels=labels)+
+    ggplot2::scale_color_gradient(low=low,high=high,guide=ggplot2::guide_colorbar(display='rectangles'))+ggplot2::scale_y_discrete(labels=labels)+
     ggplot2::labs(title=if(nzchar(s$title))s$title else 'Enrichment',x='Gene ratio (count / query size)',y=NULL,size='Gene count',color=expression(-log[10](adjusted~italic(P))),caption=note)+.enrich_viz_theme(s)
   if(any(d$ID%in%highlights))p<-p+ggplot2::geom_point(data=d[d$ID%in%highlights,,drop=FALSE],shape=21,fill=NA,colour='#111111',stroke=1)
+  full<-d$Description;if(anyDuplicated(full))full<-paste0(full,' [',d$ID,']')
+  attr(p,'emp.enrichment_labels')<-stats::setNames(full,d$ID)
+  attr(p,'emp.enrichment_wrap')<-wrap
   pars<-c(s,list(top_n=top_n,sort_by=sort_by,p_cutoff=cutoff,label_wrap=wrap,max_point_size=size,low_color=low,high_color=high,selected_terms=selected,highlight_terms=highlights))
   .enrich_viz_export(p,b,'enrichment_dotplot',pars,src$source,d)
 }
@@ -223,24 +228,29 @@ enrich_viz_gsea <- function(b,owner_id) {
   out$es<-es;out
 }
 .enrich_viz_export <- function(p,b,kind,parameters,source,data) {
+  size <- emp_figure_size(parameters$width, parameters$height)
+  parameters$width <- size$width; parameters$height <- size$height
+  parameters$dpi <- size$dpi
+  parameters$publication <- emp_publication_profile()
   # Unique prefixes keep every iteration and its source table reproducible.
   dir<-file.path(session_path(b$session_id),'plots');dir.create(dir,recursive=TRUE,showWarnings=FALSE)
   prefix<-basename(tempfile(pattern=paste0(kind,'_'),tmpdir=dir))
   files<-stats::setNames(paste0(prefix,c('.png','.pdf','.svg','.manifest.json','.data.csv')),c('png','pdf','svg','manifest','data'))
   paths<-file.path(dir,files);names(paths)<-names(files)
-  ggplot2::ggsave(paths['png'],p,width=parameters$width,height=parameters$height,units='in',dpi=300,bg='white',limitsize=TRUE)
-  ggplot2::ggsave(paths['pdf'],p,width=parameters$width,height=parameters$height,units='in',device=grDevices::pdf,useDingbats=FALSE,bg='white')
-  if(!requireNamespace('svglite',quietly=TRUE))stop('svglite is required for editable SVG export')
-  ggplot2::ggsave(paths['svg'],p,width=parameters$width,height=parameters$height,units='in',device=svglite::svglite,bg='white')
+  complete<-FALSE;on.exit(if(!complete)unlink(paths),add=TRUE)
+  for (ext in c('png','pdf','svg')) emp_publication_export(p, paths[ext], parameters$width, parameters$height, size$dpi)
   if(!all(file.exists(paths[c('png','pdf','svg')]))||any(file.info(paths[c('png','pdf','svg')])$size<=0))stop('One or more figure exports were not produced')
   utils::write.csv(data,paths['data'],row.names=FALSE)
+  effective<-getOption('emp.figure_effective',list());if(!is.null(effective$label_wrap)){parameters$rendered_label_width<-effective$label_wrap;if(isTRUE(emp_publication_profile()$auto_params))parameters$label_wrap<-effective$label_wrap}
+  if(!is.null(effective$label_count))parameters$displayed_labels<-effective$label_count
   provenance<-if(exists('emp_figure_methods_profile',mode='function'))emp_figure_methods_profile() else NULL
   rules_root<-Sys.getenv('EMP_FIGURE_METHODS_ROOT','')
   paths_rules<-c(file.path(Sys.getenv('EMP_ROOT',getwd()),'webapp/backend/helpers/viz_enrichment.R'),if(nzchar(rules_root))file.path(rules_root,c('skills/omics-enrichment-dotplot/SKILL.md','skills/omics-gsea-running-score/SKILL.md','library/plot_methods.R')) else character())
   paths_rules<-paths_rules[file.exists(paths_rules)]
   code_md5<-as.list(tools::md5sum(paths_rules))
-  manifest<-list(schema='emp-enrichment-figure-v1',kind=kind,created_utc=format(Sys.time(),tz='UTC',usetz=TRUE),parameters=parameters,source=source,figure_methods=provenance,code_md5=code_md5,input_md5=unname(tools::md5sum(paths['data'])),R_version=R.version.string,ggplot2_version=as.character(utils::packageVersion('ggplot2')),dpi=300)
+  manifest<-list(schema='emp-enrichment-figure-v1',kind=kind,created_utc=format(Sys.time(),tz='UTC',usetz=TRUE),parameters=parameters,source=source,figure_methods=provenance,code_md5=code_md5,input_md5=unname(tools::md5sum(paths['data'])),R_version=R.version.string,ggplot2_version=as.character(utils::packageVersion('ggplot2')),dpi=size$dpi)
   jsonlite::write_json(manifest,paths['manifest'],auto_unbox=TRUE,pretty=TRUE,null='null')
+  complete<-TRUE
   urls<-lapply(files,function(f)paste0('/api/visualize/enrichment/file/',b$session_id,'/',f))
   list(success=TRUE,plot=base64enc::base64encode(paths['png']),pdf_available=TRUE,pdf_name=unname(files['pdf']),svg_available=TRUE,svg_name=unname(files['svg']),download_urls=urls,parameters=parameters,source=source,n_rows=nrow(data))
 }

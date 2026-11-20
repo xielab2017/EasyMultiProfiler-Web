@@ -22,7 +22,7 @@ test('ternary API contract preserves group order, feature labels, colors and dat
 test('invalid ternary groups or incompatible omics are blocked before an API request',()=>{
  const context={session_id:'session',experiment:'Counts',omics:'microbiome_16s'};
  assert.throws(()=>sandbox.payload('ternary',{groups:['A','A','B'],group_var:'Group'},context),/three distinct groups/);
- assert.throws(()=>sandbox.payload('ternary',{groups:['A','B','C'],group_var:'Group'},{...context,omics:'clinical'}),/not available/);
+ assert.throws(()=>sandbox.payload('ternary',{groups:['A','B','C'],group_var:'Group'},{...context,omics:'clinical'}),/appropriate omics/);
  assert.throws(()=>sandbox.payload('ternary',{},{}),/Import and select/);
 });
 test('DE scatter requests saved statistics with explicit axes and adjusted-P thresholds',()=>{
@@ -39,3 +39,11 @@ test('method downloads use their own authenticated API route and reject other ro
 });
 
 test('plot directory labels follow Chinese and English without changing stable method IDs',()=>{assert.match(sandbox.label('ternary','zh'),/三元/);assert.equal(sandbox.label('ternary','en'),'Ternary composition · Method library');assert.equal(sandbox.catalog('microbiome_16s').find(x=>x.id==='ternary').tab,'viz-ternary');});
+
+test('all/customize views use the current registered experiment type; explicit choices and unknown types are preserved',()=>{
+ const f=(selected,entries,current)=>sandbox.methodLibraryOmics(selected,entries,current);
+ const rows=[{name:'Actual assay',omics:'proteomics'}];
+ for(const view of ['all','customize','multiomics',''])assert.equal(f(view,rows,'Actual assay'),'proteomics');
+ assert.equal(f('transcriptomics',rows,'Actual assay'),'transcriptomics');
+ assert.equal(f('all',[{name:'RNAseq-looking name'}],'RNAseq-looking name'),'all');
+});

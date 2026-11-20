@@ -100,13 +100,18 @@ export function modelQuestion(question, context = {}) {
     const input=context.pageContext,p={page:workflow};
     if(!context.readOnly&&context.availableAction)p.submit_current=context.availableAction;
     if(input.experiment)p.experiment=input.experiment;
+    if(context.readOnly&&workflow==='visualization') {
+      const allowed=new Set(['viz-export-enabled','viz-export-preset','viz-export-unit','viz-export-width','viz-export-height','viz-export-font','viz-export-minimum','viz-export-labels','viz-export-dpi','deg-width','deg-height','heat-width','heat-height','vol-width','vol-height','vol-fc','vol-p']);
+      p.figure_settings=Object.fromEntries((input.fields||[]).filter(f=>allowed.has(f.id)||/^figure-(heatmap|deg_heatmap|volcano|boxplot|barplot|scatter|enrichment|gsea|ternary|de_significance|alpha|structure|sankey|network)-(auto_params|preset|unit|width|height|font|minimum|labels|title_font|axis_font|axis_title_font|legend_font|label_font|axis_line|plot_line|threshold_line|grid_line|cell_line|tree_line|scale_position|annotation_position|point_size|palette|custom_colors|family|legend|background|method|dpi)$/.test(f.id)).map(f=>[f.id,f.type==='checkbox'?Boolean(f.value):String(f.value??'').slice(0,40)]));
+    }
+    if(!context.readOnly&&workflow==='visualization'&&step==='viz-heatmap')p.additional_action={target:'btn-deg-heatmap',use:'Only for an explicit DEG/differential heatmap request; use submit_current with this target.'};
     if(!context.readOnly)p.navigation={differential:'analysis:ana-diff',PCA:'analysis:ana-dim',volcano:'visualization:viz-volcano',heatmap:'visualization:viz-heatmap',ordination:'visualization:viz-scatter',GO_KEGG:'visualization:viz-enrichment-dotplot'};
     if(input.workbench&&['workbench','matrix'].includes(workflow)){const w=input.workbench;p.readiness={active_input:workflow==='workbench',input:w.has_input,dataset:w.has_dataset,groups:w.group_count,unassigned:w.unassigned,design_review:w.needs_design_review,relationship:w.sample_relationship,pairing:w.pairing_review,grouping_warnings:w.grouping_warnings};if(w.accession)p.accession=w.accession;}
     if(input.profile)p.matrix={features:input.profile.feature_count,samples:input.profile.candidate_sample_columns,count_compatible:input.profile.count_compatible,negative:input.profile.negative_cells,missing:input.profile.missing_or_nonfinite_cells};
     const append=()=>{const json=JSON.stringify(p);return message.length+json.length+23<=cap;};
     if(!append()){delete p.matrix;}
     if(append()){
-      const controls=[];for(const f of context.readOnly?[]:(input.fields||[])){const row={id:f.id,type:f.type,value:String(f.value||'').slice(0,80),options:f.options?.slice(0,12)};controls.push(row);p.fields=controls;if(!append()){controls.pop();break;}}
+      const controls=[];for(const f of context.readOnly?[]:(input.fields||[])){const row={id:f.id,type:f.type,value:f.type==='checkbox'?Boolean(f.value):String(f.value??'').slice(0,80),options:f.options?.slice(0,12)};controls.push(row);p.fields=controls;if(!append()){controls.pop();break;}}
       if(!controls.length)delete p.fields;
       if(input.workbench?.steps){p.selected_steps=input.workbench.steps;if(!append())delete p.selected_steps;}
       if(input.files?.length){p.files=input.files.slice(0,5);if(!append())delete p.files;}

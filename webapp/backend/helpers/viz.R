@@ -701,8 +701,8 @@ make_boxplot <- function(session_id, experiment, group = NULL, feature = NULL,
   }
 
   build_ph <- function(cr = do_cluster_rows) {
-    pheatmap::pheatmap(
-      mat_in,
+    emp_publication_pheatmap(
+      mat_in, publication_width = width, publication_height = height,
       scale             = "row",
       color             = emp_diverging_colors(panel = color_panel),
       annotation_col    = ann_df,
@@ -715,8 +715,8 @@ make_boxplot <- function(session_id, experiment, group = NULL, feature = NULL,
       fontsize_row      = if (show_rn) max(8, as.numeric(font_size)) else 1,
       fontsize_col      = max(8, as.numeric(font_size)),
       angle_col         = 90,
-      cellwidth         = sz$cell_w,
-      cellheight        = sz$cell_h,
+      cellwidth         = NA_real_,
+      cellheight        = NA_real_,
       border_color      = "grey92",
       treeheight_row    = if (cr) 40 else 0,
       treeheight_col    = 0,
@@ -728,6 +728,7 @@ make_boxplot <- function(session_id, experiment, group = NULL, feature = NULL,
   ph <- tryCatch(
     build_ph(),
     error = function(e) {
+      if (grepl("^Publication", conditionMessage(e))) stop(e)
       message("[heatmap] row clustering failed, retrying without dendrogram: ",
               conditionMessage(e))
       build_ph(cr = FALSE)
@@ -824,6 +825,45 @@ make_heatmap <- function(session_id, experiment, group = NULL,
 # DESeq2-style table cached by run_diff() so the plot speaks the same
 # language as stand-alone DESeq2 scripts (log2FoldChange / padj columns).
 # -----------------------------------------------------------------------------
+# A nudge keeps the real point in x_orig/y_orig for ggrepel's connector.
+# Compute offsets at build time: automatic label thinning can change the rows.
+.viz_volcano_callout_position <- function(left,right,spacing=0,ymin=-Inf,ymax=Inf) {
+  ggplot2::ggproto(NULL,ggrepel::position_nudge_repel(),left=left,right=right,spacing=spacing,ymin=ymin,ymax=ymax,
+    setup_params=function(self,data){
+      target<-data$y
+      for(side in list(which(data$x<0),which(data$x>=0))) {
+        if(!length(side))next
+        ids<-side[order(data$y[side],seq_along(side))];values<-data$y[ids]
+        if(length(ids)>1L)for(i in 2:length(ids))values[i]<-max(values[i],values[i-1]+self$spacing)
+        if(max(values)>self$ymax)values<-values-(max(values)-self$ymax)
+        if(min(values)<self$ymin)values<-values+(self$ymin-min(values))
+        if(max(values)>self$ymax&&length(ids)>1L)values<-seq(self$ymin,self$ymax,length.out=length(ids))
+        target[ids]<-values
+      }
+      list(x=ifelse(data$x<0,self$left,self$right)-data$x,y=target-data$y)
+    })
+}
+.viz_volcano_callout_rails <- function(df,top,width,height,fc_cutoff) {
+  size<-emp_figure_size(width,height);profile<-emp_publication_profile()
+  font<-profile$appearance$label_font %||% profile$font_pt %||% (3.2*72.27/25.4)
+  span<-range(c(df$fc,-fc_cutoff,fc_cutoff),finite=TRUE);distance<-max(diff(span),1)
+  legend<-profile$appearance$legend %||% if(!identical(profile$label_mode,'manual')&&size$width*25.4<100)'bottom' else 'right'
+  legend_font<-profile$appearance$legend_font %||% profile$font_pt %||% 10
+  counts<-table(df$change);legend_chars<-max(nchar(paste0(names(counts),' (n=',as.integer(counts),')')))
+  legend_width<-if(legend%in%c('left','right'))legend_chars*legend_font*25.4/72*.6+8 else 0
+  panel_mm<-max(8,size$width*25.4-16-legend_width)
+  gap_mm<-max(3,font*25.4/72*.9+.5*(profile$appearance$point_size %||% 2.6))
+  label_width<-function(group){labels<-top$label[top$change==group];labels<-labels[!is.na(labels)&nzchar(labels)];if(!length(labels))return(1);max(nchar(labels))*font*25.4/72*.6+gap_mm+1}
+  fractions<-c(label_width('Down'),label_width('Up'))/panel_mm
+  # Reserve label lanes without changing the chosen canvas or text size.
+  if(sum(fractions)>.65)fractions<-fractions*.65/sum(fractions)
+  total<-distance/(1-sum(fractions));gap<-total*gap_mm/panel_mm
+  legend_height<-if(legend%in%c('top','bottom'))legend_font*25.4/72*(length(counts)*1.6+1.5)+2 else 0
+  panel_height<-max(8,size$height*25.4-(profile$font_pt %||% 10)*25.4/72*5-8-legend_height)
+  yrange<-range(c(0,df$neg_log10p),finite=TRUE);dy<-max(diff(yrange),1)
+  list(left=span[1]-gap,right=span[2]+gap,limits=c(span[1]-total*fractions[1],span[2]+total*fractions[2]),
+    spacing=(font*25.4/72*1.8+.8)/panel_height*dy,ymin=yrange[1]+dy*.04,ymax=yrange[2]-dy*.04)
+}
 make_volcano <- function(session_id, experiment, fc_cutoff = 1.0, p_cutoff = 0.05,
                           use_padj = TRUE, width = 8, height = 7, label_top = 15L,
                           color_panel = NULL, custom_colors = NULL) {
@@ -892,7 +932,7 @@ make_volcano <- function(session_id, experiment, fc_cutoff = 1.0, p_cutoff = 0.0
 
   p <- ggplot2::ggplot(df, ggplot2::aes(x = fc, y = neg_log10p, color = change)) +
     ggplot2::geom_point(alpha = 0.8, size = 1.75, na.rm = TRUE) +
-    ggplot2::scale_color_manual(name = "Regulation", values = pal,
+    ggplot2::scale_color_manual(name = "Regulation", values = pal, breaks = c("NS", "Up", "Down"),
                                  labels = c("Down" = paste0("Down (n=", n_down, ")"),
                                             "NS"   = paste0("NS (n=", n_ns,   ")"),
                                             "Up"   = paste0("Up (n=", n_up,   ")"))) +
@@ -907,6 +947,8 @@ make_volcano <- function(session_id, experiment, fc_cutoff = 1.0, p_cutoff = 0.0
       y = p_label
     ) +
     emp_pub_theme()
+
+  if(isTRUE(emp_publication_profile()$auto_params))label_top<-50L
 
   # Label top differential genes – split Up vs Down so readers see both ends
   # of the distribution.  "Top" = largest combined rank of |log2FC| and
@@ -927,11 +969,15 @@ make_volcano <- function(session_id, experiment, fc_cutoff = 1.0, p_cutoff = 0.0
       top_down <- top_down[seq_len(min(per_side, nrow(top_down))), , drop = FALSE]
       top <- rbind(top_up, top_down)
       if (nrow(top)) {
-        p <- p + ggrepel::geom_text_repel(
-          data = top, ggplot2::aes(label = label, color = change),
-          size = 3.2, fontface = "bold",
-          max.overlaps = 60, box.padding = 0.45, point.padding = 0.3,
-          segment.color = "grey50", segment.size = 0.3, min.segment.length = 0,
+        rails<-.viz_volcano_callout_rails(df,top,width,height,fc_cutoff)
+        top$.label_hjust<-ifelse(top$change=='Down',1,0)
+        p <- p + ggplot2::scale_x_continuous(limits=rails$limits,expand=ggplot2::expansion(mult=0)) +
+          ggrepel::geom_text_repel(
+          data = top, ggplot2::aes(label = label, color = change,hjust=.label_hjust),
+          position=.viz_volcano_callout_position(rails$left,rails$right,rails$spacing,rails$ymin,rails$ymax),direction='y',
+          size = 3.2, fontface = "bold",seed=1L,force_pull=0,max.time=2,max.iter=100000L,
+          max.overlaps = Inf, box.padding = 0.35, point.padding = 0.15,
+          segment.color = "grey40", segment.size = 0.25, min.segment.length = 0,
           show.legend = FALSE
         )
         # Emphasise the labelled points themselves so reviewers can trace
@@ -944,6 +990,7 @@ make_volcano <- function(session_id, experiment, fc_cutoff = 1.0, p_cutoff = 0.0
     }
   }
 
+  attr(p,'emp.volcano_callouts')<-list(fc_cutoff=fc_cutoff)
   viz_emit_ggplot(p, session_id, experiment, "volcano", width, height)
 }
 

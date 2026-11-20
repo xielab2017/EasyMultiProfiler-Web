@@ -1,6 +1,9 @@
 # Run from the repository root: Rscript webapp/tests/test_figure_method_rules.R
 source("webapp/backend/helpers/figure_method_rules.R")
 local({
+  previous_config<-Sys.getenv("EMP_FIGURE_METHODS_CONFIG",unset=NA_character_)
+  Sys.setenv(EMP_FIGURE_METHODS_CONFIG=tempfile("no-figure-config-"))
+  on.exit(if(is.na(previous_config))Sys.unsetenv("EMP_FIGURE_METHODS_CONFIG") else Sys.setenv(EMP_FIGURE_METHODS_CONFIG=previous_config),add=TRUE)
   previous <- Sys.getenv("EMP_FIGURE_METHODS_ROOT", unset = NA_character_)
   on.exit(if (is.na(previous)) Sys.unsetenv("EMP_FIGURE_METHODS_ROOT") else
             Sys.setenv(EMP_FIGURE_METHODS_ROOT = previous), add = TRUE)

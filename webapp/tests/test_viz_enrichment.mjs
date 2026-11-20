@@ -13,7 +13,7 @@ class El{
  click(){this.clicked=true;return this.onclick?.();}remove(){}
 }
 function fixture(){
- const ids=new Map(),posts=[],downloads=[],rendered=[],listeners={};
+ const ids=new Map(),posts=[],downloads=[],rendered=[],listeners={};let failure=null;
  const get=id=>{if(!ids.has(id))ids.set(id,new El());return ids.get(id);};
  for(const prefix of ['enrich-viz','gsea-viz']){
   for(const name of ['source','terms','pathway','status','generate','refresh','output','file','analysis','ranked'])get(prefix+'-'+name);
@@ -23,7 +23,7 @@ function fixture(){
  const sources=[{source_job:'ora-job',kind:'ora',omics:'transcriptomics',experiment:'RNA / sample',label:'GO result'}, {source_job:'current_gsea',kind:'gsea',omics:'transcriptomics',experiment:'RNA / sample',label:'GSEA result'}];
  const storage={emp_session_id:'test-session',emp_api_token:'test-token',emp_student_token:'test-student'};
  const API={apiBase:()=> 'http://localhost:8000/api',request:async(method,path,body)=>{
-  posts.push({method,path,body});
+  posts.push({method,path,body});if(failure&&path.endsWith('/dotplot'))throw failure;
   if(method==='GET')return {sources};
   if(path.endsWith('/results'))return {data:[{ID:'GO:001',Description:'Pathway',Count:5,GeneRatio:'5/20'}]};
   return {plot:'cGxvdA==',download_urls:{pdf:'/api/visualize/enrichment/file/test-session/figure.pdf'}};
@@ -34,7 +34,7 @@ function fixture(){
   fetch:async(url,options)=>{downloads.push({url,options});return {ok:true,blob:async()=>new Blob(['pdf'])};}});
  vm.runInContext(code+';globalThis.init=initEnrichmentVisualization',sandbox);
  sandbox.init({API,showPlot:(id,png)=>{rendered.push({id,png});get(id).toolbar=new El();},navigateTo(){}});
- return {get,posts,downloads,rendered,sources,listeners,window:sandbox.window};
+ return {get,posts,downloads,rendered,sources,listeners,window:sandbox.window,fail:error=>{failure=error;}};
 }
 test('source refresh passes experiment context, separates ORA sources and retains the selected job',async()=>{
  const f=fixture();await f.get('enrich-viz-refresh').click();
@@ -106,4 +106,20 @@ test('multiomics current GSEA caches have distinct choices and submit the select
  assert.equal(new Set(cacheOptions.map(option=>option.value)).size,2);
  f.get('gsea-viz-source').value='Proteins::current_gsea';await f.get('gsea-viz-source').onchange();await f.get('gsea-viz-generate').click();
  const body=f.posts.filter(row=>row.path.endsWith('/gsea')).at(-1).body;assert.equal(body.experiment,'Proteins');assert.equal(body.source_job,'current_gsea');assert.equal(body.scope,'multiomics');
+});
+test('blank optional wrap uses server default, and a manual wrap below ten is preserved',async()=>{
+ const f=fixture();await f.get('enrich-viz-refresh').click();f.get('enrich-viz-source').value='ora-job';
+ f.get('enrich-viz-wrap').value='';await f.get('enrich-viz-generate').click();
+ assert.equal(f.posts.filter(row=>row.path.endsWith('/dotplot')).at(-1).body.label_wrap,undefined);
+ f.get('enrich-viz-wrap').value='5';await f.get('enrich-viz-generate').click();
+ assert.equal(f.posts.filter(row=>row.path.endsWith('/dotplot')).at(-1).body.label_wrap,5);
+});
+
+test('an incomplete custom layout offers an explicit size action without rendering a cropped result',async()=>{
+ const f=fixture();await f.get('enrich-viz-refresh').click();f.get('enrich-viz-source').value='ora-job';
+ f.fail(Object.assign(new Error('More space needed'),{code:'FIGURE_LAYOUT_NEEDS_SPACE',layout_suggestion:{width_mm:76.2,height_mm:160}}));
+ await f.get('enrich-viz-generate').click();
+ assert.equal(f.rendered.length,0);assert.equal(f.get('enrich-viz-generate').disabled,false);
+ const fit=f.get('enrich-viz-status').children.find(e=>e.id==='enrich-viz-fit');
+ assert.ok(fit);assert.match(fit.textContent,/76.2 × 160/);assert.match(fit.textContent,/采用推荐尺寸/);
 });

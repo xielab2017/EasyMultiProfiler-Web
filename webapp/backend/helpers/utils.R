@@ -1,3 +1,5 @@
+# Shared publication layout is also loaded in isolated analysis workers.
+source(file.path(Sys.getenv("BACKEND_DIR", unset = Sys.getenv("EMP_BACKEND_DIR", unset = "webapp/backend")), "helpers", "publication.R"))
 # General utility helpers
 
 ## Null-coalescing helper (re-declared by each workflow file for safety;
@@ -82,7 +84,9 @@ viz_plot_b64 <- function(x) {
 }
 
 viz_pdf_meta <- function(pdf) {
+  size <- getOption("emp.viz_style", list())$export_size
   list(
+    canvas_size_mm = if (!is.null(size)) list(width_mm = size$width_mm, height_mm = size$height_mm) else NULL,
     pdf_available = !is.null(pdf),
     pdf_name = if (!is.null(pdf)) basename(pdf) else ""
   )
@@ -262,15 +266,55 @@ detect_taxonomy <- function(feature_values) {
   if (inherits(p, "pheatmap")) {
     grid::grid.newpage()
     grid::grid.draw(p$gtable)
+  } else if (inherits(p, c("grob", "gTree", "gtable"))) {
+    grid::grid.newpage(); grid::grid.draw(p)
+  } else if (is.function(p)) {
+    profile <- emp_publication_profile()
+    if (!is.null(profile)) graphics::par(ps=profile$font_pt,cex=1,cex.axis=1,cex.lab=1,cex.main=1)
+    p()
+  } else if (inherits(p, "ggplot") && !is.null(emp_publication_profile())) {
+    emp_publication_draw_ggplot(p)
   } else {
     print(p)
   }
 }
 
+emp_figure_size <- function(width, height, dpi = 300) {
+  size <- getOption("emp.viz_style", list())$export_size
+  if (is.null(size)) return(list(width = width, height = height, dpi = dpi))
+  list(width = size$width_mm / 25.4, height = size$height_mm / 25.4, dpi = size$dpi)
+}
+
+# Quartz PNGs may omit physical resolution. Add a standards-compliant pHYs
+# chunk without decoding/recompressing pixels, so downstream editors retain size.
+emp_png_set_dpi <- function(path, dpi) {
+  bytes <- readBin(path, "raw", n = file.info(path)$size)
+  ppm <- writeBin(as.integer(round(dpi / 0.0254)), raw(), size = 4L, endian = "big")
+  body <- c(charToRaw("pHYs"), ppm, ppm, as.raw(1))
+  crc <- digest::digest(body, algo = "crc32", serialize = FALSE)
+  crc <- as.raw(strtoi(substring(crc, seq(1, 7, 2), seq(2, 8, 2)), 16L))
+  chunk <- c(writeBin(9L, raw(), size = 4L, endian = "big"), body, crc)
+  parts <- list(bytes[1:8]); pos <- 9L
+  while (pos + 11L <= length(bytes)) {
+    n <- readBin(bytes[pos:(pos+3L)], integer(), n = 1L, size = 4L, endian = "big")
+    if (is.na(n) || n < 0 || pos+n+11L > length(bytes)) stop("Invalid PNG chunk")
+    type <- rawToChar(bytes[(pos+4L):(pos+7L)])
+    if (type != "pHYs") parts[[length(parts)+1L]] <- bytes[pos:(pos+n+11L)]
+    if (type == "IHDR") parts[[length(parts)+1L]] <- chunk
+    pos <- pos+n+12L
+  }
+  writeBin(do.call(c, parts), path)
+  invisible(path)
+}
+
 # Render a ggplot or heatmap to a base64-encoded PNG at publication DPI.
 plot_to_base64 <- function(p, width = 9, height = 6, dpi = 300) {
+  withr::local_options(list(emp.figure_format='png'))
+  if (!is.null(emp_publication_profile())) withr::local_seed(108L)
+  size <- emp_figure_size(width, height, dpi)
+  width <- size$width; height <- size$height; dpi <- size$dpi
   tmp <- tempfile(fileext = ".png")
-  on.exit(unlink(tmp))
+  on.exit(unlink(tmp),add=TRUE)
   previous <- grDevices::dev.cur()
   if (requireNamespace("ragg", quietly = TRUE)) {
     ragg::agg_png(tmp, width = width, height = height, units = "in",
@@ -282,16 +326,21 @@ plot_to_base64 <- function(p, width = 9, height = 6, dpi = 300) {
   }
   device <- grDevices::dev.cur()
   if (device == previous) stop("Could not open the PNG graphics device.")
-  tryCatch(.viz_draw_plot(p), finally = grDevices::dev.off(device))
+  tryCatch(.viz_draw_plot(emp_publication_plot(p, width, height)), finally = grDevices::dev.off(device))
   if (!isTRUE(file.size(tmp) > 0)) stop("The PNG graphics device produced no output.")
+  emp_png_set_dpi(tmp, dpi)
   base64enc::base64encode(tmp)
 }
 
 # Render an editable vector PDF and publish it only after drawing succeeds.
-save_plot_pdf <- function(p, path, width = 9, height = 6) {
+save_plot_pdf <- function(p, path, width = 9, height = 6, archive = TRUE) {
+  withr::local_options(list(emp.figure_format='pdf'))
+  if (!is.null(emp_publication_profile())) withr::local_seed(108L)
+  size <- emp_figure_size(width, height)
+  width <- size$width; height <- size$height
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   tmp <- tempfile(tmpdir = dirname(path), fileext = ".pdf")
-  on.exit(unlink(tmp))
+  on.exit(unlink(tmp),add=TRUE)
   if (capabilities("aqua")) {
     grDevices::quartz(type = "pdf", file = tmp, width = width, height = height)
   } else {
@@ -299,13 +348,13 @@ save_plot_pdf <- function(p, path, width = 9, height = 6) {
                    useDingbats = FALSE, onefile = FALSE)
   }
   device <- grDevices::dev.cur()
-  tryCatch(.viz_draw_plot(p), finally = grDevices::dev.off(device))
+  tryCatch(.viz_draw_plot(emp_publication_plot(p, width, height)), finally = grDevices::dev.off(device))
   if (!isTRUE(file.size(tmp) > 0) || !file.rename(tmp, path)) {
     stop("Could not save PDF to ", path)
   }
-  if (identical(getOption("emp.viz_style", list())$figure_method, "self_built") && inherits(p, "ggplot")) {
+  if (isTRUE(archive) && identical(getOption("emp.viz_style", list())$figure_method, "self_built") && inherits(p, "ggplot")) {
     archive <- tempfile(pattern = paste0(tools::file_path_sans_ext(basename(path)), "_"), tmpdir = dirname(path))
-    emp_export_figure_methods(p, archive, width, height, dpi = 300)
+    emp_export_figure_methods(p, archive, width, height, dpi = size$dpi)
   }
   path
 }
@@ -418,25 +467,39 @@ emp_prepare_preview_rows <- function(empt, n = 30L) {
 # Wrap a block so plumber returns a tidy error JSON on failure
 safe_api <- function(expr, res) {
   old_viz_style <- getOption("emp.viz_style", NULL)
-  on.exit(options(emp.viz_style = old_viz_style), add = TRUE)
+  old_notes <- getOption("emp.publication_notes", character())
+  old_effective <- getOption("emp.figure_effective", NULL)
+  on.exit({options(emp.viz_style = old_viz_style, emp.publication_notes = old_notes, emp.figure_effective=old_effective)}, add = TRUE)
+  options(emp.publication_notes = character(), emp.figure_effective=NULL)
+  request <- get0("req", envir = parent.frame(), inherits = FALSE)
+
   t0 <- Sys.time()
-  result <- tryCatch(
-    expr,
+  result <- tryCatch({
+    if (!is.null(request) && is.character(request$postBody) && length(request$postBody)==1L && nchar(request$postBody,type="bytes")<=18*1024^2 && startsWith(trimws(request$postBody), "{")) {
+      body <- jsonlite::fromJSON(request$postBody)
+      if (is.list(body) && (!is.null(body$publication) || !is.null(body$export_size) || !is.null(body$figure_profiles))) emp_viz_style_begin(body)
+    }
+    expr
+  },
     error = function(e) {
       message <- conditionMessage(e)
       if (!is.null(res)) {
         lower <- tolower(message)
-        res$status <- if (inherits(e, "emp_capacity_error")) 429 else if (inherits(e, "emp_validation_error")) 400 else if (grepl("access denied|ownership|allowed root|outside allowed|not allowed|invalid session_id|invalid project_id|invalid job_id", lower)) 403 else if (
+        res$status <- if(inherits(e,"emp_figure_layout_error"))422 else if (inherits(e, "emp_capacity_error")) 429 else if (inherits(e, "emp_validation_error")) 400 else if (grepl("access denied|ownership|allowed root|outside allowed|not allowed|invalid session_id|invalid project_id|invalid job_id", lower)) 403 else if (
           grepl("still running|wait before sync|busy or incomplete|conflict|homework sync blocked", lower)
         ) 409 else if (
-          grepl("validation|metadata|sample|group|invalid|required|unsupported", lower)
+          grepl("publication layout|publication labels|validation|metadata|sample|group|invalid|required|unsupported", lower)
         ) 400 else 500
       }
+      if(inherits(e,"emp_figure_layout_error"))return(list(success=FALSE,error=message,code="FIGURE_LAYOUT_NEEDS_SPACE",layout_suggestion=e$suggestion))
       list(success = FALSE, error = message)
     }
   )
   dt <- as.numeric(difftime(Sys.time(), t0, units = "secs")) * 1000
   if (is.list(result)) {
+    if (!is.null(emp_publication_profile())) result$figure_layout <- list(
+      font_pt = emp_publication_profile()$font_pt, min_font_pt = emp_publication_profile()$min_font_pt,
+      effective = getOption("emp.figure_effective", list()), notes = as.list(getOption("emp.publication_notes", character())), canvas = getOption("emp.viz_style", list())$export_size)
     result$backend_ms <- round(dt, 1)
     result$server_ts  <- format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3%z")
   }

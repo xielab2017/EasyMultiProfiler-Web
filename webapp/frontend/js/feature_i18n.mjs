@@ -154,7 +154,7 @@ export const FEATURE_TEXT = {
   '取消任务':'Cancel job',
   '下载完整结果与审计 JSON':'Download full results and audit JSON',
   '下载完整差异结果 TSV':'Download full differential TSV',
-  'v10.5.1 · 新功能在这里 / New features':'v10.5.1 · New features',
+  'v10.17.0 · 新功能在这里 / New features':'v10.17.0 · New features',
   '完整启动器会同时启动矩阵下载与 AI 分析工作台服务；仅查看元数据时也可单独启动元数据服务。':'The full launcher starts matrix and AI workflow services together. For metadata only, the metadata service can also run separately.',
   '在主页面下载矩阵 / Matrix download':'Download matrices in the main page',
   '计数质量检查':'Count QC',

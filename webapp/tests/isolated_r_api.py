@@ -1,6 +1,8 @@
 """Private loopback R API and storage for live, offline acceptance checks."""
 from contextlib import contextmanager
 import json
+import fcntl
+import tempfile
 import os
 from pathlib import Path
 import socket
@@ -33,33 +35,37 @@ def api_environment(tmp):
 
 @contextmanager
 def isolated_r_api(root, rscript, tmp, env):
-    for port in range(39280,39480):
-        try:
-            with socket.socket() as check:
-                check.bind(('127.0.0.1',port))
-            break
-        except OSError:
-            continue
-    else:
-        raise RuntimeError('No free test port')
-    base=f'http://127.0.0.1:{port}/api'
-    with (tmp/'api.log').open('w') as log:
-        proc=subprocess.Popen([rscript,'--vanilla',str(root/'webapp/backend/run_api.R')],env={**env,'API_PORT':str(port)},
-                              cwd=tmp,stdout=log,stderr=log)
-        try:
-            for _ in range(300):
-                if proc.poll() is not None:
-                    raise RuntimeError((tmp/'api.log').read_text()[-1000:])
-                try:
-                    if call(base,'/health')[0]==200:
-                        break
-                except OSError:
-                    pass
-                time.sleep(.2)
-            else:
-                raise TimeoutError('R API startup')
-            print(f'isolated API port {port}',flush=True)
-            yield base
-        finally:
-            proc.terminate()
-            proc.wait(timeout=15)
+    # Serialize isolated fixtures so concurrent launchers cannot accept another
+    # fixture's health response before their own R process has bound its port.
+    with open(Path(tempfile.gettempdir())/'emp-isolated-r-api.lock','a') as startup_lock:
+        fcntl.flock(startup_lock,fcntl.LOCK_EX)
+        for port in range(39280,39480):
+            try:
+                with socket.socket() as check:
+                    check.bind(('127.0.0.1',port))
+                break
+            except OSError:
+                continue
+        else:
+            raise RuntimeError('No free test port')
+        base=f'http://127.0.0.1:{port}/api'
+        with (tmp/'api.log').open('w') as log:
+            proc=subprocess.Popen([rscript,'--vanilla',str(root/'webapp/backend/run_api.R')],env={**env,'API_PORT':str(port)},
+                                  cwd=tmp,stdout=log,stderr=log)
+            try:
+                for _ in range(300):
+                    if proc.poll() is not None:
+                        raise RuntimeError((tmp/'api.log').read_text()[-1000:])
+                    try:
+                        if call(base,'/health')[0]==200:
+                            break
+                    except OSError:
+                        pass
+                    time.sleep(.2)
+                else:
+                    raise TimeoutError('R API startup')
+                print(f'isolated API port {port}',flush=True)
+                yield base
+            finally:
+                proc.terminate()
+                proc.wait(timeout=15)

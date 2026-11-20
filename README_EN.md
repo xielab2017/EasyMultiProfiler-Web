@@ -5,7 +5,7 @@
 
 # EasyMultiProfiler Web - English documentation has moved
 
-The complete English documentation for EasyMultiProfiler Web v10.5.1 now
+The complete English documentation for EasyMultiProfiler Web v10.17.0 now
 lives in the repository's main README:
 
 **[README.md](README.md)** - summary, key features, one-click installation

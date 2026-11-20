@@ -1,3 +1,6 @@
+import {geometryFromSource, downloadRaster} from './figure_exports.mjs';
+import {initializeFigureStandards,FIGURE_RENDER_BUTTONS} from './figure_standards.mjs';
+import {initAnalysisFigures} from './analysis_figures.js';
 import {selectedStoreId} from './plugin_store.js';
 import {initAppVersion} from './app_version.mjs';
 import {syncTopNavigation,RETIRED_PAGES} from './navigation_sync.mjs';
@@ -453,10 +456,11 @@ export function plotPdfDownloadUrl(pdfName) {
 }
 
 function plotDownloadOptions(res = {}) {
+  const layout = res.figure_layout;
   if (res.pdf_available && res.pdf_name) {
-    return { pdfUrl: plotPdfDownloadUrl(res.pdf_name), pdfName: res.pdf_name };
+    return { pdfUrl: plotPdfDownloadUrl(res.pdf_name), pdfName: res.pdf_name, figureSize: res.canvas_size_mm || layout?.canvas, figureLayout: layout };
   }
-  return {};
+  return {figureLayout:layout};
 }
 
 export function showPlot(containerId, base64png, options = {}) {
@@ -465,49 +469,35 @@ export function showPlot(containerId, base64png, options = {}) {
   const pngSrc = `data:image/png;base64,${base64png}`;
   const pdfUrl = options.pdfUrl || (options.pdfName ? plotPdfDownloadUrl(options.pdfName) : null);
   const downloadStem = options.downloadStem || "plot";
-  const mkCanvas = () => new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = img.naturalWidth || img.width;
-      c.height = img.naturalHeight || img.height;
-      c.getContext("2d").drawImage(img, 0, 0);
-      resolve(c);
-    };
-    img.onerror = reject;
-    img.src = pngSrc;
-  });
-  const addDownloadHandler = (id, mime, name) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener("click", async (e) => {
+  const addDownloadHandler = (id, format, name) => {
+    document.getElementById(id)?.addEventListener("click", async (e) => {
       e.preventDefault();
-      const c = await mkCanvas();
-      let url = c.toDataURL(mime);
-      if (mime === "image/tiff" && url.startsWith("data:image/png")) {
-        url = c.toDataURL("image/png");
-      }
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      a.click();
+      try { await downloadRaster(pngSrc, format, name); }
+      catch (error) { toast(error.message, "error"); }
     });
   };
+  const geometry = geometryFromSource(pngSrc);
+  const dimensions = options.figureSize
+    ? `PDF · ${Number(options.figureSize.width_mm).toFixed(1)} × ${Number(options.figureSize.height_mm).toFixed(1)} mm · ${Math.round(geometry.dpi)} DPI (PNG)`
+    : `PNG ≈ ${(geometry.width / geometry.dpi * 25.4).toFixed(1)} × ${(geometry.height / geometry.dpi * 25.4).toFixed(1)} mm · ${Math.round(geometry.dpi)} DPI`;
   const pdfBtnHtml = pdfUrl
-    ? `<a class="btn btn-outline" id="${containerId}-dl-pdf" href="${pdfUrl}" download="${downloadStem}.pdf" title="Editable vector PDF (ggplot)"><i data-lucide="download"></i> PDF</a>`
+    ? `<a class="btn btn-outline" id="${containerId}-dl-pdf" href="${pdfUrl}" download="${downloadStem}.pdf" title="Vector PDF · place at 100% in Illustrator"><i data-lucide="download"></i> PDF</a>`
     : "";
   container.innerHTML = `
     <div class="plot-toolbar">
+      <button type="button" class="btn btn-outline" data-publication-settings="${containerId.includes("deg-heatmap")?"deg_heatmap":({"heatmap-out":"heatmap","volcano-out":"volcano","boxplot-out":"boxplot","barplot-out":"barplot","alpha-plot-out":"alpha","m16s-sankey-out":"sankey","m16s-network-out":"network","tx-viz-heatmap-out":"heatmap","tx-viz-volcano-out":"volcano","mgx-viz-heatmap-out":"heatmap","mgx-viz-volcano-out":"volcano","mbx-volcano-out":"volcano","structure-out":"structure","analysis-dimension-output":"analysis_dimension","analysis-correlation-output":"analysis_correlation","analysis-cluster-output":"analysis_cluster","analysis-marker-output":"analysis_marker","enrich-viz-output":"enrichment","gsea-viz-output":"gsea","ternary-viz-output":"ternary","de-significance-output":"de_significance"}[containerId]||"scatter")}">${["zh","zh-TW"].includes(getLocale())?"本图设置":"Figure settings"}</button>
       <a class="btn btn-outline" id="${containerId}-dl-png" href="${pngSrc}" download="${downloadStem}.png"><i data-lucide="download"></i> PNG</a>
       <a class="btn btn-outline" id="${containerId}-dl-jpg" href="#"><i data-lucide="download"></i> JPEG</a>
       <a class="btn btn-outline" id="${containerId}-dl-tiff" href="#"><i data-lucide="download"></i> TIFF</a>
       ${pdfBtnHtml}
     </div>
+    <p class="hint figure-export-size">${dimensions} · ${t("viz.pdfSizeHint")}</p>
+    ${options.figureLayout?.notes?.length ? `<p class="publication-notes" role="status">${options.figureLayout.notes.map(escapeHtml).join("<br>")}</p>` : ""}
     <img src="${pngSrc}" alt="Plot">
   `;
   container.classList.remove("hidden");
-  addDownloadHandler(`${containerId}-dl-jpg`, "image/jpeg", `${downloadStem}.jpg`);
-  addDownloadHandler(`${containerId}-dl-tiff`, "image/tiff", `${downloadStem}.tiff`);
+  addDownloadHandler(`${containerId}-dl-jpg`, "jpeg", `${downloadStem}.jpg`);
+  addDownloadHandler(`${containerId}-dl-tiff`, "tiff", `${downloadStem}.tiff`);
   if (window.lucide) lucide.createIcons({ nodes: [container] });
   attachAiCopilot(container, { ...inferAiContext(containerId), kind: "plot" });
   noteUiResultChanged();
@@ -517,7 +507,7 @@ function buildPlotPanelHtml(panelId, base64png, downloadStem, pdfName = null) {
   const pngSrc = `data:image/png;base64,${base64png}`;
   const pdfUrl = pdfName ? plotPdfDownloadUrl(pdfName) : null;
   const pdfBtn = pdfUrl
-    ? `<a class="btn btn-outline" href="${pdfUrl}" download="${downloadStem}.pdf" title="Editable vector PDF (ggplot)"><i data-lucide="download"></i> PDF</a>`
+    ? `<a class="btn btn-outline" href="${pdfUrl}" download="${downloadStem}.pdf" title="Vector PDF · place at 100% in Illustrator"><i data-lucide="download"></i> PDF</a>`
     : "";
   return `
     <div class="ord-plot-panel" id="${panelId}-wrap">
@@ -535,26 +525,11 @@ function wirePlotPanelDownloads(panelId, downloadStem) {
   if (!wrap) return;
   const img = wrap.querySelector("img");
   if (!img) return;
-  const mkCanvas = () => new Promise((resolve, reject) => {
-    const probe = new Image();
-    probe.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = probe.naturalWidth || probe.width;
-      c.height = probe.naturalHeight || probe.height;
-      c.getContext("2d").drawImage(probe, 0, 0);
-      resolve(c);
-    };
-    probe.onerror = reject;
-    probe.src = img.src;
-  });
   const jpgBtn = document.getElementById(`${panelId}-dl-jpg`);
   jpgBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
-    const c = await mkCanvas();
-    const a = document.createElement("a");
-    a.href = c.toDataURL("image/jpeg", 0.95);
-    a.download = `${downloadStem}.jpg`;
-    a.click();
+    try { await downloadRaster(img.src, "jpeg", `${downloadStem}.jpg`); }
+    catch (error) { toast(error.message, "error"); }
   });
 }
 
@@ -3196,6 +3171,8 @@ async function runAnalysis(btnId, resultId, apiFn) {
       await ensurePageSnapshot("analysis");
       const res = await withBusy(label, () => apiFn(exp));
       showResultTable(resultId, res.data,500,{sourceJob:res._job_id});
+      const analysisKind={'btn-dim':'dimension','btn-cor':'correlation','btn-cluster':'cluster','btn-marker':'marker'}[btnId];
+      if(analysisKind)window.dispatchEvent(new CustomEvent('emp:analysis-complete',{detail:{kind:analysisKind,result_id:res.analysis_result_id,experiment:exp}}));
       toast("Analysis complete.", "success");
       noteUiResultChanged();
     } catch(e) {
@@ -6174,27 +6151,24 @@ function wireCustomFeatureBox({ textareaId, fileId, clearId, metaId }) {
   return () => ta.value.trim(); // getter returns raw text for POSTing
 }
 
-function currentColorOptions() {
-  const useCustom = document.getElementById("viz-use-custom-colors")?.checked;
-  const picks = [1,2,3,4,5,6]
-    .map((i) => document.getElementById(`viz-color-${i}`)?.value || "")
-    .filter(Boolean);
-  const sc = +document.getElementById("viz-figure-scale")?.value;
-  const atx = +document.getElementById("viz-axis-text-x")?.value;
-  const aty = +document.getElementById("viz-axis-text-y")?.value;
-  const alx = +document.getElementById("viz-axis-title-x")?.value;
-  const aly = +document.getElementById("viz-axis-title-y")?.value;
-  return {
-    color_panel: document.getElementById("viz-color-panel")?.value || "npg",
-    custom_colors: useCustom ? (picks.join(",") || null) : null,
-    figure_method: document.getElementById("viz-figure-method")?.value || "original",
-    figure_scale: Number.isFinite(sc) && sc > 0 ? sc : 1,
-    axis_text_x: Number.isFinite(atx) && atx > 0 ? atx : 11,
-    axis_text_y: Number.isFinite(aty) && aty > 0 ? aty : 11,
-    axis_title_x: Number.isFinite(alx) && alx > 0 ? alx : 12,
-    axis_title_y: Number.isFinite(aly) && aly > 0 ? aly : 12,
-  };
-}
+// Appearance is attached by the API client using the target figure's saved profile.
+function currentColorOptions() { return {}; }
+const analysisFigures=initAnalysisFigures({API,showPlot,getContext:()=>({session_id:localStorage.getItem('emp_session_id'),experiment:window._emp?.currentExp}),onResult:noteUiResultChanged});
+window.empPublicationOptions = initializeFigureStandards({isEnglish:()=>!["zh","zh-TW"].includes(getLocale()),onAutoGenerate:kind=>{
+  if(!window._emp?.currentExp)return true;
+  if(window._emp.analysisBusy>0||!document.getElementById('loading-spinner')?.classList.contains('hidden'))return false;
+  if(kind.startsWith('analysis_')&&!document.getElementById('analysis-'+kind.slice(9)+'-source')?.value)return true;
+  const button=document.getElementById(FIGURE_RENDER_BUTTONS[kind]);if(button?.disabled)return false;
+  button?.click();return true;
+}});
+document.addEventListener("click",event=>{
+  const button=event.target.closest("[data-publication-settings]");if(!button)return;
+  const kind=button.dataset.publicationSettings||'scatter';
+  const card=document.getElementById('figure-standard-'+kind);if(!card)return;
+  navigateTo(card.closest('.page')?.id?.replace('page-','')||'visualization');
+  const panel=card.closest('.tab-panel');if(panel)document.querySelector(`[data-tab="${panel.id}"]`)?.click();
+  card.scrollIntoView({behavior:"smooth",block:"start"});
+});
 
 function wireVizAspectLock(widthId, heightId, ratio) {
   const wEl = document.getElementById(widthId);
@@ -6246,9 +6220,9 @@ genPlot("btn-boxplot", "boxplot-out", exp => API.vizBoxplot(exp, {
   ...currentColorOptions(),
 }));
 
-function currentHeatmapSize() {
-  const w = +document.getElementById("heat-width")?.value;
-  const h = +document.getElementById("heat-height")?.value;
+function currentHeatmapSize(prefix = "heat") {
+  const w = +document.getElementById(`${prefix}-width`)?.value;
+  const h = +document.getElementById(`${prefix}-height`)?.value;
   return {
     width:  Number.isFinite(w) && w > 0 ? w : 11,
     height: Number.isFinite(h) && h > 0 ? h : 8,
@@ -6346,6 +6320,9 @@ const _getMgxHeatCustom = wireCustomFeatureBox({
 });
 
 document.getElementById("btn-volcano")?.addEventListener("click", async () => {
+  for (const id of ["vol-width", "vol-height"]) {
+    if (!document.getElementById(id).reportValidity()) return;
+  }
   const exp = window._emp.currentExp;
   if (!exp) { toast("Import data first.", "error"); return; }
   const out = document.getElementById("volcano-out");
@@ -6359,6 +6336,8 @@ document.getElementById("btn-volcano")?.addEventListener("click", async () => {
       p_cutoff:  +document.getElementById("vol-p").value,
       use_padj:  document.getElementById("vol-use-padj")?.value === "true",
       label_top: +document.getElementById("vol-label-top")?.value || 15,
+      width: +document.getElementById("vol-width").value,
+      height: +document.getElementById("vol-height").value,
       ...currentColorOptions(),
     }));
     showPlot("volcano-out", res.plot, { downloadStem: "volcano", ...plotDownloadOptions(res) });
@@ -6373,6 +6352,9 @@ document.getElementById("btn-volcano")?.addEventListener("click", async () => {
 document.getElementById("btn-deg-heatmap")?.addEventListener("click", async () => {
   const exp = window._emp.currentExp;
   if (!exp) { toast("Import data first.", "error"); return; }
+  for (const id of ["deg-width", "deg-height"]) {
+    if (!document.getElementById(id).reportValidity()) return;
+  }
   const out = document.getElementById("deg-heatmap-out");
   const meta = document.getElementById("deg-meta");
   out.innerHTML = '<p style="padding:12px">Generating DEG heatmap…</p>';
@@ -6391,7 +6373,7 @@ document.getElementById("btn-deg-heatmap")?.addEventListener("click", async () =
       cluster_cols:  document.getElementById("deg-cluster-cols").value === "true",
       show_rownames: document.getElementById("deg-show-rn").value === "true",
       font_size:    +document.getElementById("deg-font-size").value || 10,
-      ...currentHeatmapSize(),
+      ...currentHeatmapSize("deg"),
       ...currentColorOptions(),
     }));
     showPlot("deg-heatmap-out", res.plot, { downloadStem: "deg_heatmap", ...plotDownloadOptions(res) });

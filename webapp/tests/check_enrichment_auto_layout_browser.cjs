@@ -1,0 +1,20 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
+(async()=>{const [api,site,sid,job,output]=process.argv.slice(2),browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1440,height:1100}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const origins=new Set([new URL(api).origin,new URL(site).origin]);await page.route('**/*',r=>origins.has(new URL(r.request().url()).origin)?r.continue():r.abort());
+ await page.addInitScript(({api,sid})=>{window.API_BASE=api;localStorage.setItem('emp_session_id',sid);localStorage.setItem('emp_ui_locale_mode','zh');},{api,sid});
+ await page.goto(site);await page.locator('.nav-item[data-page="visualization"]').click();await page.waitForFunction(()=>window._emp?.currentExp);await page.locator('[data-tab="viz-enrichment-dotplot"]').click();
+ await page.locator('#enrich-viz-source option[value="'+job+'"]').waitFor({state:'attached'});await page.locator('#enrich-viz-source').selectOption(job);
+ const field=key=>page.locator('#figure-enrichment-'+key);async function set(key,v){await field(key).fill(String(v));await field(key).dispatchEvent('change');}
+ await set('width',76.2);await set('height',76.2);
+ await page.locator('#enrich-viz-wrap').evaluate(e=>{e.value='5';e.dispatchEvent(new Event('change',{bubbles:true}));});
+ async function result(action,expected=200){const pending=page.waitForResponse(r=>r.url().endsWith('/visualize/enrichment/dotplot'));await action();const res=await pending,data=await res.json();assert.equal(res.status(),expected,JSON.stringify(data).slice(0,800));assert.equal(data.success,expected===200);return data;}
+ let needed=await result(()=>field('auto_params').check(),422);assert.equal(needed.code,'FIGURE_LAYOUT_NEEDS_SPACE');assert.equal(await field('width').inputValue(),'76.2');assert.equal(await field('height').inputValue(),'76.2');
+ let data=await result(()=>page.locator('#enrich-viz-fit').click());assert.equal(data.n_rows,20);assert.equal(data.parameters.displayed_labels,20);assert.equal(Number(await field('height').inputValue()),needed.layout_suggestion.height_mm);assert.equal(data.figure_layout.effective.label_complete,true);assert.ok(data.parameters.displayed_labels>0);assert.equal(await page.locator('#enrich-viz-wrap').isDisabled(),true);assert.ok(Number(await page.locator('#enrich-viz-wrap').inputValue())>0);
+ await page.locator('#enrich-viz-output img').waitFor();await page.locator('#enrich-viz-output').screenshot({path:output+'/browser-auto-enrichment.png'});
+ for(const format of ['pdf','svg','png','data','manifest']){const response=await page.request.get(new URL(data.download_urls[format].replace(/^\/api\//,'/api/'),api).href);assert.equal(response.status(),200);fs.writeFileSync(output+'/browser-enrichment.'+({data:'csv',manifest:'json'}[format]||format),await response.body());}
+ await field('auto_params').uncheck();assert.equal(await page.locator('#enrich-viz-wrap').inputValue(),'5');assert.equal(await page.locator('#enrich-viz-wrap').isEnabled(),true);
+ await set('font',4);needed=await result(()=>page.locator('#enrich-viz-generate').click(),422);assert.equal(await field('font').inputValue(),'4');data=await result(()=>page.locator('#enrich-viz-fit').click());assert.equal(data.parameters.label_wrap,5);assert.equal(data.figure_layout.font_pt,4);
+ await page.locator('#enrich-viz-wrap').evaluate(e=>e.closest('details').open=true);await page.locator('#enrich-viz-wrap').fill('');data=await result(()=>page.locator('#enrich-viz-generate').click());assert.equal(data.parameters.label_wrap,45);
+ assert.deepEqual(errors,[]);console.log('PASS actual enrichment UI/API: complete custom figures: all 20 labels, no size changes before explicit acceptance, right-side legends, suggested-size button, full vector downloads, preserved manual wrap 5 / font 4, blank wrap default');
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

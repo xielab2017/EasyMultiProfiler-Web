@@ -19,3 +19,6 @@ __pycache__/
 /output/
 /tests/bridge_acceptance_*/
 /profile_output/
+
+# Machine-specific trusted figure methods checkout
+webapp/config/figure_methods.local.json

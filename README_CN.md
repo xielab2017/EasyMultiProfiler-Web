@@ -3,19 +3,49 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v10.5.1
+# EasyMultiProfiler Web · v10.17.0
 
-**主分支版本 10.5.1** — 集成公开矩阵发现与下载、论文和 PDF 证据、AI Agent 对话、可选 Plan、分析工作台、后台任务、结果快照与组学可视化。
+**本机版本 10.17.0** — 集成公开矩阵发现与下载、论文和 PDF 证据、AI Agent 对话、可选 Plan、分析工作台、后台任务、结果快照与组学可视化。
 
-![](https://img.shields.io/badge/version-10.5.1-1f6feb)
+![](https://img.shields.io/badge/version-10.17.0-1f6feb)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/GitHub%20sync-weekly%20%2B%20project-0e8a16)
 
-> **版本**：`10.5.1` · [主分支](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main) · [源码 ZIP](https://github.com/xielab2017/EasyMultiProfiler-Web/archive/refs/tags/v10.5.1.zip)
+> **版本**：`10.17.0` · 本机版本 · [GitHub 主分支](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main) · [已发布 v10.5.1 ZIP](https://github.com/xielab2017/EasyMultiProfiler-Web/archive/refs/tags/v10.5.1.zip)
 
 「插件」页面可安装第三方分析与展示插件。[插件开发与示例](plugins/README.md) · 外部模型服务可以通过独立目录接入「模型与 API」。[模型插件开发与使用说明](plugins/ai-providers/README.md) · [Zotero 模型配置、笔记和对话模式](docs/ZOTERO_CHAT.md)
 
-## v10.5.1
+## v10.17.0
+
+- **降维椭圆与 P 值显示修正。** 默认展示组内分布范围；每条轴投影直接显示总体 P，支持组对括号和完整两两比较下载。单例点保留，统计范围与排除记录明确显示。[使用说明](docs/ORDINATION_GROUP_FIGURES.md) · [本版说明](docs/RELEASE_NOTES_v10.17.0.md)。
+
+## v10.16.0
+
+- **降维分组椭圆与轴向统计。** 支持均值置信 / 分布椭圆、半透明分层配色、上方及右侧投影分布以及探索性 P / BH q；缺失点保留为灰色，小样本明确提示，矢量导出附带统计表。[用法与统计假定](docs/ORDINATION_GROUP_FIGURES.md) · [本版说明](docs/RELEASE_NOTES_v10.16.0.md)。
+
+## v10.15.0
+
+- **四类分析直接出图。** 降维、相关、聚类、标志物各方法分别保存结果，运行后自动出图，可回看历史结果并独立调整外观，重画不重跑分析；导出指定物理尺寸的矢量 PDF / SVG。[用法与方法说明](docs/ANALYSIS_RESULT_FIGURES.md) · [本版说明](docs/RELEASE_NOTES_v10.15.0.md)。
+
+## v10.14.1
+
+- **修复差异显著性图不可用。** 方法库路径持久保存，R 服务重启后自动连接；全部 / 自定义视图按当前实验登记的组学类型绘图，并明确报告缺失的库文件。[本版说明](docs/RELEASE_NOTES_v10.14.1.md)。
+
+- **自定义富集图完整排版。** 所选通路名称完整换行，色阶和 Count 图例默认放在右侧，不再省略名称或间隔隐藏标签。按最终画布测量布局，空间不足时提供“采用推荐尺寸并重新生成”按钮，用户确认操作前不改尺寸和字号；继续导出矢量 PDF / SVG。[本版说明](docs/RELEASE_NOTES_v10.14.0.md)。
+
+- **热图图例独立定位与富集图排版修复。** 色阶和 Group 图例可分别选择上、下、左、右或自动位置。富集图自动模式按实际画布处理长标签、气泡及图例，完整数据与名称保留在 DATA；修复换行参数报错，支持小于 10 的手动值与留空默认，PDF 色阶采用矢量色块。[本版说明](docs/RELEASE_NOTES_v10.13.0.md)。
+
+- **自动参数配置开关。** 每张图可勾选自动配置，按所选图大小计算外观并自动出图；取消勾选后恢复原有手动参数，可自由修改。[本版说明](docs/RELEASE_NOTES_v10.12.0.md)。
+
+- **火山图基因引导线。** 基因标签移至点云两侧，通过连线指向真实数据点；纵向图例更新为 NS → Up → Down。[本版说明](docs/RELEASE_NOTES_v10.11.4.md)。
+
+- **分类图例纵向单列。** 自动排版不再把图例分成两列。[本版说明](docs/RELEASE_NOTES_v10.11.3.md)。
+
+- **显示具体绘图默认值。** 外观面板显示数值及最近出图实际参数，直接修改即可自定义，也可逐项恢复默认；显示默认数值仍保留自动计算。[本版说明](docs/RELEASE_NOTES_v10.11.2.md)。
+
+- **修复小画布自动排版。** 火山图按所选画布调整默认点径、标注密度与图例，避免图例裁切；自动开关以用户尺寸为基准计算字号等外观参数。[本版说明](docs/RELEASE_NOTES_v10.11.1.md)。
+
+- **各图独立外观配置。** 尺寸、单位、文字、线宽、配色与导出设置分别保存。字号支持任意有限正数及小数，取消 8–24 pt 限制，移除系统整体配置区。 默认按用户尺寸和字号直接出图，自动配置为可选。[本版说明](docs/RELEASE_NOTES_v10.11.0.md)。
 
 - **插件管理。** 在目录预览、安装、启用和配置插件。卡片会根据窗口及聊天侧栏的可用宽度自动换行，设置、插件定义和卸载分别显示。
 - **插件商店。** 提供 Zotero 风格研究助手、样本质量概览、样本质量条形图和 Groq 模型接口，均有中英文预览。[浏览插件商店](https://xielab2017.github.io/EasyMultiProfiler-Web-Plugins/)。

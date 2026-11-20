@@ -77,14 +77,48 @@ emp_pub_theme <- function(base_size = 12) {
 # Global figure typography / proportional scale (set per visualize API request).
 emp_viz_style_begin <- function(b) {
   old <- getOption("emp.viz_style", NULL)
+  size <- NULL
+  if (!is.null(b$export_size)) {
+    size <- b$export_size
+    if(isTRUE(b$publication$auto_params)&&is.list(size)&&all(vapply(size,function(x)is.numeric(x)&&length(x)==1L&&is.finite(x)&&x>0,logical(1))))size$dpi<-emp_publication_auto_dpi(size)
+    if (!is.list(size) || length(size) != 3L || !setequal(names(size), c("width_mm", "height_mm", "dpi")) ||
+        any(!vapply(size, function(x) is.numeric(x) && length(x) == 1L && is.finite(x), logical(1))) ||
+        size$width_mm <= 0 || size$height_mm <= 0 ||
+        !size$dpi %in% c(72, 150, 300, 600) ||
+        prod(ceiling(c(size$width_mm, size$height_mm) / 25.4 * size$dpi)) > 40000000) {
+      stop("Invalid export size: choose positive physical sizes, 72/150/300/600 DPI and at most 40 million raster pixels")
+    }
+  }
+  profiles <- b$figure_profiles
+  if (!is.null(profiles)) {
+    allowed <- c('heatmap','deg_heatmap','volcano','boxplot','barplot','scatter','enrichment','gsea','ternary','de_significance','alpha','structure','sankey','network','clinical','analysis_dimension','analysis_correlation','analysis_cluster','analysis_marker')
+    if (!is.list(profiles) || is.null(names(profiles)) || anyDuplicated(names(profiles)) || any(!names(profiles) %in% allowed)) stop('Invalid figure profiles')
+    for (name in names(profiles)) {
+      profile<-profiles[[name]]
+      ps <- profile$export_size
+      if(isTRUE(profile$publication$auto_params)&&is.list(ps)&&all(vapply(ps,function(x)is.numeric(x)&&length(x)==1L&&is.finite(x)&&x>0,logical(1))))ps$dpi<-emp_publication_auto_dpi(ps)
+      if (!is.list(profile) || !is.list(ps) || !setequal(names(ps),c('width_mm','height_mm','dpi')) ||
+          any(!vapply(ps,function(x)is.numeric(x)&&length(x)==1L&&is.finite(x),logical(1))) ||
+          ps$width_mm<=0 || ps$height_mm<=0 || prod(ceiling(c(ps$width_mm,ps$height_mm)/25.4*ps$dpi))>40000000 ||
+          !ps$dpi %in% c(72,150,300,600)) stop('Invalid per-figure physical size or raster pixel budget')
+      if(isTRUE(profile$publication$auto_params))profile$publication<-emp_publication_auto_profile(ps,name)
+      emp_publication_validate(profile$publication)
+      profile$export_size<-ps;profiles[[name]]<-profile
+    }
+  }
   sc <- suppressWarnings(as.numeric(b$figure_scale %||% 1))
   if (!is.finite(sc) || sc <= 0) sc <- 1
   .num_or_na <- function(x) {
     v <- suppressWarnings(as.numeric(x))
     if (length(v) && is.finite(v[1]) && v[1] > 0) v[1] else NA_real_
   }
+  full_auto<-isTRUE(b$publication$auto_params)
+  if(full_auto)b$publication<-emp_publication_auto_profile(size,b$publication$figure_kind)
   options(emp.viz_style = list(
-    figure_method = if (identical(b$figure_method, "self_built")) "self_built" else "original",
+    export_size = size,
+    publication = emp_publication_validate(b$publication),
+    figure_profiles = profiles,
+    figure_method = if (!full_auto&&identical(b$figure_method, "self_built")) "self_built" else "original",
     figure_scale = sc,
     axis_text_x = .num_or_na(b$axis_text_x),
     axis_text_y = .num_or_na(b$axis_text_y),

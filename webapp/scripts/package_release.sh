@@ -50,6 +50,7 @@ for entry in "${PLATFORMS[@]}"; do
     --exclude "__pycache__" \
     --exclude "*.pyc" \
     --exclude "webapp/config/runtime.env" \
+    --exclude "webapp/config/figure_methods.local.json" \
     --exclude "webapp/config/campus_llm.json" \
     --exclude "webapp/config/openrouter_llm.json" \
     --exclude "webapp/frontend/js/runtime_auth.local.js" \

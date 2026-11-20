@@ -23,7 +23,9 @@ export function resolveAgentNavigation(target) {
  return {page,tab};
 }
 export function assertAgentSubmission(context,request,target) {
- if(target&&target!==context.tab&&target!==currentAgentAction(context))throw Error('任务步骤已不匹配，请读取当前步骤后再提交。');
+ const degTarget=target==='btn-deg-heatmap'&&context.workflow==='visualization'&&context.tab==='viz-heatmap';
+ if(degTarget&&!/DEG|差异.*热图|differential.*heatmap/i.test(request))throw Error('请明确选择 DEG 热图后再提交。');
+ if(target&&!degTarget&&target!==context.tab&&target!==currentAgentAction(context))throw Error('任务步骤已不匹配，请读取当前步骤后再提交。');
  if(context.workflow!=='analysis')return;
  const clauses=String(request||'').split(/[。；;\n]/).filter(s=>!/(不要|不重新|不重复|已完成|已保存|do not|don.t|already completed|already saved)/i.test(s));
  const positive=clauses.join(' '),intent={
@@ -39,15 +41,16 @@ export function assertAgentSubmission(context,request,target) {
 }
 export function resolveHeatmapSize(context, args, reviewed) {
  if(!reviewed||!context.hasExperiment||context.workflow!=='visualization'||context.tab!=='viz-heatmap')throw Error('请在热图页面启用 Agent 模式后再调整图形尺寸。');
+ if(context.pageContext?.fields?.some(field=>field.id==='viz-export-enabled'&&(field.value===true||field.value==='true')))throw Error('A4 统一画布已启用；请通过 fill_page_fields 设置 viz-export-width / height / unit，再提交当前图。');
  if(typeof args.width_inches!=='number'||!Number.isFinite(args.width_inches)||args.width_inches<4||args.width_inches>30||typeof args.height_inches!=='number'||!Number.isFinite(args.height_inches)||args.height_inches<4||args.height_inches>36)throw Error('图宽须为 4–30 英寸，图高须为 4–36 英寸。');
  return {type:'resize_heatmap',button:'btn-heatmap',width:args.width_inches,height:args.height_inches};
 }
-export function resolveAgentAction(context, action, reviewed) {
+export function resolveAgentAction(context, action, reviewed, target) {
  if(action==='refresh_tasks')return {type:'refresh_tasks'};
  if(reviewed!==true)throw Error('请先选择数据，并启用 Agent 模式。');
  const pageActions={matrix:{search_sources:'discovery-search',find_matrix_files:'matrix-resolve',read_downloaded_matrix:'matrix-open-workbench'},integration:{inspect_integration:'rp-preview',run_integration:'rp-run'},workbench:{build_workflow:'wb-template',prepare_workflow:'wb-prepare',run_workflow:'wb-run'}};
  const pageButton=pageActions[context.workflow]?.[action];if(pageButton)return {type:'submit_current',button:pageButton};
  if(action!=='submit_current'||(!context.hasExperiment&&!['matrix','integration','workbench','import'].includes(context.workflow)))throw Error('请先选择数据，并审核当前页面的方法、参数和分组，再启用 Agent 模式。');
- const button=currentAgentAction(context);if(!button)throw Error('当前步骤尚未接入 Agent 自动提交，请在对应页面准备并运行。');
+ const button=target==='btn-deg-heatmap'&&context.workflow==='visualization'&&context.tab==='viz-heatmap'?'btn-deg-heatmap':currentAgentAction(context);if(!button)throw Error('当前步骤尚未接入 Agent 自动提交，请在对应页面准备并运行。');
  return {type:'submit_current',button};
 }

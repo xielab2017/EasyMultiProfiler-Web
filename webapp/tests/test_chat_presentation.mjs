@@ -44,3 +44,8 @@ test('paper workflow renders ordered inert stages and keeps activity folded duri
   assert.deepEqual(root.children[0].children.map(n=>n.textContent),['Samples','<img src=x>','Counts']);
   assert.equal(createActivity(root,{doc}).card.open,false);
 });
+
+test('read-only visualization can explain publication dimensions without gaining action or dataset controls',()=>{
+ const value=modelQuestion('检查当前出图设置',{workflow:'visualization',tab:'viz-volcano',readOnly:true,pageContext:{fields:[{id:'viz-export-width',value:'87'},{id:'viz-export-enabled',type:'checkbox',value:false},{id:'viz-export-font',value:'10'},{id:'diff-group',value:'private-group'}]}});
+ assert.match(value,/"viz-export-width":"87"/);assert.match(value,/"viz-export-enabled":false/);assert.doesNotMatch(value,/private-group|submit_current|navigation/);
+});

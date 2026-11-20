@@ -109,3 +109,17 @@ test('PMC excerpts retain evidence from later sections and account for omitted t
   for(const name of ['Introduction','Methods','Results','Discussion','[…]'])assert(short.text.includes(name));
   assert.deepEqual(sectionExcerpts(['Source','Result']),{text:'Source\n\nResult',excerpt:false});
 });
+
+test('task contexts show task shortcuts and an honest mode hint without sending or replacing drafts',()=>{
+ const root=new El('div'),doc={createElement:tag=>new El(tag)},question=new El('textarea');
+ const composer=mountChatComposer(root,{question,agentLabel:new El('label'),actions:new El('div'),status:new El('p'),doc});
+ composer.refreshModels({chat_contract_version:2});
+ composer.setTaskContext({workflow:'visualization',experimentName:'synthetic',agentEnabled:false});
+ const find=id=>flatten(root).find(node=>node.id===id);
+ assert.equal(flatten(root).find(node=>node.className==='agent-reading-actions').hidden,true);
+ assert.match(find('analysis-mode-explanation').textContent,/不修改设置或运行分析/);
+ question.value='existing draft';find('analysis-task-plot').onclick();assert.equal(question.value,'existing draft');
+ question.value='';find('analysis-task-plot').onclick();assert.match(question.value,/87×87 mm/);
+ composer.setTaskContext({workflow:'analysis',agentEnabled:true});assert.match(find('analysis-mode-explanation').textContent,/Agent/);assert.equal(find('analysis-task-plot').hidden,true);
+ const purpose=find('analysis-chat-purpose');purpose.value='reading';purpose.onchange();assert.equal(flatten(root).find(node=>node.className==='agent-reading-actions').hidden,false);
+});

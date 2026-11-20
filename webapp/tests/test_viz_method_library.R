@@ -21,7 +21,7 @@ missing<-raw;missing$data$padj[1]<-NA
 error(.method_library_de_data(missing,list(omics='proteomics')),'No rows')
 selected<-.method_library_de_data(missing,list(omics='proteomics',exclude_unavailable_p=TRUE))
 stopifnot(nrow(selected$data)==4L,nrow(selected$full_input)==5L,nrow(selected$exclusions)==1L,selected$source$excluded_unavailable_p==1L,is.na(missing$data$padj[1]))
-root<-Sys.getenv('EMP_FIGURE_METHODS_ROOT','/Users/mac/Documents/ChatGPT/多组学数据分析/Figure_Methods_Lab');Sys.setenv(EMP_FIGURE_METHODS_ROOT=root)
+root<-emp_figure_methods_location()$root
 if(dir.exists(root)&&requireNamespace('SummarizedExperiment',quietly=TRUE)){
   proof<-file.path(getwd(),'.local_run/verification/method-library',format(Sys.time(),'%Y%m%d-%H%M%S'));dir.create(proof,recursive=TRUE)
   session_path<-function(...)proof

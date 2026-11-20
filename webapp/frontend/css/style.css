@@ -1698,3 +1698,39 @@ body.omics-chipseq #page-visualization [data-omics]:not([data-omics~="chipseq"])
 .guide-start-routes .btn { white-space: normal; }
 .guide-install-group > summary { cursor: pointer; font-weight: 600; }
 .guide-install-group[open] > summary { margin-block-end: 16px; }
+
+/* Physical publication settings: controls and a page reference, with no chart scaling. */
+.publication-card { margin-top: 12px; }
+.publication-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.publication-badge { font-size:12px; color:#475569; border:1px solid #cbd5e1; padding:4px 8px; border-radius:4px; }
+.publication-layout { display:grid; grid-template-columns:minmax(0,1fr) 144px; gap:24px; margin-top:16px; }
+.publication-layout .form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; }
+.publication-preview { margin:0; display:flex; flex-direction:column; align-items:center; gap:8px; }
+.publication-preview svg { width:120px; height:170px; overflow:hidden; border:1px solid #cbd5e1; }
+.publication-preview figcaption { color:#64748b; font-size:12px; text-align:center; }
+.publication-notes { text-align:left; border-left:3px solid #d97706; padding:8px 12px; color:#78350f; background:#fffbeb; }
+@media(max-width:767px) { .publication-layout { grid-template-columns:minmax(0,1fr); gap:16px; } .publication-preview { flex-direction:row; } .publication-preview svg { width:72px; height:102px; flex:none; } }
+@media(max-width:420px) { .publication-layout .form-grid { grid-template-columns:minmax(0,1fr); } }
+
+.publication-linked-size{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:10px 12px;font-size:13px}.publication-linked-size .btn{font-size:12px;padding:5px 8px}.form-group[hidden]{display:none!important}
+
+.figure-standard-card{background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;padding:14px;margin:12px 0 20px}.figure-standard-card>.form-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-top:10px}.figure-standard-card .hint{margin:8px 0 0}.figure-standard-card label{font-size:12px}.figure-standard-card input,.figure-standard-card select{background:#fff}
+
+.figure-standard-card input[type="number"]{font-variant-numeric:tabular-nums;font-size:14px}
+
+.figure-font-stepper{display:flex;align-items:stretch;min-width:0}.figure-font-stepper input{flex:1;min-width:0;text-align:center;border-radius:0!important}.figure-font-stepper button{flex:0 0 34px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:18px;cursor:pointer}.figure-font-stepper button:first-child{border-radius:6px 0 0 6px;border-right:0}.figure-font-stepper button:last-child{border-radius:0 6px 6px 0;border-left:0}.figure-font-stepper button:disabled{background:#f1f5f9;color:#94a3b8;cursor:default}.figure-font-stepper button:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+
+.figure-appearance{margin-top:14px;border-top:1px solid #e2e8f0;padding-top:12px}.figure-appearance summary{cursor:pointer;font-weight:600;color:#334155}.figure-appearance>.form-grid{margin-top:12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.figure-standard-card input,.figure-standard-card select{min-width:0;width:100%}
+
+.figure-default-info{display:flex;justify-content:space-between;align-items:baseline;gap:8px;min-height:18px;margin-top:4px;color:#64748b;font-size:11px}.figure-default-info small{font-size:11px}.figure-default-reset{padding:0;border:0;background:transparent;color:#3155a5;font-size:11px;cursor:pointer;white-space:nowrap}.figure-default-reset:hover{text-decoration:underline}.figure-default-reset[hidden]{display:none}
+
+.figure-auto-control{margin:12px 0;padding:10px 12px;border:1px solid #cfdaed;border-radius:8px;background:#eef4ff}.figure-auto-control label{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:14px;font-weight:600;color:#1e3a6d}.figure-auto-control input[type="checkbox"]{width:17px;height:17px;accent-color:#3155df}.figure-standard-card input:disabled,.figure-standard-card select:disabled{background:#f1f5f9;color:#52627b;opacity:1;cursor:default}.figure-standard-card [hidden]{display:none!important}
+
+.analysis-figure-section { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
+
+.analysis-figure-section .plot-toolbar { flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
+.analysis-figure-section .plot-toolbar > .btn { flex: 0 0 auto; white-space: nowrap; }
+
+.ordination-axis-statistics { margin-top: 16px; overflow-x: auto; text-align: left; }
+.ordination-axis-statistics table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.ordination-axis-statistics th, .ordination-axis-statistics td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }

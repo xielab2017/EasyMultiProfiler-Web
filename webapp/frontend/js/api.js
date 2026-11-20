@@ -1,3 +1,4 @@
+import {figureKindForRequest,figureAppearanceSignature} from './figure_standards.mjs';
 // API client – talks to the Plumber backend.
 import {fetchZip} from './authenticated_download.mjs';
 // The base URL is resolved lazily on every request so that the value
@@ -291,7 +292,16 @@ function requestMultipartWithProgress(path, formData, opts = {}) {
 
 let backgroundRoutes = null;
 let backgroundApiBase = null;
+function publishFigureAppearance(data,path,body){
+ if(!data.figure_layout?.effective)return;
+ const kind=figureKindForRequest(path,body||{});
+ if(kind&&data.figure_layout?.effective)try{window.dispatchEvent(new CustomEvent('emp:figure-appearance',{detail:{kind,signature:figureAppearanceSignature(body),values:data.figure_layout.effective}}));}catch{}
+}
 async function request(method, path, body = null, multipart = false, optsExtra = {}) {
+  if (method === 'POST' && body && !multipart && typeof window !== 'undefined' && typeof window.empPublicationOptions === 'function' &&
+      /^\/(visualize|analyze|clinical|workflows|omics-workbench|integration-workbench|workbench|integration)\//.test(path)) {
+    body = {...body, ...window.empPublicationOptions(path,body)};
+  }
   if (method === 'POST' && !multipart && body?.session_id &&
       /^\/(analyze|prepare|clinical|workflows)\//.test(path) && !path.endsWith('/async')) {
     if (!backgroundRoutes) {
@@ -302,6 +312,7 @@ async function request(method, path, body = null, multipart = false, optsExtra =
     if (routes.has(path)) {
       const submitted = await request('POST', '/tasks/submit', {route:path, payload:body});
       const {result} = await pollJobUntilDone(submitted.job_id, null, 1500, 24*60*60*1000);
+      publishFigureAppearance(result,path,body);
       return {...result,_job_id:submitted.job_id};
     }
   }
@@ -395,6 +406,7 @@ async function request(method, path, body = null, multipart = false, optsExtra =
       const err = new Error(msg);
       err.total_ms = Math.round(totalMs);
       err.backend_ms = data.backend_ms;
+      if(data.code==="FIGURE_LAYOUT_NEEDS_SPACE"){err.code=data.code;err.layout_suggestion=data.layout_suggestion;}
       throw err;
     }
     if (method === "GET" && path === "/tasks/capabilities") backgroundApiBase = responseBase;
@@ -409,6 +421,10 @@ async function request(method, path, body = null, multipart = false, optsExtra =
                   backend_ms: data.backend_ms, ok: true }
       }));
     } catch (_) { /* no-op */ }
+    publishFigureAppearance(data,path,body);
+    if (data.figure_layout?.notes?.length) {
+      try { window.dispatchEvent(new CustomEvent("emp:publication-notes", {detail:data.figure_layout})); } catch {}
+    }
     return data;
   }
 

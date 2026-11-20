@@ -3,20 +3,50 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/EN-English-1f6feb?style=for-the-badge" alt="EN"></a>
 </p>
 
-# EasyMultiProfiler Web · v10.5.1
+# EasyMultiProfiler Web · v10.17.0
 
-![](https://img.shields.io/badge/version-10.5.1-1f6feb)
+![](https://img.shields.io/badge/version-10.17.0-1f6feb)
 ![](https://img.shields.io/badge/R%20%3E%3D-4.3.3-brightgreen)
 ![](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0e8a16)
 ![](https://img.shields.io/badge/UI%20languages-11-orange)
 ![](https://img.shields.io/badge/license-Artistic--2.0-blue)
 
-> **Version:** `10.5.1` · [Main branch](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main) · [Source ZIP](https://github.com/xielab2017/EasyMultiProfiler-Web/archive/refs/tags/v10.5.1.zip)
+> **Version:** `10.17.0` · Local version · [GitHub main](https://github.com/xielab2017/EasyMultiProfiler-Web/tree/main) · [Published v10.5.1 ZIP](https://github.com/xielab2017/EasyMultiProfiler-Web/archive/refs/tags/v10.5.1.zip)
 > This is the complete, standalone English documentation for EasyMultiProfiler Web. The Chinese documentation is in [README_CN.md](README_CN.md).
 
 [Develop and install analysis and result-view plugins](plugins/README.md). External AI providers can be installed as model plugins. [Provider plugin contract and Groq example](plugins/ai-providers/README.md) · [Zotero-compatible profiles, notes and chat modes](docs/ZOTERO_CHAT.md)
 
-## v10.5.1
+## v10.17.0
+
+- **Ordination regions and visible P values.** Default to group data ellipses, retain mean-confidence regions as an option, place overall tests beside each projection, and annotate optional pairwise tests. Singleton groups stay visible with explicit test exclusions; full results download as PAIRWISE. [Details](docs/ORDINATION_GROUP_FIGURES.md) · [Release notes](docs/RELEASE_NOTES_v10.17.0.md).
+
+## v10.16.0
+
+- **Grouped ordination with axis statistics.** Add mean-confidence or data ellipses, layered group colors and marginal boxplots; display exploratory per-axis P values and BH adjustments. Missing groups remain gray, and insufficient samples receive explicit notices. Export vector figures and the statistical audit. [Usage and assumptions](docs/ORDINATION_GROUP_FIGURES.md) · [Release notes](docs/RELEASE_NOTES_v10.16.0.md).
+
+## v10.15.0
+
+- **Plots integrated into all four analysis pages.** Each method retains its own results and generates a figure after completion: ordination, correlation heatmaps / networks, cluster trees / projections / assignments, and marker-score bars. Replot without refitting; export physical-size vector PDF / SVG. [Usage and method limits](docs/ANALYSIS_RESULT_FIGURES.md) · [Release notes](docs/RELEASE_NOTES_v10.15.0.md).
+
+## v10.14.1
+
+- **DE significance rendering restored.** Persisted local method-library configuration survives R restarts; all/customize views use the selected experiment’s registered omics type. Missing library files are reported at readiness checks. [Release notes](docs/RELEASE_NOTES_v10.14.1.md).
+
+- **Complete custom enrichment figures.** All selected term names wrap in full, with the color scale and Count legend conventionally stacked on the right. A measured layout check prevents cropped exports; insufficient space offers a suggested-size button without changing user dimensions or typography until accepted. Editable vector PDF / SVG output is preserved. [Release notes](docs/RELEASE_NOTES_v10.14.0.md).
+
+- **Independent heatmap legends and fitted enrichment labels.** Position the color scale and Group legend separately (top / bottom / left / right / automatic). Automatic ORA plots fit long term names, bubble sizes and legends to the physical canvas, retaining every data row and full descriptions in DATA. Manual wrap values below 10 and blank defaults work again; PDF color bars are vector shapes. [Release notes](docs/RELEASE_NOTES_v10.13.0.md).
+
+- **Automatic parameter switch.** Enable the per-figure checkbox to compute appearance from the chosen canvas and regenerate on size changes. Disable it to restore and edit saved manual settings. [Release notes](docs/RELEASE_NOTES_v10.12.0.md).
+
+- **Volcano gene callouts.** Labels sit in side lanes and connect to their actual points; the vertical legend follows NS → Up → Down. [Release notes](docs/RELEASE_NOTES_v10.11.4.md).
+
+- **Vertical category legends.** Automatic legends use one top-to-bottom column. [Release notes](docs/RELEASE_NOTES_v10.11.3.md).
+
+- **Visible figure defaults.** Appearance inputs show concrete values and the most recent values returned by the renderer. Edit directly or reset individual overrides; displaying defaults preserves automatic calculation. [Release notes](docs/RELEASE_NOTES_v10.11.2.md).
+
+- **Small-canvas automatic layout fixed.** Volcano plots now adapt default points, annotations and legends to the selected canvas. Manual mode preserves the chosen text sizes; the automatic switch computes appearance from the chosen dimensions. [Release notes](docs/RELEASE_NOTES_v10.11.1.md).
+
+- **Independent figure appearance.** Each figure type saves its own dimensions, text, lines, colors and export settings. Text accepts any positive finite point size, including decimals; the former 8–24 pt restriction and global configuration sections are removed. Manual output preserves user dimensions and fonts; automatic layout is optional. [Release notes](docs/RELEASE_NOTES_v10.11.0.md).
 
 - **Plugin manager.** Browse bilingual previews, install and enable plugins, and configure them from the catalog. Cards reflow when the window narrows or the chat sidebar opens. Settings, plugin definitions and uninstall controls have distinct positions.
 - **Plugin catalog.** Includes the Zotero-style research chat, sample quality summary, sample quality bars and Groq model provider. [Browse the plugin store](https://xielab2017.github.io/EasyMultiProfiler-Web-Plugins/).
@@ -200,7 +230,7 @@ Interactive help is also available in the web UI under **Guide** and **Course**.
 
 ```text
 EasyMultiProfiler-Web/
-├── DESCRIPTION                 # R package metadata (version 10.5.1)
+├── DESCRIPTION                 # R package metadata (version 10.17.0)
 ├── R/                          # EasyMultiProfiler R package
 ├── Install-EMP-Web-Windows.bat # one-click installers (per OS)
 ├── Install-EMP-Web-Mac.command

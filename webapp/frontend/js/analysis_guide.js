@@ -143,7 +143,7 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
     services.textContent=serviceLines.join(' · ')+(agent?.status==='ready'?` · ${agent.provider} / ${agent.model}`:'');
     modelSettings.textContent=tr('modelSettings');reconnect.textContent=tr('reconnect');
     const stateText=UI_LOCALES_FULL[planFirst?'On':'Off']?.[getLocale()]||(planFirst?'On':'Off');planToggle.textContent=(UI_LOCALES_FULL['Plan first: {state}']?.[getLocale()]||'Plan first: {state}').replace('{state}',stateText);planToggle.setAttribute('aria-pressed',String(planFirst));planToggle.disabled=busy||!agentEnabled();
-    jump.textContent=['zh','zh-TW'].includes(getLocale())?'回到最新消息':'Jump to latest';question.setAttribute('aria-label',tr('askLabel'));composer.render();ask.disabled=busy;composer.setBusy(busy);apply.hidden=!proposal||!guidance.countWorkflowAvailable;
+    jump.textContent=['zh','zh-TW'].includes(getLocale())?'回到最新消息':'Jump to latest';question.setAttribute('aria-label',tr('askLabel'));composer.setTaskContext?.({...context,agentEnabled:agentEnabled()});composer.render();ask.disabled=busy;composer.setBusy(busy);apply.hidden=!proposal||!guidance.countWorkflowAvailable;
   }
   async function refreshAgent(){const response=await fetch('/api/public-data/agent/status',{credentials:'omit',redirect:'error'});if(!response.ok)throw Error('status');const next=await response.json();if(agent&&(next.provider!==agent.provider||next.config_revision!==agent.config_revision)){revision++;}agent=next;composer.refreshModels(agent);render();return agent;}
   modelSettings.onclick=()=>document.querySelector('.nav-item[data-page="models"]')?.click();
@@ -179,7 +179,8 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
     const current=revision,expectedQuestion=question.value.trim()||'请解读这些附件，并结合当前页面给出下一步建议。';
     const sentAttachments=automaticRound?[]:(interpretationScope?(interpretationScope.attachments||[]):[...currentPlot,...composer.take()]).slice(0,6);
     const priorHistory=history.slice(-4),guidanceOnly=interpretationScope?.draftOnly===true;
-    const grant=(!interpretationScope||guidanceOnly)&&agentEnabled();
+    const explanationOnly=/(如何|怎么|怎样|为什么|^(?:how|why|what)\b)/i.test(expectedQuestion)&&!/(?:请|帮我|直接|现在|please|go ahead).*(?:生成|运行|执行|调整|改成|run|execute|generate|change)/i.test(expectedQuestion);
+    const grant=(!interpretationScope||guidanceOnly)&&agentEnabled()&&!explanationOnly;
     const currentContext=interpretationScope||{workflow:context.workflow,tab:context.tab,plotSettings:context.plotSettings,pageContext:context.pageContext};
     currentContext.memory=agentMemory.snapshot(context.omics||context.workflow);
     currentContext.locale=getLocale();
@@ -248,6 +249,7 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
           if(requested.action==='navigate'){
             if(!grant)throw Error('请启用 Agent 模式。');const route=resolveAgentNavigation(requested.target);
             document.querySelector('.nav-item[data-page="'+route.page+'"]')?.click();
+            if(route.page===context.workflow&&(!route.tab||route.tab===context.tab)&&completedUi.has('navigate:'+requested.target)){activity.note('已在目标页面，没有新的页面操作；请明确要调整的参数或执行的步骤。');continue;}
             if(route.tab)document.querySelector('#page-'+route.page+' .tab[data-tab="'+route.tab+'"]')?.click();completedUi.set('navigate:'+requested.target,{action:'navigate',target:requested.target,status:'completed'});refreshContext();answer=turnAnswer;continueUi=true;continue;
           }
           if(requested.action==='review_samples'){
@@ -257,11 +259,12 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
           if(requested.action==='fill_page_fields'){
             if(!grant||!agentEnabled())throw Error('请启用 Agent 模式后填写页面。');
             if(requested.fields?.['scat-ordination']==='assay_pca'&&/保存.*坐标|已保存.*PCA|保存的.*PCA|saved.*(PCA|coordinate)|不.*重算PCA/i.test(rootRequest))throw Error('用户要求保存的 PCA 坐标，请使用 scat-ordination=emp；不能改为重新计算。');
+            const repeated=completedUi.has('fields:'+context.workflow);
             const changed=applyPageFields(context.workflow,requested.fields);
             refreshContext();answer=turnAnswer;audit.hidden=false;
             activity.note(changed.length?'已填写页面参数：'+changed.join(', '):'页面参数已一致，无需重复填写。');
             history.push({role:'tool',text:changed.length?'Local UI applied fields: '+changed.join(', '):'No change: these fields already have the requested values. Do not repeat this operation.'});completedUi.set('fields:'+context.workflow,{action:'fill_page_fields',fields:requested.fields,status:'completed'});
-            if(!changed.length&&context.workflow==='workbench'&&context.pageContext?.workbench?.has_dataset&&context.pageContext.workbench.unassigned===0&&context.pageContext.workbench.needs_design_review&&/分析|运行|执行|run|analy/i.test(rootRequest)){window.dispatchEvent(new CustomEvent('emp:agent-review-samples'));}else continueUi=true;continue;
+            if(!changed.length&&context.workflow==='workbench'&&context.pageContext?.workbench?.has_dataset&&context.pageContext.workbench.unassigned===0&&context.pageContext.workbench.needs_design_review&&/分析|运行|执行|run|analy/i.test(rootRequest)){window.dispatchEvent(new CustomEvent('emp:agent-review-samples'));}else {continueUi=changed.length>0||!repeated;if(!continueUi)activity.note('参数已一致，没有新的修改或任务提交；已停止重复操作。');}continue;
           }
           if(requested.action==='select_matrix_file'){
             if(!grant||!agentEnabled())throw Error('请启用 Agent 模式。');
@@ -269,7 +272,7 @@ export function mountAnalysisGuide(root,{snapshot,focusSettings,openWorkbench,mo
             if(!button||button.disabled)throw Error('所选文件已不可用；请通过 download_matrix 按编号自动下载。');
             if(typeof button.onclick==='function')await button.onclick();else button.click();submittedTask=true;output.append(el('p','已打开所选文件的下载计划；下载状态以页面任务记录为准。'));continue;
           }
-          const action=requested.action==='resize_heatmap'?resolveHeatmapSize(context,requested,grant&&agentEnabled()):resolveAgentAction(context,requested.action,grant&&agentEnabled());
+          const action=requested.action==='resize_heatmap'?resolveHeatmapSize(context,requested,grant&&agentEnabled()):resolveAgentAction(context,requested.action,grant&&agentEnabled(),requested.target);
           if(action.type==='refresh_tasks') {
             if(completedUi.has('refresh_tasks')){activity.note(english?'Task status already read; continuing the requested action.':'已读取任务状态，继续后续操作。');continueUi=true;continue;}
             window.dispatchEvent(new CustomEvent('emp:tasks-refresh'));

@@ -1,0 +1,23 @@
+source('webapp/backend/helpers/utils.R');source('webapp/backend/helpers/figure_method_rules.R');source('webapp/backend/helpers/viz_method_library.R')
+local({
+ vars<-c('EMP_FIGURE_METHODS_ROOT','EMP_FIGURE_METHODS_CONFIG');before<-Sys.getenv(vars,unset=NA_character_)
+ on.exit(for(i in seq_along(vars))if(is.na(before[i]))Sys.unsetenv(vars[i]) else do.call(Sys.setenv,stats::setNames(list(before[i]),vars[i])),add=TRUE)
+ dir<-tempfile('figure config with spaces ');dir.create(dir);on.exit(unlink(dir,recursive=TRUE),add=TRUE)
+ config<-file.path(dir,'local.json');Sys.unsetenv('EMP_FIGURE_METHODS_ROOT');Sys.setenv(EMP_FIGURE_METHODS_CONFIG=config)
+ stopifnot(!emp_viz_method_catalog()$available,emp_viz_method_catalog()$status=='not_configured')
+ root<-file.path(dir,'trusted library');dir.create(root)
+ for(file in .method_library_required(root)){dir.create(dirname(file),recursive=TRUE,showWarnings=FALSE);writeLines('# fixture',file)}
+ writeLines('export_figure<-function(...)TRUE',file.path(root,'library/common.R'))
+ writeLines(c('plot_de_scatter<-function(...)TRUE','plot_ternary<-function(...)TRUE'),file.path(root,'library/plot_methods.R'))
+ jsonlite::write_json(list(root=root),config,auto_unbox=TRUE)
+ stopifnot(emp_viz_method_catalog()$available,emp_viz_method_catalog()$status=='available',emp_figure_methods_profile()$configured)
+ stopifnot(is.function(.method_library_load('de_scatter')$environment$plot_de_scatter),emp_figure_methods_location()$source==config)
+ # Explicit environment always wins, including an invalid directory; no silent fallback.
+ Sys.setenv(EMP_FIGURE_METHODS_ROOT=file.path(dir,'missing'))
+ stopifnot(!emp_viz_method_catalog()$available,emp_viz_method_catalog()$status=='incomplete')
+ Sys.unsetenv('EMP_FIGURE_METHODS_ROOT');unlink(file.path(root,'library/common.R'))
+ stopifnot(!emp_viz_method_catalog()$available,grepl('common.R',emp_viz_method_catalog()$message,fixed=TRUE))
+ writeLines('{bad json',config);stopifnot(emp_viz_method_catalog()$status=='invalid_config')
+ jsonlite::write_json(list(root=c('one','two')),config,auto_unbox=TRUE);stopifnot(emp_viz_method_catalog()$status=='invalid_config')
+ cat('PASS persisted path, spaces, process-env priority, incomplete library and invalid config; no web request can select a source path\n')
+})

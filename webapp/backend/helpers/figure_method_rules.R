@@ -1,9 +1,21 @@
 # Optional live bridge to the user's maintained Figure_Methods_Lab.
 # This file does not copy statistical methods, load case configs or refit data.
+# Only process environment or a trusted local administrator JSON may select R
+# code. Web requests and uploaded data cannot override this location.
+emp_figure_methods_location <- function() {
+  root<-trimws(Sys.getenv('EMP_FIGURE_METHODS_ROOT',''))
+  if(nzchar(root))return(list(root=root,source='environment',error=NULL))
+  config<-Sys.getenv('EMP_FIGURE_METHODS_CONFIG',file.path(Sys.getenv('EMP_ROOT',getwd()),'webapp/config/figure_methods.local.json'))
+  if(!file.exists(config))return(list(root='',source=config,error=NULL))
+  value<-tryCatch(jsonlite::read_json(config,simplifyVector=TRUE),error=identity)
+  if(inherits(value,'error')||!is.list(value)||!is.character(value$root)||length(value$root)!=1L||is.na(value$root)||!nzchar(trimws(value$root)))return(list(root='',source=config,error='Invalid figure methods JSON: root must be a nonempty path'))
+  list(root=trimws(value$root),source=config,error=NULL)
+}
+
 emp_figure_methods_profile <- function() {
-  root <- trimws(Sys.getenv("EMP_FIGURE_METHODS_ROOT", ""))
+  location<-emp_figure_methods_location();root<-location$root
   if (!nzchar(root)) return(list(configured = FALSE, available = FALSE,
-                                status = "not_configured", source = NULL, md5 = NULL))
+                                status = if(is.null(location$error)) "not_configured" else "invalid_config", configuration_source=location$source, message=location$error, source = NULL, md5 = NULL))
   root <- normalizePath(path.expand(root), winslash = "/", mustWork = FALSE)
   source <- file.path(root, "library", "common.R")
   rules <- c("AGENTS.md", "METHODS.md", "library/common.R",
@@ -16,7 +28,7 @@ emp_figure_methods_profile <- function() {
   hashes[present] <- unname(tools::md5sum(paths[present]))
   list(configured = TRUE, available = available,
        status = if (available) "available" else "unavailable",
-       root = root, source = source, md5 = unname(hashes["library/common.R"]),
+       root = root, configuration_source=location$source, source = source, md5 = unname(hashes["library/common.R"]),
        rules_files = as.list(hashes),
        scope = "Live figure_theme from library/common.R; no statistical refit or case configuration executed")
 }

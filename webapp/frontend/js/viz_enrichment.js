@@ -3,7 +3,7 @@ export function initEnrichmentVisualization({API,showPlot,navigateTo,currentColo
  const byId=id=>document.getElementById(id);
  if(!byId('viz-enrichment-dotplot'))return;
  const value=id=>byId(id)?.value||'';
- const number=id=>Number(value(id));
+ const number=id=>value(id).trim()===''?undefined:Number(value(id));
  const sid=()=>localStorage.getItem('emp_session_id');
  let sources=[],pendingJob=null,sourceVersion=0,termVersion=0,contextVersion=0,refreshVersion=0;
  const selectedOmics=()=>value('omics-pipeline');
@@ -103,7 +103,7 @@ export function initEnrichmentVisualization({API,showPlot,navigateTo,currentColo
  function showResult(prefix,result){
   if(!result.plot)throw Error('服务器没有返回图形 / No plot was returned');
   const plot=result.plot.replace(/^data:image\/png;base64,/,'');
-  showPlot(prefix+'-output',plot,{downloadStem:prefix});
+  showPlot(prefix+'-output',plot,{downloadStem:prefix,figureLayout:result.figure_layout,figureSize:result.parameters?{width_mm:result.parameters.width*25.4,height_mm:result.parameters.height*25.4}:undefined});
   const out=byId(prefix+'-output');
   // Use the authenticated enrichment file endpoint for vector and source exports.
   const toolbar=out.querySelector('.plot-toolbar');
@@ -117,7 +117,7 @@ export function initEnrichmentVisualization({API,showPlot,navigateTo,currentColo
  }
  async function generate(prefix,kind){
   const drawingContext=contextVersion;
-  const button=byId(prefix+'-generate');button.disabled=true;status(prefix,'R 正在绘图及导出… / Rendering and exporting in R…');
+  const button=byId(prefix+'-generate');button.disabled=true;byId(prefix+'-fit')?.remove();status(prefix,'R 正在绘图及导出… / Rendering and exporting in R…');
   try{
    const body=requestBody(prefix);
    if(kind==='dotplot'){
@@ -132,8 +132,22 @@ export function initEnrichmentVisualization({API,showPlot,navigateTo,currentColo
    }
    const result=await API.request('POST',`/visualize/enrichment/${kind}`,body,false,{timeoutMs:180000});
    if(drawingContext!==contextVersion)return;
-   showResult(prefix,result);status(prefix,result.note||'已生成 R 图形；可下载 PDF、SVG、PNG 与来源记录。 / R figure exported.');
-  }catch(error){if(drawingContext===contextVersion)status(prefix,error.message);}finally{button.disabled=false;}
+   showResult(prefix,result);status(prefix,kind==='dotplot'&&result.figure_layout?.effective?.label_complete?`完整绘图：${result.n_rows} 个条目，全部名称完整显示。 / All ${result.n_rows} term names shown in full. PDF / SVG / PNG`:(result.note||'已生成 R 图形；可下载 PDF、SVG、PNG 与来源记录。 / R figure exported.'));
+  }catch(error){if(drawingContext===contextVersion){
+   status(prefix,error.message);
+   const suggestion=error.layout_suggestion;
+   if(kind==='dotplot'&&error.code==='FIGURE_LAYOUT_NEEDS_SPACE'&&[suggestion?.width_mm,suggestion?.height_mm].every(v=>Number.isFinite(v)&&v>0)){
+    byId(prefix+'-output').classList.add('hidden');
+    const fit=document.createElement('button');fit.id=prefix+'-fit';fit.type='button';fit.className='btn btn-outline';fit.style.whiteSpace='normal';fit.style.display='block';fit.style.marginTop='10px';
+    fit.textContent=`采用推荐尺寸并重新生成 / Apply suggested size (${suggestion.width_mm} × ${suggestion.height_mm} mm)`;
+    fit.onclick=()=>{
+     const unit=byId('figure-enrichment-unit')?.value||'mm',factor={mm:1,cm:10,in:25.4,pt:25.4/72}[unit];
+     for(const axis of ['width','height']){const field=byId('figure-enrichment-'+axis);field.value=String(Number((suggestion[axis+'_mm']/factor).toFixed(6)));field.dispatchEvent(new Event('change',{bubbles:true}));}
+     fit.remove();byId(prefix+'-generate').click();
+    };
+    byId(prefix+'-status').append(fit);
+   }
+  }}finally{button.disabled=false;}
  }
  function resetSourceContext(){
   contextVersion++;sourceVersion++;termVersion++;refreshVersion++;sources=[];pendingJob=null;

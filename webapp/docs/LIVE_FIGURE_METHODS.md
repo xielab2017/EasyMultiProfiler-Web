@@ -8,7 +8,7 @@ The Visualization page contains an applicable-figure directory. Shared native R 
 - ChIP: existing dedicated ChIP/deepTools downstream page. The library's synthetic genome-track demo is not exposed as a real BigWig pipeline.
 - Clinical: existing clinical plotting modules.
 
-New live methods load current trusted `EMP_FIGURE_METHODS_ROOT/library/plot_methods.R` and `common.R` on every render. No case code from a request is executed. If the library is unavailable, the request fails clearly.
+New live methods load the current trusted `library/plot_methods.R` and `common.R` on every render. Set `EMP_FIGURE_METHODS_ROOT`, or copy `webapp/config/figure_methods.json.example` to `webapp/config/figure_methods.local.json` and set its `root` to the local checkout. The process environment takes priority; otherwise the backend reads the persisted JSON even after a standalone R-only restart. The local JSON is excluded from version control and release archives. `EMP_FIGURE_METHODS_CONFIG` optionally selects a different administrator-owned config file. No case code from a request is executed. If the library is unavailable, the request fails clearly.
 
 Ternary input: nonnegative finite feature-by-sample abundance, group metadata and exactly three selected groups. Normalize each sample by its complete library sum, compute per-group means, then normalize each feature's three means to A+B+C=1. Top N is applied after normalization. Size is the equal-weight mean of group mean relative abundances. Color denotes the group with greatest mean abundance; ties are Unclassified, not taxonomy. CLR/negative inputs and zero-library samples are rejected. No differential test is implied.
 
@@ -17,3 +17,5 @@ Differential scatter: x=−log10(adjusted P), optionally square-root spacing wit
 Each render preserves PNG (300dpi), PDF, SVG, derived CSV, exact input CSV, RDS config, sessionInfo and source/code checksums in a unique case directory. Existing results are not overwritten. The integration fixtures were rendered and visually reviewed; they are not biological findings.
 
 Checks: `Rscript --vanilla webapp/tests/test_viz_method_library.R`; `node --test webapp/tests/*.mjs`.
+
+Catalog readiness checks the common code, plotting code and required method documents, and reports incomplete or invalid local settings clearly. The all/customize/multiomics page view uses the current experiment’s registered omics type; unknown types still require an explicit selection. Physical canvas dimensions and positive custom font sizes are taken from the per-figure settings.

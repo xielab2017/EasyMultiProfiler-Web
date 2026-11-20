@@ -13,7 +13,7 @@
 emp_iw_validate <- function(payload, require_mapping = TRUE) {
   fields <- c("version", "blocks", "mapping", "missing_policy", "allow_unmatched", "preprocessing_reviewed", "design_reviewed", "confirmed")
   required <- if (require_mapping) setdiff(fields, "confirmed") else c("version", "blocks")
-  .iw_fields(payload, fields, required)
+  .iw_fields(payload, c(fields, "publication", "export_size", "figure_profiles"), required)
   if (!identical(payload$version, 1L) || !is.list(payload$blocks) || length(payload$blocks) < 2L || length(payload$blocks) > 8L) .iw_invalid("Select 2-8 omics matrices")
   mats <- list(); info <- list(); cells <- 0L
   for (b in payload$blocks) {
